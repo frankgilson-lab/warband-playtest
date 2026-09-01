@@ -104,7 +104,7 @@ var WARBAND_CONFIG = {
   "type": "warband",
   "version": "0.1-vengeance",
   "name": "Warband",
-  "tagline": "Your dead units reshape the battlefield to avenge themselves.",
+  "tagline": "Read the battlefield, draft your warband. Your loyal mercenaries strive to vanquish the opposition. What they fail to achieve in life they may yet overcome in dying.",
   "zones": [
     {
       "id": "open",
@@ -321,12 +321,12 @@ var WARBAND_CONFIG = {
       "melee_only_note": "Settled after a review found the rule read as applying at any range while the code silently docked a ranged attacker one ally. Both readings were available; melee-only was chosen because it matches the fiction and because the alternative handed the buff to midrange, which drafts the most Dragoons, undermining the reason Overwhelm is Light-only at all - see why_light_only under `overwhelm`."
     },
     {
-      "code": "RLY",
+      "id": "RLY",
       "name": "Rally",
       "description": "ACTIVATED. Spend one activation: up to the listed number of allied units within the listed range each immediately move up to their Move."
     },
     {
-      "code": "SKT",
+      "id": "SKT",
       "name": "Skittish",
       "description": "TRIGGERED, costs nothing. When an enemy unit moves adjacent, this unit is shoved one hex directly away along the line from that enemy. The direction is not chosen by either player — it follows from where the enemy moved, so an opponent steers this unit only indirectly, through their choice of approach. A shove blocked by the board edge, another unit or impassable terrain does not happen at all."
     }
@@ -1800,15 +1800,34 @@ async function wbEnsureCore() {
 let warband_state = null;
 
 // ── palette, from the design doc's art direction ──────────────────────────────
+// Terrain fills carry MORE contrast than the first pass did. Forest, Open and
+// Ruins were three shades of one brown at a glance -- 0x25302a, 0x2b2b28 and
+// 0x39352e differ by a few points per channel -- so the map the draft is supposed
+// to be read from could not be read at all. Each terrain now sits in its own hue
+// family (open neutral, forest green, ruins tan, marsh blue, hill ochre), and the
+// label sits well clear of the fill rather than just clear of the background.
 const WB_COL = {
-  open: '#2b2b28', forest: '#25302a', ruins: '#39352e', marsh: '#242b2c', hill: '#3d382c',
-  barricade: '#4a3a2a', watch_fire: '#5a3a22', fallen_harness: '#3a3a40',
-  burnt_ground: '#1c1a18', fallen_banner: '#5c2a2a', officers_cairn: '#4a4038',
-  fallen_ranks: '#37292a',
+  open: '#39392f', forest: '#1e4029', ruins: '#59493a', marsh: '#1f3b47', hill: '#6b542a',
+  barricade: '#7a5124', watch_fire: '#8a4416', fallen_harness: '#4a5163',
+  burnt_ground: '#171412', fallen_banner: '#8a2b2b', officers_cairn: '#6a5b46',
+  fallen_ranks: '#5a2f31',
   p0: '#c8a24a', p1: '#9c3a34', ink: '#141312', line: '#5a5347', text: '#d8cfbc',
+  // The two highlight languages the board speaks. `move` is where the selected
+  // unit may GO; `hit` is what it may STRIKE. They must never be mistaken for one
+  // another, so they differ in hue, in width and in dash -- not in shade alone.
+  move: '#f0cf72', hit: '#ff6b3d',
+  label: '#cbc2ab',
 };
-const WB_SIZE = 30;
-const wbPx = (h) => ({ x: WB_SIZE * Math.sqrt(3) * (h.q + h.r / 2) + 90, y: WB_SIZE * 1.5 * h.r + 60 });
+// The hex radius. At 30 the terrain labels had to be truncated to seven
+// characters and set at 8px; there is room on the page for more board than that.
+const WB_SIZE = 42;
+// Margin around the board, proportional so the padding does not shrink relative
+// to the hexes whenever the radius changes. Tightened from 0.6: at 0.6 the two
+// margins were 134px of a 752px board, and on a phone every one of those pixels
+// is taken off the hexes.
+const WB_PAD = Math.round(WB_SIZE * 0.3);
+const WB_ORIGIN = WB_SIZE + WB_PAD;
+const wbPx = (h) => ({ x: WB_SIZE * Math.sqrt(3) * (h.q + h.r / 2) + WB_ORIGIN, y: WB_SIZE * 1.5 * h.r + WB_ORIGIN });
 
 function wbEsc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function wbSection() {
@@ -1838,9 +1857,8 @@ async function warbandShowSetup() {
   el.innerHTML = `
     <div style="padding:16px;display:flex;flex-direction:column;gap:14px;color:var(--text,${WB_COL.text})">
       <div style="font-size:1.15em;color:var(--gold,${WB_COL.p0});font-weight:bold">⚔ Warband</div>
-      <div style="font-size:.82em;color:var(--text2,#9a9282);max-width:640px">
-        Read the battlefield, draft your warband, spend your deaths wisely.
-        Two companies of mercenaries, in a world where the dead don't fully leave.
+      <div style="font-size:.82em;color:var(--text2,#9a9282);max-width:640px;line-height:1.55">
+        ${wbEsc(WB.CFG.tagline || '')}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <label style="font-size:.75em;color:#8a8272">Player 1
@@ -1942,14 +1960,23 @@ function wbUnitCard(name, opts = {}) {
   const cls = { light: '◦ Light', medium: '◈ Medium', heavy: '⬢ Heavy' }[a.movement_class];
   const cap = a.damage_cap ? `cap ${a.damage_cap}` : 'no cap';
   const kw = a.keywords.join(' ');
-  return `<div ${opts.onclick ? `onclick="${opts.onclick}" style="cursor:pointer;"` : 'style="'}
-      border:1px solid ${opts.dim ? '#3a3630' : WB_COL.line};border-radius:6px;padding:8px 10px;
-      background:${opts.dim ? '#1a1917' : '#221f1c'};min-width:150px;opacity:${opts.dim ? .45 : 1}">
+  // The style used to be written INSIDE the ternary, so the clickable branch
+  // closed the style attribute before any of these properties were in it and the
+  // browser read `border:1px`, `solid` and the rest as attributes of the div. A
+  // pack card therefore drew with no border, no background and no padding, while
+  // the roster cards beside it -- which take no onclick -- drew correctly.
+  const style = `border:1px solid ${opts.dim ? '#3a3630' : WB_COL.line};border-radius:6px;padding:8px 10px;`
+    + `background:${opts.dim ? '#1a1917' : '#221f1c'};min-width:150px;opacity:${opts.dim ? .45 : 1};`
+    + (opts.onclick ? 'cursor:pointer' : '');
+  return `<div ${opts.onclick ? `onclick="${opts.onclick}"` : ''} style="${style}">
     <div style="color:${WB_COL.p0};font-weight:bold;font-size:.85em">${wbEsc(name)}</div>
     <div style="font-size:.68em;color:#8a8272">${cls} · cost ${a.cost} · ${a.vp} vp</div>
     <div style="font-size:.72em;color:${WB_COL.text};margin-top:3px">
       ${s.hp} hp · ${s.atk} atk · ${cap}<br>move ${s.move} · range ${s.range}</div>
     <div style="font-size:.65em;color:#7d7565;margin-top:3px">${wbEsc(kw)}</div>
+    <div style="margin-top:5px"><button class="ng-btn"
+      onclick="event.stopPropagation();wbInspectArch('${wbAttrStr(name)}')"
+      style="font-size:.62em;padding:1px 6px;opacity:.8">What is this?</button></div>
   </div>`;
 }
 
@@ -1966,10 +1993,14 @@ function wbRenderDraft() {
     <div style="padding:14px;color:${WB_COL.text}">
       ${wbTurnBanner()}
       <div style="font-size:1.05em;color:${WB_COL.p0};font-weight:bold">Draft — pack ${S.packNo} of ${WB.STABLE}</div>
-      <div style="font-size:.78em;color:#9a9282;margin:4px 0 10px">
+      <div style="font-size:.78em;color:#9a9282;margin:4px 0 6px">
         <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(who)}</b> picks.
         Everything is open: both companies and every discard stay visible.
       </div>
+      ${wbPhaseLine(`This is the field you will fight on, and you are drafting against it &mdash;
+        <b>click any hex to read the ground</b>, and <b>What is this?</b> on a card to read the unit.
+        Take one of the three; the rest burn. When both companies hold ${wbNum(WB.STABLE)} units you assign
+        your colours, and then take the field.`)}
       ${wbMapSvg({ preview: true })}
       <div style="display:flex;gap:10px;margin:12px 0;flex-wrap:wrap">
         ${S.pack.map((n) => wbUnitCard(n, { onclick: `wbPick('${wbAttrStr(n)}')`, dim: !WB.legal(S.rosters[picking], n) })).join('')}
@@ -2001,6 +2032,8 @@ function wbRenderBanner() {
         When the bearer dies the banner falls: +2 activation every turn thereafter, and the enemy scores
         ${WB.CFG.banner_bonus_vp} bonus points for taking it.
       </div>
+      ${wbPhaseLine(`The draft is finished. Pick the bearer, and when both companies have chosen, the
+        match begins: you deploy from your own edge columns, then play alternates one action at a time.`)}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${S.rosters[p].map((n, i) => wbUnitCard(n, { onclick: `wbSetBanner(${i})` })).join('')}
       </div>
@@ -2066,6 +2099,297 @@ function wbDeployableHexes(pl) {
     && (pl === 0 ? WB.col(h.q, h.r) <= 1 : WB.col(h.q, h.r) >= WB.W - 2));
 }
 
+// ── affordances ──────────────────────────────────────────────────────────────
+// The interface taught movement and never taught combat. Attack was implemented,
+// and implemented as click-your-unit-then-click-the-enemy, but the board
+// highlighted only WB.reachable() -- so the one thing a new player could see was
+// where a unit could walk. Clicking an enemy answered with silence, because
+// wbSelect looked the uid up in your OWN army and returned when it found nothing.
+//
+// Nothing below changes a rule. It answers the two questions the board never
+// answered: what can this unit hit right now, and why did that click do nothing.
+
+// What the selected unit could attack RIGHT NOW. Deliberately the same six
+// conditions wbMoveAttack applies -- the unit belongs to the side whose turn it
+// is, a living deployed enemy, inside the effective range, with a clear line for
+// a shooter, and an activation this seat can actually pay -- so nothing is
+// highlighted that the rules would then refuse. Highlighting a target that comes
+// back "not enough activation" is the same defect as highlighting nothing, one
+// step further along.
+//
+// The ownership test is NOT redundant with the pool test, and the two look alike
+// enough that it was missing at first. A selection can outlive the turn it was
+// made in: wbLoad deliberately keeps the highlight across a snapshot, so that the
+// opponent acting does not clear your selection, and over the wire the seat
+// advances by HYDRATION rather than by wbMovePass's `S.sel = null`. Without this
+// line the board went on ringing targets in orange after the opponent's move,
+// and the rules answered every one of them with "not your unit". A highlight that
+// lies is worse than no highlight: it is the thing this branch exists to repair.
+function wbAttackTargets(u) {
+  const S = warband_state;
+  if (!S || S.phase !== 'play' || !S.G || S.rally) return [];
+  if (!u || !u.alive || !u.deployed) return [];
+  if (u.owner !== wbActive()) return [];
+  if (wbCost(u) > S.pools[u.owner]) return [];
+  const uH = WB.hexOf(S.G, u);
+  if (!uH) return [];
+  const out = [];
+  for (const t of S.G.units.values()) {
+    if (!t.alive || !t.deployed || t.owner === u.owner) continue;
+    const tH = WB.hexOf(S.G, t);
+    if (!tH) continue;
+    if (WB.hexDist(uH, tH) > WB.effRange(S.G, u)) continue;
+    if (u.range > 1 && !WB.losClear(S.board, uH, tH)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+// Why this unit cannot act, in the player's words, or null if it can. wbSelect
+// says this out loud on the click rather than selecting a unit that will then
+// refuse everything it is asked to do.
+function wbIdleReason(S, u) {
+  if (!u.deployed) {
+    return u.cost > S.dp[u.owner]
+      ? `${u.name} costs ${u.cost} deployment ${u.cost === 1 ? 'point' : 'points'} and you hold ${S.dp[u.owner]}`
+      : null;
+  }
+  const cost = wbCost(u);
+  if (cost > S.pools[u.owner]) {
+    const acted = (S.acted && S.acted[u.owner] && S.acted[u.owner].get(u.uid)) || 0;
+    return `${u.name} has acted ${acted} ${acted === 1 ? 'time' : 'times'} this turn, so its next action costs ${cost} and you hold ${S.pools[u.owner]}`;
+  }
+  return null;
+}
+
+// ── the activation economy, in numbers ───────────────────────────────────────
+// The pool changes with a Leader alive and with every fallen banner, so pips are
+// ambiguous: five pips out of an unknown total says nothing. What was spent is
+// DERIVED rather than remembered -- an action by a unit that has already acted n
+// times costs its class cost times (n + 1), so n actions have cost the class cost
+// times 1 + 2 + ... + n. Nothing else in any driver subtracts from the pool.
+function wbSpentThisTurn(S, pl) {
+  const m = S.acted && S.acted[pl];
+  if (!m || typeof m.forEach !== 'function') return 0;
+  let spent = 0;
+  m.forEach((n, uid) => {
+    const u = S.G && S.G.units.get(uid);
+    const each = u ? (WB.ACT_COST[u.cls] || 0) : 0;
+    spent += (each * n * (n + 1)) / 2;
+  });
+  return spent;
+}
+
+// ── active abilities ─────────────────────────────────────────────────────────
+// An ability that renders only when it can be used is an ability the player never
+// learns about: a Warlord with nobody in earshot showed nothing at all, and Rally
+// sat in the row with Pass and Abandon, which are controls on the GAME rather
+// than on the unit. Attacks are targets on the board; abilities are controls on
+// the unit, and they appear whether or not they are usable, greyed with a reason.
+//
+// WB_ACTIVE is the implemented set. Everything else an archetype declares is read
+// out of config's `ab` prose and shown as what it is -- Brace, Anchor, Sunder and
+// Mark Target are in the data and in no driver. Implementing one means adding an
+// entry here, not finding somewhere new to put a button.
+const WB_ACTIVE = [
+  {
+    name: 'Rally',
+    has: (u) => !!u.rallyN,
+    cost: (u) => wbCost(u),
+    // The first reason that applies is the one shown, cheapest question first.
+    why: (S, u) => (u.owner !== wbActive() ? "not this company's turn"
+      : !u.deployed ? 'not on the field yet'
+      : S.rally ? 'a rally is already under way'
+      : wbCost(u) > S.pools[u.owner]
+        ? `not enough activation - ${wbCost(u)} needed, ${S.pools[u.owner]} left`
+        : !wbRallyTargets(u).length ? `no ally within ${u.rallyRange} hexes` : null),
+    call: (u) => `wbRally(${wbAttrNum(u.uid)})`,
+  },
+];
+
+// "Brace (1 activation): ..." -> Brace, and the parenthesis that says how it is
+// paid for. Anchored at the start so it reads a declaration and not a mention.
+const WB_AB_RE = /^([A-Z][\w' -]*?)\s*\(([^)]*)\)/;
+
+function wbUnitAbilities(u) {
+  const S = warband_state, out = [];
+  const a = Object.prototype.hasOwnProperty.call(WB.ARCH, u.name) ? WB.ARCH[u.name] : null;
+  const text = a && typeof a.ab === 'string' ? a.ab : '';
+  const m = WB_AB_RE.exec(text);
+  const declared = m ? m[1] : null;
+  const triggered = m ? /trigger/i.test(m[2]) : false;
+  for (const ab of WB_ACTIVE) {
+    if (!ab.has(u)) continue;
+    const why = ab.why(S, u);
+    out.push({ name: ab.name, cost: ab.cost(u), why, call: why ? null : ab.call(u), text });
+  }
+  if (declared && !out.some((o) => o.name === declared)) {
+    out.push({
+      name: declared, cost: null, text,
+      why: triggered
+        ? 'triggered on its own, there is nothing to click'
+        : 'declared in the rules, not implemented in this prototype yet',
+      call: null,
+    });
+  }
+  return out;
+}
+
+// ── inspection ───────────────────────────────────────────────────────────────
+// Reading the board is not playing it. Every entry point here writes to wbUi and
+// to nothing else -- no move, no commit, no wire traffic -- which is what lets
+// inspection be live during the DRAFT, where the map is the whole design claim,
+// without the draft screen accepting gameplay clicks.
+function wbInspectHex(k) { wbUi.notice = null; wbUi.inspect = { hex: wbText(k) }; wbShow(); }
+function wbInspectArch(name) { wbUi.notice = null; wbUi.inspect = { arch: wbText(name) }; wbShow(); }
+function wbInspectClose() { wbUi.inspect = null; wbShow(); }
+
+// config.json's keyword glossary, by id. Twelve entries with real descriptions,
+// none of which had ever reached a screen. Built once and cached: the config does
+// not change while the page is open.
+let wbGloss = null;
+function wbGlossary() {
+  if (!wbGloss) {
+    wbGloss = Object.create(null);
+    for (const kw of (WB.CFG.keywords || [])) if (kw && kw.id) wbGloss[kw.id] = kw;
+  }
+  return wbGloss;
+}
+
+// Keyword ids come from ARCH, which is config and trusted; they are escaped
+// anyway, because the rule in this file is that nothing reaches HTML unescaped
+// and an exception is the thing the next edit forgets.
+function wbKeywordBlock(ids) {
+  const g = wbGlossary();
+  const rows = (ids || []).map((id) => {
+    const kw = g[id];
+    return `<div style="margin-top:5px"><b style="color:${WB_COL.p0}">${wbEsc(kw ? kw.name : id)}</b>
+      <span style="color:#9a9282">&mdash; ${wbEsc(kw ? kw.description : 'no glossary entry for this keyword')}</span></div>`;
+  }).join('');
+  return rows || '<div style="margin-top:5px;color:#6f6759">No keywords.</div>';
+}
+
+// What `vp` means, which the player had no way to find out. Both numbers come
+// from config rather than from a sentence somebody typed: BREAK_NUM/BREAK_DEN is
+// win_condition.threshold_fraction, the same value the damage tracks are drawn
+// from.
+function wbVpLine(vp) {
+  return `<b>${wbNum(vp)} victory value</b> &mdash; what your OPPONENT scores for killing this unit.
+    A company breaks when the points scored against it reach ${wbNum(WB.BREAK_NUM)}/${wbNum(WB.BREAK_DEN)}
+    of its own warband's total value.`;
+}
+
+const WB_PANEL = `border:1px solid ${WB_COL.line};border-radius:6px;background:#1e1c19;padding:9px 11px`;
+const WB_CLOSE_BTN = `<button class="ng-btn" onclick="wbInspectClose()" style="font-size:.7em;opacity:.7">Close</button>`;
+
+// One archetype, read out of config: what it is, what it costs, what it is worth
+// to the enemy, and what its keywords actually do. `live` is the unit on the
+// field when there is one, so the panel shows current hit points rather than the
+// archetype's starting ones.
+function wbArchPanel(name) {
+  if (!Object.prototype.hasOwnProperty.call(WB.ARCH, name)) {
+    return `<div style="${WB_PANEL}"><b>${wbEsc(name)}</b>
+      <div style="font-size:.75em;color:#9a9282;margin-top:4px">No archetype by that name.</div>
+      <div style="margin-top:7px">${WB_CLOSE_BTN}</div></div>`;
+  }
+  const a = WB.ARCH[name], st = a.stats;
+  const cap = a.damage_cap ? `cap ${a.damage_cap}` : 'no damage cap';
+  const hasAb = typeof a.ab === 'string' && !/^none\b/i.test(a.ab);
+  return `<div style="${WB_PANEL}">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(name)}</b>
+      <span style="font-size:.7em;color:#8a8272">${wbEsc(a.movement_class)} &middot; costs ${wbEsc(String(a.cost))} to deploy</span>
+    </div>
+    <div style="font-size:.75em;color:${WB_COL.text};margin-top:4px">
+      ${wbEsc(String(st.hp))} hp &middot; ${wbEsc(String(st.atk))} atk &middot; range ${wbEsc(String(st.range))}
+      &middot; move ${wbEsc(String(st.move))} &middot; ${wbEsc(cap)}
+    </div>
+    <div style="font-size:.73em;color:#9a9282;margin-top:5px;line-height:1.5">${wbEsc(a.description)}</div>
+    <div style="font-size:.73em;color:${WB_COL.text};margin-top:6px;line-height:1.5">
+      ${wbVpLine(a.vp)}</div>
+    ${hasAb ? `<div style="font-size:.72em;color:#9a9282;margin-top:6px;line-height:1.5">
+      <b style="color:${WB_COL.p0}">Ability</b> &mdash; ${wbEsc(a.ab)}</div>` : ''}
+    <div style="font-size:.72em;margin-top:6px;line-height:1.5;max-height:190px;overflow:auto">
+      ${wbKeywordBlock(a.keywords)}</div>
+    <div style="margin-top:8px">${WB_CLOSE_BTN}</div>
+  </div>`;
+}
+
+// One hex: what the ground does, and who is standing on it. Every fact is read
+// off the zone record rather than restated here, so retuning the config retunes
+// the text.
+function wbHexPanel(k) {
+  const S = warband_state;
+  const h = S && S.board ? S.board.get(k) : null;
+  if (!h) return '';
+  const z = WB.ZONES[h.terrain] || WB.ZONES.open;
+  const facts = [];
+  if (z.impassable) facts.push('Impassable: nothing may enter');
+  else if (z.blocks_movement) facts.push('Blocks movement: nothing may enter, but it can be fought across');
+  else facts.push(`Costs ${wbNum(z.movement_cost == null ? 1 : z.movement_cost)} movement to enter (Light units always pay 1, Heavy units pay one more)`);
+  if (z.grants_cover) facts.push("Gives cover: incoming damage is reduced by the defender's class value");
+  if (z.blocks_los) facts.push('Blocks line of sight for shooting across it');
+  if (z.ranged_bonus) facts.push(`Shooting from here gains +${wbNum(z.ranged_bonus)} damage and +${wbNum(z.ranged_bonus)} range`);
+  facts.push(z.allows_deployment ? 'Units may deploy here' : 'No deployment here');
+  if (h.objective) facts.push('OBJECTIVE: holding more of these than your opponent scores at the end of each turn');
+  const occ = S.G ? WB.occupantOf(S.G, h) : null;
+  return `<div style="${WB_PANEL}">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(z.name)}</b>
+      <span style="font-size:.7em;color:#8a8272">hex ${wbEsc(k)}</span>
+    </div>
+    <div style="font-size:.73em;color:#9a9282;margin-top:4px;line-height:1.5">${wbEsc(z.description)}</div>
+    <ul style="font-size:.72em;color:${WB_COL.text};margin:6px 0 0;padding-left:16px;line-height:1.55">
+      ${facts.map((f) => `<li>${wbEsc(f)}</li>`).join('')}</ul>
+    ${occ && occ.alive ? `<div style="font-size:.73em;margin-top:7px;border-top:1px solid #3a352d;padding-top:6px">
+      <b style="color:${occ.owner === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(occ.name)}</b>
+      <span style="color:#8a8272">&mdash; ${wbEsc(S.names[occ.owner] || '')}, ${wbNum(occ.hp)} hp</span>
+      <div style="margin-top:4px;color:${WB_COL.text};line-height:1.5">${wbVpLine(occ.vp)}</div>
+      <div style="margin-top:4px;max-height:150px;overflow:auto">${wbKeywordBlock(
+        Object.prototype.hasOwnProperty.call(WB.ARCH, occ.name) ? WB.ARCH[occ.name].keywords : [])}</div>
+    </div>` : ''}
+    <div style="margin-top:8px">${WB_CLOSE_BTN}</div>
+  </div>`;
+}
+
+// Composed into every screen by wbDraw, exactly as the notice is, so the draft
+// gets it for free -- and the draft is where it matters most.
+function wbInspectPanel() {
+  const i = wbUi.inspect;
+  if (!i || !warband_state) return '';
+  if (i.hex != null) return `<div class="wb-inspect" style="margin:0 0 8px">${wbHexPanel(i.hex)}</div>`;
+  if (i.arch != null) return `<div class="wb-inspect" style="margin:0 0 8px">${wbArchPanel(i.arch)}</div>`;
+  return '';
+}
+
+// ── what happens next ────────────────────────────────────────────────────────
+// One line per phase. "Next mechanic unclear after unit placement" was a real
+// report from a real first game, and the answer is not a manual: it is a sentence
+// on the screen that already knows what the player just did.
+function wbPhaseLine(text) {
+  return `<div class="wb-phase" style="font-size:.74em;color:#9a9282;margin:6px 0 10px;padding:5px 9px;
+    border-left:2px solid ${WB_COL.p0};background:#1c1a18;line-height:1.5">${text}</div>`;
+}
+
+function wbPlayHint(S, pl) {
+  if (S.rally) return 'Rally: click one of your own men inside a dashed ring, then click the hex to move them to.';
+  const sel = wbSelUnit(S, 'unit');
+  if (sel) {
+    const hits = wbAttackTargets(sel).length;
+    return `<b>${wbEsc(sel.name)}</b> is selected. Gold hexes are where it can move &mdash; click one.
+      ${hits ? 'Enemies ringed in orange are in reach &mdash; click one to attack.'
+             : 'No enemy is in reach of it right now.'}
+      Click any other hex and it tells you what is on that ground rather than moving there.
+      <b>Deselect</b> to read the gold ones too.`;
+  }
+  if (wbSelUnit(S, 'deploy')) return `Now click a gold hex inside your own edge columns to put that unit on
+    the field. Any other hex tells you what is on it instead.`;
+  if (S.dp[pl] > 0 && S.armies[pl].some((u) => u.alive && !u.deployed && u.cost <= S.dp[pl])) {
+    return 'Deploy first: click a unit on the bench below, then a gold hex in your own edge columns. Deploying costs deployment points, not activation, and unspent deployment points do not carry over.';
+  }
+  return 'Click one of your units on the board, then click where to move it &mdash; or click an enemy to attack it. Pass when you are finished; when both companies have passed, the turn ends and objectives score.';
+}
+
 // ── Skittish ─────────────────────────────────────────────────────────────────
 // A unit that has just moved shoves any adjacent skittish enemy one hex directly
 // away along the line from the mover. Neither player chooses the direction: it
@@ -2104,20 +2428,60 @@ function wbRally(uid) { wbCommit({ type: 'rally', uid }); }
 function wbRallyDone() { wbCommit({ type: 'rally_end' }); }
 
 // Purely local: what is highlighted is not a move, and never leaves this client.
+//
+// Every `return` in here used to be a silent one. That is the whole reason the
+// designer could not find the attack: they clicked an enemy, this function looked
+// the uid up in their OWN army, found nothing, and returned -- no message, no
+// highlight, nothing. Clicking a unit that could not afford to act did the same.
+// So a click that cannot select now either ACTS (an enemy, with one of yours
+// already selected, is an attack -- the model the player already expected) or
+// SAYS SO, and in either case it puts what was clicked on the screen to read.
 function wbSelect(uid) {
   const S = warband_state, pl = wbActive();
-  if (!wbCanAct(S)) return;
+  wbUi.notice = null;
+  const any = S && S.G ? S.G.units.get(uid) : null;
+  // Not this seat's turn. Looking is still allowed -- it is not a move -- so the
+  // click inspects and says why nothing else happened.
+  if (!wbCanAct(S)) {
+    if (any) wbUi.inspect = any.deployed && any.at != null ? { hex: any.at } : { arch: any.name };
+    wbUi.notice = 'Not your turn — you can look at anything, but only the acting company may move.';
+    wbShow();
+    return;
+  }
   const u = S.armies[pl].find((x) => x.uid === uid);
-  if (!u) return;
+  if (!u) {
+    // An enemy, or a corpse. An enemy while one of yours is selected IS the
+    // attack gesture: wbHexClick already read it that way when the click landed
+    // on the HEX, but the unit token sits on top of the hex and swallowed it.
+    if (any && any.alive && any.deployed && any.owner !== pl) {
+      const mine = S.rally ? null : wbSelUnit(S, 'unit');
+      if (mine) return void wbCommit({ type: 'attack', uid: mine.uid, target: any.uid });
+      wbUi.inspect = { hex: any.at };
+      wbUi.notice = S.rally
+        ? 'A rally is under way — move the men on the captain\'s word first.'
+        : 'Select one of your own units first, then click an enemy to attack it.';
+      wbShow();
+      return;
+    }
+    if (any) { wbUi.inspect = { arch: any.name }; wbUi.notice = `${any.name} is no longer on the field.`; wbShow(); }
+    return;
+  }
   if (S.rally) {                                       // choosing who to rally
     const cap = S.G.units.get(S.rally.uid);
     if (!u.alive || !u.deployed) return;
-    if (u.uid === S.rally.uid || S.rally.moved.includes(u.uid)) return;
-    if (WB.hexDist(WB.hexOf(S.G, cap), WB.hexOf(S.G, u)) > cap.rallyRange) return;
+    if (u.uid === S.rally.uid) { wbUi.notice = 'The captain does not move on their own word.'; wbShow(); return; }
+    if (S.rally.moved.includes(u.uid)) { wbUi.notice = `${u.name} has already moved on the captain's word.`; wbShow(); return; }
+    if (WB.hexDist(WB.hexOf(S.G, cap), WB.hexOf(S.G, u)) > cap.rallyRange) {
+      wbUi.notice = `${u.name} is out of earshot — the captain reaches ${cap.rallyRange} hexes.`; wbShow(); return;
+    }
     S.sel = { picked: u.uid }; wbShow(); return;
   }
+  // A unit that cannot act is still SELECTED -- so its panel opens and the player
+  // can read it -- and the reason it cannot act is said out loud.
+  const idle = wbIdleReason(S, u);
+  if (idle) wbUi.notice = `${idle[0].toUpperCase()}${idle.slice(1)}.`;
   if (!u.deployed) {                                   // stage it for deployment
-    if (u.cost > S.dp[pl]) return;
+    if (idle) { wbUi.inspect = { arch: u.name }; wbShow(); return; }
     S.sel = { deploy: u.uid }; wbShow(); return;
   }
   S.sel = { unit: u.uid }; wbShow();
@@ -2129,16 +2493,77 @@ function wbHexClick(k) {
   const S = warband_state;
   if (!S || !S.board.get(k)) return;
   if (S.rally) {
-    if (S.sel && S.sel.picked != null) wbCommit({ type: 'rally_move', uid: S.sel.picked, to: k });
+    if (S.sel && S.sel.picked != null) return void wbClickHex(k, { type: 'rally_move', uid: S.sel.picked, to: k });
+    // The fourth silence, found while fixing the other three: a rally is open,
+    // nobody is picked, and a click on the board did nothing and said nothing.
+    wbUi.inspect = { hex: k };
+    wbUi.notice = "Choose one of your own men inside a dashed ring first, then the hex to move them to.";
+    wbShow();
     return;
   }
-  if (!S.sel) return;
-  if (S.sel.deploy != null) return void wbCommit({ type: 'deploy', uid: S.sel.deploy, to: k });
+  // Nothing selected. This used to return in silence, which is exactly what the
+  // first player to try the game reported: they clicked, and the game answered
+  // with nothing at all. A click with no selection is now a READ of that hex --
+  // terrain, and whoever is standing on it -- plus the sentence saying what a
+  // click has to be to do something.
+  if (!S.sel) {
+    const occ = WB.occupantOf(S.G, S.board.get(k));
+    wbUi.inspect = { hex: k };
+    wbUi.notice = occ && occ.alive && occ.owner !== wbActive()
+      ? 'Select one of your own units first, then click an enemy to attack it.'
+      : null;
+    wbShow();
+    return;
+  }
+  if (S.sel.deploy != null) return void wbClickHex(k, { type: 'deploy', uid: S.sel.deploy, to: k });
   if (S.sel.unit == null) return;
   const occ = WB.occupantOf(S.G, S.board.get(k));
-  if (occ && occ.owner !== wbActive()) wbCommit({ type: 'attack', uid: S.sel.unit, target: occ.uid });
-  else wbCommit({ type: 'move', uid: S.sel.unit, to: k });
+  if (occ && occ.owner !== wbActive()) return void wbClickHex(k, { type: 'attack', uid: S.sel.unit, target: occ.uid });
+  wbClickHex(k, { type: 'move', uid: S.sel.unit, to: k });
 }
+
+// A click the rules REFUSE is a click that asked a question. The refusal already
+// reaches the player as a notice in the rules' own words; this adds what they were
+// pointing at, which is the whole of the terrain inspection this branch built and
+// which was otherwise unreachable during play -- once a unit was in hand, every
+// hex click went to `move`, and there was no way to read the ground without
+// giving up the selection.
+//
+// Routed through the REAL move rather than through a UI copy of the legality
+// test, deliberately. A second opinion about what is reachable, living in the
+// click reader, is exactly how this repository ended up with three drivers
+// disagreeing about objectives; here the rules answer, and the interface only
+// decides what to show alongside the answer.
+//
+// One honest limit: a guest changes nothing locally, so wbCommit returns ok on
+// the send and the host's refusal arrives later, through wbMpRejected. A guest
+// therefore gets the sentence and not the panel. The panel is a convenience; the
+// sentence is the thing that was missing.
+function wbClickHex(k, move) {
+  const r = wbCommit(move);
+  if (r && r.ok === false) { wbUi.inspect = { hex: wbText(k) }; wbShow(); }
+}
+
+// Puts the unit down. Local only -- it changes what this client highlights and
+// nothing else -- and it is what makes "any hex reads the ground" true for the
+// hexes the unit CAN reach, which are the ones a refusal will never route to
+// inspection because moving there is legal.
+function wbDeselect() {
+  const S = warband_state;
+  if (S) S.sel = null;
+  wbUi.notice = null;
+  wbShow();
+}
+
+// The one thing a narrow screen cannot have both of. Nine hex columns across a
+// 320px viewport is 35px a column, and a terrain name inside a 35px hex renders
+// at about four pixels -- so "the whole battlefield at once", which is the entire
+// premise of drafting against it, and "hexes a thumb can hit, with labels that can
+// be read", are geometrically incompatible there. They are not incompatible on a
+// desktop, where the board fits at full size and this control changes nothing at
+// all. So the player chooses which one they want, rather than this file choosing
+// for them and being wrong half the time.
+function wbBoardZoom() { wbUi.boardFull = !wbUi.boardFull; wbShow(); }
 
 function wbAttack(S, u, target, cost) {
   const pl = u.owner;
@@ -2429,6 +2854,12 @@ function wbActingUnit(S, uid) {
 
 function wbMoveDraft(S, m) {
   if (S.phase !== 'draft') return wbNo('not drafting');
+  // The refusal used to interpolate any rejected value, so a JSON object whose
+  // primitive hooks were not callable turned an illegal pick into an exception.
+  // Check the move's text field before either the pack or the message uses it:
+  // guest-influenced moves are refused here because the host has no catch around
+  // its rules loop.
+  if (typeof m.name !== 'string') return wbNo('draft pick is not a name');
   if (!S.pack.includes(m.name)) return wbNo(`${m.name} is not in the pack`);
   if (!WB.legal(S.rosters[S.toPick], m.name)) return wbNo(`${m.name} is not a legal pick`);
   S.rosters[S.toPick].push(m.name);
@@ -2627,6 +3058,15 @@ function wbCanAct(S) {
 function wbFreshSession() {
   return {
     notice: null,      // shown once: a message about your click, not a fact about the match
+    // What the player has asked to READ: { hex } or { arch }. Purely local, like
+    // the selection, and deliberately NOT part of the selection -- inspecting is
+    // not acting, so it must survive a refused click and must be available in the
+    // draft, where there is nothing to act with. Stored as a key or a name and
+    // resolved fresh on every render, so it can never show a stale board.
+    inspect: null,
+    // FIT or FULL board. A fact about this screen, not about the match, and it
+    // belongs to the session for the same reason the selection does not travel.
+    boardFull: false,
     confirmPass: false,// this player's Pass is armed and waiting on an answer, and is NOT game state
     rejectDrawn: 0,    // when a refusal off the wire was last allowed to redraw
     syncAnswered: 0,   // when the last sync-triggered push went out
@@ -2681,6 +3121,10 @@ function wbSessionEnd() {
 function wbCommit(move) {
   const S = warband_state;
   wbUi.notice = null;
+  // The board is about to change, so whatever was being READ has been answered.
+  // Cleared here rather than in each click handler for the same reason the notice
+  // is: there are six entry points and a seventh is coming.
+  wbUi.inspect = null;
   // Any committed click answers the pending pass question by making it moot --
   // deploying the last affordable company, or moving instead. Cleared here rather
   // than in each handler so a sixth entry point cannot forget.
@@ -2931,11 +3375,26 @@ function wbAskAnswered() {
 function warbandSwitchMatch() {
   if (!wbMp || wbMp.mode !== 'guest' || !wbUi.offer) return;
   const pub = wbUi.offer;
+  const kept = warband_state;
+  // This path clears the three facts that make the second click deliberate before
+  // it touches the candidate. Restoring only the board after a bad candidate left
+  // the old game unanchored, with its offer gone and its pending answer falsely
+  // closed; confirmPass is included because the play renderer may clear it before
+  // encountering the shape that makes it refuse the draw.
+  const keptUi = {
+    offer: wbUi.offer, resyncAsked: wbUi.resyncAsked,
+    anchor: wbUi.anchor, confirmPass: wbUi.confirmPass,
+  };
   wbUi.offer = null;
   wbUi.resyncAsked = false;
   wbUi.anchor = null;                // this game is being given up, by hand
-  wbLoad(pub);
-  wbShow();
+  try {
+    wbLoad(pub);
+    wbShow();
+  } catch (_) {
+    warband_state = kept;
+    Object.assign(wbUi, keptUi);
+  }
 }
 
 // A snapshot that is applied has to be drawn, or the screen stops being the
@@ -2954,6 +3413,30 @@ function warbandSwitchMatch() {
 // removes the free half of the bill and not the whole of it. The rest needs the
 // channel rationed by whoever carries it.
 const WB_DRAW_MS = 250, WB_DRAW_BURST = 4;
+
+// Rendering is also validation, but validation cannot be rationed: once the
+// visible burst is spent, wbShowLoaded owes its work to a timer and therefore
+// cannot report a bad snapshot to the handler that applied it. Run the same phase
+// renderer into an in-memory sink first. This still exercises every assumption in
+// the templates and map builder, while the expensive DOM replacement remains
+// limited to the burst plus one owed draw. A renderer is allowed to tidy the local
+// pass prompt during a real paint; a probe is not, so that one mutation is put
+// back before returning.
+let wbDrawProbe = null;
+function wbCanRenderLoaded() {
+  const probe = { drawn: false };
+  const confirmPass = wbUi.confirmPass;
+  wbDrawProbe = probe;
+  try {
+    wbShow();
+    return probe.drawn;
+  } catch (_) {
+    return false;
+  } finally {
+    wbDrawProbe = null;
+    wbUi.confirmPass = confirmPass;
+  }
+}
 
 function wbShowLoaded() {
   const now = Date.now();
@@ -3221,27 +3704,24 @@ function wbMpBind() {
     // than a refusal; this is the net under them, and what it keeps is the game
     // that was already on the screen.
     //
-    // KNOWN, and stated here rather than in a tracker because the next reader
-    // will otherwise trust this net further than it deserves: it holds only when
-    // the draw below is SYNCHRONOUS. wbShowLoaded is rationed, and past the burst
-    // it owes the draw to a timer instead. A deferred draw does not throw, so
-    // nothing reaches the catch, so a snapshot that a render would have rejected
-    // stays applied -- and while a draw is owed the rest of that window is
-    // equally unprotected. Four replays of the host's own snapshot spend the
-    // burst; the fifth message is the one that lands. The rollback is therefore
-    // rate-dependent, not an invariant, and this comment used to claim otherwise.
-    //
-    // Two changes from different rounds, each right alone: the net assumed
-    // drawing happens with applying, and the ration made drawing asynchronous to
-    // stop a peer forcing a whole screen rebuild per message. The fix is to stop
-    // the net depending on WHEN a draw happens, and it is deliberately not made
-    // here -- it is a design change, not a patch, and it has its own slice.
+    // Renderability is proved before wbShowLoaded decides whether the visible draw
+    // happens now or on its timer. That is the boundary the old rollback net was
+    // missing: after four replays spent the burst, an unrenderable fifth snapshot
+    // used to remain applied because scheduling work cannot throw. The probe does
+    // not touch innerHTML, so keeping this invariant does not give an unsigned
+    // sender a full DOM rebuild per message.
     const kept = warband_state;
+    const confirmPass = wbUi.confirmPass;
     try {
       wbLoad(pub);
+      if (!wbCanRenderLoaded()) {
+        warband_state = kept;
+        return;
+      }
       wbShowLoaded();
     } catch (_) {
       warband_state = kept;
+      wbUi.confirmPass = confirmPass;
       return;
     }
     // Applied, so the ask -- if there was one -- has been answered.
@@ -3347,8 +3827,10 @@ function wbWaiting() {
 // and it is the kind of gap that grows back the moment a fifth screen is added.
 // So the composition happens once, here, rather than once per template.
 function wbDraw(html) {
-  const head = `${wbNoticeLine()}${wbOfferLine()}`;
-  wbSection().innerHTML = head ? `<div style="padding:12px 14px 0">${head}</div>${html}` : html;
+  const head = `${wbNoticeLine()}${wbOfferLine()}${wbInspectPanel()}`;
+  const screen = head ? `<div style="padding:12px 14px 0">${head}</div>${html}` : html;
+  if (wbDrawProbe) { wbDrawProbe.drawn = true; return; }
+  wbSection().innerHTML = screen;
 }
 
 // What the room says, when it disagrees with the screen and the player has asked.
@@ -3369,7 +3851,7 @@ function wbOfferLine() {
 // One line, in every phase, saying who you are and whether it is on you.
 function wbNoticeLine() {
   if (!wbUi.notice) return '';
-  return `<div style="font-size:.75em;margin:0 0 8px;padding:5px 8px;border-radius:4px;
+  return `<div class="wb-notice" style="font-size:.75em;margin:0 0 8px;padding:5px 8px;border-radius:4px;
       background:rgba(190,120,80,.14);border:1px solid #97552a">${wbEsc(wbUi.notice)}</div>`;
 }
 
@@ -3499,6 +3981,14 @@ function wbNum(v) {
   let n;
   try { n = Number(v); } catch (_) { return 0; }
   return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+// Text fields need a refusal-safe coercion too. String() can throw on plain JSON
+// such as {"toString":"x"}; that exact shape used to hide outside the last nine
+// log lines during play and detonate only when the end screen rendered the whole
+// log. Identity uses the same helper so a hostile match id becomes a stable
+// primitive (or null), never a fresh object reference on every snapshot.
+function wbText(v, fallback = '') {
+  try { return String(v); } catch (_) { return fallback; }
 }
 function wbNums(a) { return Array.isArray(a) ? a.map(wbNum) : null; }
 // A pair of numbers, always. against, breakAt, pools and dp are indexed by seat
@@ -3665,7 +4155,7 @@ function wbHydrate(pub) {
   const arr = (a) => (a ? a.slice() : null);
   const S = {
     rev: wbNum(pub.rev),
-    matchId: pub.matchId || null,
+    matchId: pub.matchId == null ? null : wbText(pub.matchId, null),
     seed, density, rng,
     // Before play begins there are no units, so the freshly built board IS the
     // board; afterwards the hydrated one carries the Last Stand terrain.
@@ -3716,7 +4206,10 @@ function wbHydrate(pub) {
     // numbers, and nothing renders them -- the Set is only ever asked whether it
     // holds one.
     seizedEver: new Set(Array.isArray(pub.seizedEver) ? pub.seizedEver : []),
-    log: Array.isArray(pub.log) ? pub.log.slice() : [],
+    // The play screen reads only the last nine entries, so render-time escaping
+    // cannot validate an older one. Coerce every entry at the wire boundary or a
+    // clean play snapshot can become an end-screen exception several turns later.
+    log: Array.isArray(pub.log) ? pub.log.map((entry) => wbText(entry)) : [],
     sel: null,
     armies: null,
   };
@@ -3738,30 +4231,90 @@ function wbSelUnit(S, field) {
 }
 function wbRallyCaptain(S) { return S.rally ? S.G.units.get(S.rally.uid) : null; }
 
+// The board speaks two highlight languages now, and they are deliberately not two
+// shades of one. GOLD, solid, on the hex outline: where the selected unit may GO.
+// ORANGE, dashed and heavier, ringing the enemy token: what it may HIT, this
+// instant, at the cost it can afford. Only movement had a language before, which
+// is why the interface taught movement and nothing else.
+//
+// `preview` still refuses gameplay clicks -- the draft screen must not move
+// pieces -- but it no longer refuses INSPECTION. The whole design claim is that
+// composition is chosen against known terrain, and a map you cannot interrogate
+// while drafting is decoration.
 function wbMapSvg(opts = {}) {
   const S = warband_state;
   const hexes = [...S.board.values()];
   const pts = hexes.map(wbPx);
-  const wpx = Math.max(...pts.map((p) => p.x)) + 90, hpx = Math.max(...pts.map((p) => p.y)) + 70;
+  const wpx = Math.round(Math.max(...pts.map((p) => p.x)) + WB_ORIGIN);
+  const hpx = Math.round(Math.max(...pts.map((p) => p.y)) + WB_ORIGIN);
   const poly = (c) => Array.from({ length: 6 }, (_, i) => {
     const a = Math.PI / 180 * (60 * i - 30);
     return `${(c.x + WB_SIZE * Math.cos(a)).toFixed(1)},${(c.y + WB_SIZE * Math.sin(a)).toFixed(1)}`;
   }).join(' ');
-  let out = `<svg width="${wpx}" height="${hpx}" style="background:${WB_COL.ink};border:1px solid ${WB_COL.line};border-radius:6px">`;
+  // Resolved ONCE for the whole board rather than per hex: reachable() is a flood
+  // fill and wbAttackTargets walks every unit, and the old code called reachable()
+  // sixty-three times to draw sixty-three hexes.
+  // Guarded for exactly the reason wbAttackTargets is: a selection preserved
+  // across a snapshot can belong to the side whose turn it no longer is, and gold
+  // hexes for a unit the rules will refuse to move are the same lie in the other
+  // language.
+  let mover = S.rally ? wbSelUnit(S, 'picked') : wbSelUnit(S, 'unit');
+  if (mover && mover.owner !== wbActive()) mover = null;
+  const reach = mover ? new Set(WB.reachable(S.G, mover).map((x) => WB.key(x.q, x.r))) : null;
+  const shooter = S.rally ? null : wbSelUnit(S, 'unit');
+  const hits = new Set(wbAttackTargets(shooter).map((t) => t.uid));
+  const rUnit = WB_SIZE * 0.42, rRing = WB_SIZE * 0.60;
+  // Two sizes, and the player picks. FIT scales the whole board into whatever
+  // width it is given -- the whole battlefield at once, which is what the draft is
+  // for, at the cost of small hexes on a phone. FULL holds every hex at its real
+  // size and lets the wrapper scroll, which is what a thumb needs, at the cost of
+  // seeing about half the field at a time. On any container at least ${wpx}px wide
+  // the two are identical, so this costs a desktop nothing.
+  const full = !!wbUi.boardFull;
+  let out = `<div class="wb-board" style="max-width:100%">
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">
+      <button class="ng-btn wb-board-zoom" onclick="wbBoardZoom()" style="font-size:.68em;opacity:.85">${
+        full ? 'Fit the whole field' : 'Full size — scroll to pan'}</button></div>
+    <div style="overflow-x:auto;max-width:100%">
+    <svg viewBox="0 0 ${wpx} ${hpx}" width="${wpx}" height="${hpx}"
+      style="${full ? '' : 'max-width:100%;height:auto;'}background:${WB_COL.ink};border:1px solid ${WB_COL.line};border-radius:6px">
+    <style>@media (max-width:560px){.wb-lbl-fit{display:none}}</style>`;
   for (const h of hexes) {
     const c = wbPx(h), k = WB.key(h.q, h.r);
-    const mover = S.rally ? wbSelUnit(S, 'picked') : wbSelUnit(S, 'unit');
-    const sel = mover && WB.reachable(S.G, mover).some((x) => x === h);
-    const dep = wbSelUnit(S, 'deploy') && h.occupant == null && WB.ZONES[h.terrain].allows_deployment
+    const z = WB.ZONES[h.terrain] || WB.ZONES.open;
+    const hOcc = S.G ? WB.occupantOf(S.G, h) : null;
+    const canMove = !!(reach && reach.has(k));
+    const canHit = !!(hOcc && hOcc.alive && hits.has(hOcc.uid));
+    const dep = wbSelUnit(S, 'deploy') && h.occupant == null && z.allows_deployment
       && (wbActive() === 0 ? WB.col(h.q, h.r) <= 1 : WB.col(h.q, h.r) >= WB.W - 2);
-    out += `<polygon points="${poly(c)}" fill="${wbEsc(WB_COL[h.terrain] || '#2b2b28')}"
-      stroke="${sel || dep ? WB_COL.p0 : '#3a352d'}" stroke-width="${sel || dep ? 2.5 : 1}"
-      ${opts.preview ? '' : `onclick="wbHexClick('${wbAttrStr(k)}')" style="cursor:pointer"`}/>`;
-    if (h.objective) out += `<circle cx="${c.x}" cy="${c.y}" r="${WB_SIZE * .72}" fill="none"
-      stroke="${h.controller === 0 ? WB_COL.p0 : h.controller === 1 ? WB_COL.p1 : '#6a6252'}" stroke-width="2" stroke-dasharray="4 3"/>`;
-    const zn = WB.ZONES[h.terrain].name;
-    out += `<text x="${c.x}" y="${c.y + WB_SIZE - 7}" text-anchor="middle" font-size="8" fill="#6a6252">${wbEsc(zn.slice(0, 7))}</text>`;
-    const hOcc = WB.occupantOf(S.G, h);
+    // Classes are the machine-readable half of the two languages, and they are
+    // what the tests assert against: a board that highlights nothing renders
+    // identically to one that highlights everything if you only look at colours.
+    const cls = ['wb-hex'];
+    if (canMove) cls.push('wb-move');
+    if (canHit) cls.push('wb-attack');
+    if (dep) cls.push('wb-deploy');
+    const lit = canMove || dep;
+    const click = opts.preview
+      ? `onclick="wbInspectHex('${wbAttrStr(k)}')" style="cursor:help"`
+      : `onclick="wbHexClick('${wbAttrStr(k)}')" style="cursor:pointer"`;
+    out += `<polygon class="${cls.join(' ')}" data-hex="${wbAttrStr(k)}" points="${poly(c)}"
+      fill="${wbEsc(WB_COL[h.terrain] || WB_COL.open)}"
+      stroke="${canHit ? WB_COL.hit : lit ? WB_COL.move : '#4a443a'}"
+      stroke-width="${canHit ? 3 : lit ? 3 : 1}"
+      ${canHit ? 'stroke-dasharray="6 4"' : ''} ${click}>
+      <title>${wbEsc(z.name)} — ${wbEsc(z.description)}${hOcc && hOcc.alive ? ` | ${wbEsc(hOcc.name)}, ${wbNum(hOcc.hp)} hp` : ''}</title></polygon>`;
+    if (h.objective) out += `<circle cx="${c.x}" cy="${c.y}" r="${(WB_SIZE * .74).toFixed(1)}" fill="none" pointer-events="none"
+      stroke="${h.controller === 0 ? WB_COL.p0 : h.controller === 1 ? WB_COL.p1 : '#8d846f'}" stroke-width="2" stroke-dasharray="4 3"/>`;
+    // On a narrow screen the FITTED board puts this label at about four pixels,
+    // which is not a small label but an unreadable smear over the fill it is
+    // meant to explain. So on that screen the fitted board drops the text and
+    // lets the terrain colours -- which now differ by hue and not by shade --
+    // carry the ground, with a tap on the hex giving the name and the rule in
+    // full. The FULL-size board keeps its labels at every width, because there
+    // the hex really is big enough to hold one.
+    out += `<text class="${full ? 'wb-lbl-full' : 'wb-lbl-fit'}" x="${c.x}" y="${(c.y + WB_SIZE - 9).toFixed(1)}"
+      text-anchor="middle" font-size="10" fill="${WB_COL.label}" pointer-events="none">${wbEsc(z.name.slice(0, 10))}</text>`;
     if (hOcc && hOcc.alive) {
       const u = hOcc, col = u.owner === 0 ? WB_COL.p0 : WB_COL.p1;
       const cap = wbRallyCaptain(S);
@@ -3769,14 +4322,84 @@ function wbMapSvg(opts = {}) {
       const rallyable = cap && u.owner === cap.owner
         && u.uid !== cap.uid && !S.rally.moved.includes(u.uid)
         && WB.hexDist(WB.hexOf(S.G, cap), WB.hexOf(S.G, u)) <= cap.rallyRange;
-      if (rallyable) out += `<circle cx="${c.x}" cy="${c.y - 4}" r="17" fill="none" stroke="${WB_COL.p0}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
-      out += `<circle cx="${c.x}" cy="${c.y - 4}" r="13" fill="${col}" stroke="${isSel ? '#fff' : WB_COL.ink}" stroke-width="${isSel ? 3 : 1.5}"
-        ${opts.preview ? '' : `onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer"`}/>`;
-      out += `<text x="${c.x}" y="${c.y - 1}" text-anchor="middle" font-size="10" font-weight="bold" fill="${WB_COL.ink}" pointer-events="none">${wbEsc(u.name[0])}${u.banner ? '⚑' : ''}</text>`;
-      out += `<text x="${c.x}" y="${c.y + 12}" text-anchor="middle" font-size="9" fill="${WB_COL.text}" pointer-events="none">${wbNum(u.hp)}</text>`;
+      if (rallyable) out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none" pointer-events="none"
+        stroke="${WB_COL.p0}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+      if (canHit) out += `<circle class="wb-target" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
+        pointer-events="none" stroke="${WB_COL.hit}" stroke-width="3" stroke-dasharray="5 4"/>`;
+      const tclick = opts.preview
+        ? `onclick="wbInspectHex('${wbAttrStr(k)}')" style="cursor:help"`
+        : `onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer"`;
+      out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rUnit.toFixed(1)}" fill="${col}"
+        stroke="${isSel ? '#fff' : WB_COL.ink}" stroke-width="${isSel ? 3 : 1.5}" ${tclick}>
+        <title>${wbEsc(u.name)} — ${wbNum(u.hp)} hp, ${wbNum(u.vp)} vp to the enemy${canHit ? ' — click to attack' : ''}</title></circle>`;
+      out += `<text x="${c.x}" y="${(c.y - 1).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="bold"
+        fill="${WB_COL.ink}" pointer-events="none">${wbEsc(u.name[0] || '?')}${u.banner ? '⚑' : ''}</text>`;
+      out += `<text x="${c.x}" y="${(c.y + 15).toFixed(1)}" text-anchor="middle" font-size="11"
+        fill="${WB_COL.text}" pointer-events="none">${wbNum(u.hp)}</text>`;
+      if (canHit) out += `<text x="${(c.x + rRing).toFixed(1)}" y="${(c.y - rRing + 4).toFixed(1)}" text-anchor="middle"
+        font-size="13" fill="${WB_COL.hit}" pointer-events="none">⚔</text>`;
     }
   }
-  return out + '</svg>';
+  return out + '</svg></div></div>';
+}
+
+// The selected unit's OWN controls, in their own box. Rally used to live in the
+// row with Pass and Abandon, which are controls on the match, and it rendered
+// only while it was usable -- so a Warlord with nobody in earshot showed nothing,
+// and a player could finish a whole game without learning the ability existed.
+//
+// Every ability the unit HAS appears here. The ones it cannot use right now are
+// greyed and carry the reason. Attacks are not in this box on purpose: an attack
+// is a target on the board, and the board is where it is chosen.
+function wbActionPanel(S, pl, u) {
+  const cost = wbCost(u);
+  // Whose turn it is, asked of the UNIT. A selection preserved across a snapshot
+  // can belong to the other company, and this panel's numbers pair the unit's
+  // cost with the ACTING player's pool -- two different companies' arithmetic in
+  // one sentence.
+  const acting = u.owner === pl;
+  const hexes = acting && u.deployed ? WB.reachable(S.G, u).length : 0;
+  const targets = acting ? wbAttackTargets(u) : [];
+  const abil = wbUnitAbilities(u);
+  const arch = Object.prototype.hasOwnProperty.call(WB.ARCH, u.name) ? WB.ARCH[u.name] : null;
+  const btn = (x) => (x.call
+    ? `<button class="ng-btn" onclick="${x.call}" style="font-size:.78em">${wbEsc(x.name)}${x.cost != null ? ` (${wbNum(x.cost)})` : ''}</button>`
+    : `<span style="display:inline-block;font-size:.78em;padding:3px 9px;border:1px dashed #4a443a;border-radius:4px;
+         color:#6f6759;background:#1a1917">${wbEsc(x.name)}${x.cost != null ? ` (${wbNum(x.cost)})` : ''} — ${wbEsc(x.why || 'unavailable')}</span>`);
+  return `<div class="wb-unit-actions" style="margin-top:10px;${WB_PANEL};border-color:${WB_COL.p0}">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <b style="color:${WB_COL.p0};font-size:.9em">${wbEsc(u.name)}${u.banner ? ' ⚑' : ''}</b>
+      <span style="font-size:.7em;color:#8a8272">${wbEsc(u.cls)} · ${wbNum(u.hp)} hp · ${wbNum(u.atk)} atk
+        · range ${wbNum(u.range)} · move ${wbNum(u.move)}
+        · ${Number.isFinite(u.cap) ? `cap ${wbNum(u.cap)}` : 'no damage cap'}</span>
+    </div>
+    <div style="font-size:.75em;color:${WB_COL.text};margin-top:5px;line-height:1.6">
+      ${!acting
+        ? `It belongs to <b>${wbEsc(S.names[u.owner] || '')}</b>, and it is not their turn — nothing can be
+           done with it now. Its details are here to read.`
+        : u.deployed
+          ? `Its next action costs <b>${wbNum(cost)}</b> activation and you hold <b>${wbNum(S.pools[pl])}</b>.
+             <b style="color:${WB_COL.move}">${wbNum(hexes)}</b> ${hexes === 1 ? 'hex' : 'hexes'} in gold to move to;
+             <b style="color:${WB_COL.hit}">${wbNum(targets.length)}</b>
+             ${targets.length === 1 ? 'enemy' : 'enemies'} ringed in orange to attack${targets.length
+               ? `: ${targets.map((t) => wbEsc(t.name)).join(', ')}` : ''}.`
+          : `Its next action costs <b>${wbNum(cost)}</b> activation and you hold <b>${wbNum(S.pools[pl])}</b>.
+             It is not on the field yet — click a gold hex in your own edge columns to deploy it for
+             ${wbNum(u.cost)} deployment ${u.cost === 1 ? 'point' : 'points'}.`}
+    </div>
+    <div style="margin-top:7px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:.68em;color:#6f6759">Its abilities:</span>
+      ${abil.length ? abil.map(btn).join('')
+        : '<span style="font-size:.75em;color:#6f6759">None — this unit fights, and leaves its ground behind when it falls.</span>'}
+    </div>
+    <div style="font-size:.73em;color:${WB_COL.text};margin-top:7px;line-height:1.5">${wbVpLine(u.vp)}</div>
+    <div style="font-size:.72em;margin-top:5px;line-height:1.5;max-height:160px;overflow:auto">
+      ${wbKeywordBlock(arch ? arch.keywords : [])}</div>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="ng-btn" onclick="wbDeselect()" style="font-size:.72em;opacity:.8">Deselect</button>
+      <span style="font-size:.68em;color:#6f6759">with nothing in hand, every hex reads the ground</span>
+    </div>
+  </div>`;
 }
 
 function wbRender() {
@@ -3784,6 +4407,9 @@ function wbRender() {
   if (wbBroke(0) || wbBroke(1)) return wbEnd();
   const pl = wbActive();
   const selUnit = wbSelUnit(S, 'unit'), picked = wbSelUnit(S, 'picked');
+  // A unit staged for deployment is selected as much as one on the field is, and
+  // it is the moment a player most wants to read what they are about to commit.
+  const panelUnit = selUnit || wbSelUnit(S, 'deploy');
   const bench = S.armies[pl].filter((u) => u.alive && !u.deployed);
   // An armed pass that no longer has anything to forfeit -- the opponent's
   // snapshot moved the game on, or this seat is no longer the one acting -- drops
@@ -3807,25 +4433,34 @@ function wbRender() {
       <div style="height:7px;background:#26241f;border-radius:3px;margin-top:3px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${band[1]}"></div></div></div>`;
   };
+  const spent = wbSpentThisTurn(S, pl);
   wbDraw(`
     <div style="padding:12px;color:${WB_COL.text}">
       <div style="display:flex;gap:16px;margin-bottom:10px">${track(0)}${track(1)}</div>
       ${wbTurnBanner()}
-      <div style="font-size:.85em;margin-bottom:8px">
-        <b style="color:${pl === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[pl])}</b>
-        — turn ${S.turn} · <b>${S.pools[pl]}</b> activation · <b>${S.dp[pl]}</b> deployment
-        ${selUnit ? `· selected <b>${wbEsc(selUnit.name)}</b> (next action costs ${wbCost(selUnit)})` : ''}
+      <div style="font-size:.85em;margin-bottom:4px">
+        <b style="color:${pl === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[pl])}</b> — turn ${S.turn}
+        ${selUnit ? `· selected <b>${wbEsc(selUnit.name)}</b>` : ''}
         ${S.rally ? `· <b style="color:${WB_COL.p0}">Rally</b> — ${picked ? `move <b>${wbEsc(picked.name)}</b>` : 'choose a man'} · ${S.rally.left} left` : ''}
       </div>
+      <div style="font-size:.75em;color:#9a9282;margin-bottom:8px;line-height:1.6">
+        <b style="color:${WB_COL.text}">Activation: ${S.pools[pl]} left</b>
+        of ${S.pools[pl] + spent} this turn · ${spent} spent.
+        One action costs ${Object.keys(WB.ACT_COST).map((c) => `${wbEsc(c)} ${wbNum(WB.ACT_COST[c])}`).join(' · ')}
+        activation, and each further action by the SAME unit this turn costs another multiple of that.
+        <br><b style="color:${WB_COL.text}">Deployment: ${S.dp[pl]} left</b> — spent only on putting units on the
+        field, never on actions, and it does not carry over.
+      </div>
+      ${wbPhaseLine(wbPlayHint(S, pl))}
       ${wbMapSvg()}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         ${bench.map((u) => `<div onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer;border:1px solid ${u.cost <= S.dp[pl] ? WB_COL.p0 : '#3a3630'};
           border-radius:5px;padding:4px 8px;font-size:.72em;background:#221f1c;opacity:${u.cost <= S.dp[pl] ? 1 : .4}">
-          ${wbEsc(u.name)} <span style="color:#8a8272">${wbNum(u.cost)}</span></div>`).join('') || '<span style="font-size:.72em;color:#6f6759">all committed</span>'}
+          ${wbEsc(u.name)} <span style="color:#8a8272">${wbNum(u.cost)} dp</span></div>`).join('') || '<span style="font-size:.72em;color:#6f6759">all committed</span>'}
       </div>
-      <div style="margin-top:10px;display:flex;gap:8px">
-        ${selUnit && selUnit.rallyN && wbRallyTargets(selUnit).length && wbCost(selUnit) <= S.pools[pl]
-          ? `<button class="ng-btn" onclick="wbRally(${wbAttrNum(selUnit.uid)})" style="font-size:.8em">Rally (${wbCost(selUnit)})</button>` : ''}
+      ${panelUnit ? wbActionPanel(S, pl, panelUnit) : ''}
+      <div class="wb-match-controls" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:.68em;color:#6f6759">The match:</span>
         ${S.rally ? `<button class="ng-btn" onclick="wbRallyDone()" style="font-size:.8em">Done rallying</button>` : ''}
         ${forfeit ? '' : `<button class="ng-btn" onclick="wbPass()" style="font-size:.8em">Pass</button>`}
         <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.8em;opacity:.6">Abandon</button>
@@ -3874,6 +4509,8 @@ function wbEnd() {
     <div style="padding:16px;color:${WB_COL.text}">
       <div style="font-size:1.1em;color:${WB_COL.p0};font-weight:bold">The field</div>
       <div style="margin:8px 0;font-size:.9em">${msg}</div>
+      ${wbPhaseLine('The match is over and nothing further can be played on this board. '
+        + 'Muster again deals a fresh map and a fresh draft.')}
       <div style="font-size:.78em;color:#9a9282">
         ${S.turn} turns.
         ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
@@ -3890,6 +4527,7 @@ function wbEnd() {
 if (typeof window !== 'undefined') Object.assign(window, {
   warbandShowSetup, warbandStart, warbandResync, warbandSwitchMatch,
   wbPick, wbSetBanner, wbSelect, wbHexClick, wbPass,
+  wbInspectHex, wbInspectArch, wbInspectClose, wbDeselect, wbBoardZoom,
   wbPassConfirm, wbPassCancel,
   wbRally, wbRallyDone,
   wbSerialize, wbHydrate, wbMakeRng, wbApply, wbShow, wbLoad, wbNewGame,
