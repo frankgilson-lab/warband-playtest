@@ -2018,8 +2018,23 @@ function wbNextPack(S) {
 
 function wbPick(name) { wbCommit({ type: 'draft', name }); }
 
+// A unit card. `opts.owner` is the seat the card BELONGS TO, and decides the
+// colour of its name.
+//
+// This used to be WB_COL.p0 unconditionally, which meant every card on the
+// screen was titled in the FIRST company's gold: the three cards in the pack
+// whoever was picking, and -- less obviously and just as wrong -- the second
+// company's own roster underneath its red heading. A playtester reported the
+// first half of that: "Company A is yellow/gold, Company B dark red, but the
+// draftable cards are titled in yellow/gold, so you can get lost drafting".
+//
+// The rule this restores is the one the rest of the screen already follows and
+// config.json states: a company owns a colour, and anything belonging to it
+// carries that colour. Defaulting to p0 was not a neutral choice -- gold is not
+// a neutral colour here, it is Company A.
 function wbUnitCard(name, opts = {}) {
   const a = WB.ARCH[name], s = a.stats;
+  const owned = opts.owner === 1 ? WB_COL.p1 : WB_COL.p0;
   const cls = { light: '◦ Light', medium: '◈ Medium', heavy: '⬢ Heavy' }[a.movement_class];
   const cap = a.damage_cap ? `cap ${a.damage_cap}` : 'no cap';
   const kw = a.keywords.join(' ');
@@ -2032,7 +2047,7 @@ function wbUnitCard(name, opts = {}) {
     + `background:${opts.dim ? '#1a1917' : '#221f1c'};min-width:150px;opacity:${opts.dim ? .45 : 1};`
     + (opts.onclick ? 'cursor:pointer' : '');
   return `<div ${opts.onclick ? `onclick="${opts.onclick}"` : ''} style="${style}">
-    <div style="color:${WB_COL.p0};font-weight:bold;font-size:.85em">${wbEsc(name)}</div>
+    <div style="color:${owned};font-weight:bold;font-size:.85em">${wbEsc(name)}</div>
     <div style="font-size:.68em;color:#8a8272">${cls} · cost ${a.cost} · ${a.vp} vp</div>
     <div style="font-size:.72em;color:${WB_COL.text};margin-top:3px">
       ${s.hp} hp · ${s.atk} atk · ${cap}<br>move ${s.move} · range ${s.range}</div>
@@ -2051,7 +2066,7 @@ function wbRenderDraft() {
   // undefined, which WB.legal two lines down reads through.
   const picking = S.toPick == null ? 0 : S.toPick;
   const who = S.names[picking];
-  const roster = (p) => S.rosters[p].map((n) => wbUnitCard(n)).join('') || '<span style="color:#6f6759;font-size:.75em">nothing yet</span>';
+  const roster = (p) => S.rosters[p].map((n) => wbUnitCard(n, { owner: p })).join('') || '<span style="color:#6f6759;font-size:.75em">nothing yet</span>';
   wbDraw(`
     <div style="padding:14px;color:${WB_COL.text}">
       ${wbTurnBanner()}
@@ -2065,14 +2080,29 @@ function wbRenderDraft() {
         Take one of the three; the rest burn. When both companies hold ${wbNum(WB.STABLE)} units you assign
         your colours, and then take the field.`)}
       ${wbMapSvg({ preview: true })}
-      <div style="display:flex;gap:10px;margin:12px 0;flex-wrap:wrap">
-        ${S.pack.map((n) => wbUnitCard(n, { onclick: `wbPick('${wbAttrStr(n)}')`, dim: !WB.legal(S.rosters[picking], n) })).join('')}
+      ${/* Said once, plainly, immediately above the three cards it governs. The
+           cards now carry the drafting company's colour, but colour is never the
+           only channel -- config.json makes that a standing rule, because a
+           player who cannot separate gold from dark red would otherwise have
+           nothing at all to go on. */''}
+      <div class="wb-draft-label" style="margin:14px 0 6px;padding:5px 10px;border-radius:4px;
+          border-left:5px solid ${picking === 0 ? WB_COL.p0 : WB_COL.p1};background:#221f1c">
+        <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1};font-size:.95em">${wbEsc(who)} drafting</b>
+        <span style="font-size:.72em;color:#9a9282">— take one of the three; the other two burn</span>
+      </div>
+      <div style="display:flex;gap:10px;margin:0 0 12px;flex-wrap:wrap">
+        ${S.pack.map((n) => wbUnitCard(n, { owner: picking, onclick: `wbPick('${wbAttrStr(n)}')`, dim: !WB.legal(S.rosters[picking], n) })).join('')}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px">
-        <div><div style="color:${WB_COL.p0};font-size:.8em;font-weight:bold">${wbEsc(S.names[0])}</div>
-             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${roster(0)}</div></div>
-        <div><div style="color:${WB_COL.p1};font-size:.8em;font-weight:bold">${wbEsc(S.names[1])}</div>
-             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${roster(1)}</div></div>
+        ${[0, 1].map((seat) => `<div>
+          <div class="wb-roster-head" style="font-size:.8em;font-weight:bold;color:${seat === 0 ? WB_COL.p0 : WB_COL.p1}">
+            ${wbEsc(S.names[seat])}${picking === seat
+              ? ` <span style="font-size:.85em;font-weight:normal;padding:1px 6px;border-radius:3px;
+                  background:${seat === 0 ? WB_COL.p0 : WB_COL.p1};color:${WB_COL.ink}">picking now</span>`
+              : ''}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${roster(seat)}</div>
+        </div>`).join('')}
       </div>
       <div style="margin-top:10px;font-size:.7em;color:#6f6759">
         Burned: ${S.discards.length ? S.discards.map(wbEsc).join(', ') : '—'}
@@ -2098,7 +2128,7 @@ function wbRenderBanner() {
       ${wbPhaseLine(`The draft is finished. Pick the bearer, and when both companies have chosen, the
         match begins: you deploy from your own edge columns, then play alternates one action at a time.`)}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${S.rosters[p].map((n, i) => wbUnitCard(n, { onclick: `wbSetBanner(${i})` })).join('')}
+        ${S.rosters[p].map((n, i) => wbUnitCard(n, { owner: p, onclick: `wbSetBanner(${i})` })).join('')}
       </div>
     </div>`);
 }
