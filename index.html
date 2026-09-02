@@ -390,7 +390,7 @@ var WARBAND_CONFIG = {
     "precedent": "Proportional break points are standard practice across tabletop miniatures games, where companies withdraw rather than fight to annihilation. It is also era-authentic: early modern armies routed, they were almost never destroyed, and mercenaries paid by contract are precisely the population that leaves when the arithmetic turns.",
     "design_note": "Killing an enemy unit scores victory points AND stamps a permanent Last Stand feature belonging to the victim, so aggression is priced rather than free. Symmetrically, sacrificing one's own unit to trigger its Last Stand concedes real points toward one's own break point.",
     "max_turns": 10,
-    "time_rule": "A match lasts at most 10 turns. If neither company has broken by the end of the tenth Regroup, the company that CONCEDED the most victory points loses; equal concessions are a draw. This is the same quantity the break point measures, so a match that runs its length is decided by the same currency as one that ends early, and it matches the scoring convention used in tabletop miniatures play. Measured at 21,600 games under the cap, 8.5% of matches run their full length, so the clock decides about one match in twelve. It costs elite roughly a point of win rate and leaves the archetype spread unchanged at 11.9.",
+    "time_rule": "A match lasts at most 10 turns. If neither company has broken by the end of the tenth Regroup, the company that conceded the larger SHARE OF ITS OWN break threshold loses; equal shares are a draw. That is the same currency the break point uses, so a match decided by the clock is judged on the same scale as one decided by a rout, and on the same scale as the Skirmish/Attrition/Last Stand bands the player watches all match. CHANGED 2026-09-01, from absolute conceded points, on measurement rather than taste. The absolute rule came from tabletop miniatures scoring convention, which assumes points-matched forces; this draft does not provide them (mean warband value: swarm 45.3, midrange 69.1, elite 78.9), and because a break threshold is 2/3 of your OWN warband a cheap company had both a lower ceiling on what it could concede and a lower bar to reach. Over 501 capped matches the absolute rule gave the win to the cheaper warband 76.4% of the time, and win rate at the cap ran monotonically against price (swarm 89.9%, midrange 58.1%, elite 30.2%); proportionally the cheaper warband wins 52.0%, which is chance. Scored both ways over the same 21,600 games: 8.54% of matches run their full length, the two readings disagree on 23.1% of those (1.97% of all games), and the overall archetype rates move only slightly -- swarm 46.3 to 45.4, midrange 57.7 to 57.1, elite 46.0 to 47.4, with the spread unchanged at 11.7 and first-player win rate unchanged at 48.7%. This is a fairness fix inside the matches the clock decides, NOT a balance change, and should not be presented as one. The absolute reading is kept reachable as RULES.timeRule for comparison, as RULES.breakMode keeps the fixed break threshold reachable. Provisional: revisit against qualitative human playtest data, not against more simulation, which is what produced it.",
     "threshold_fraction_note": "Read by core.js and propagated to the analysis harness and the table game, rather than restated as a literal in each. Changing this value changes the break point everywhere."
   },
   "setup": {
@@ -770,6 +770,14 @@ var WARBAND_CONFIG = {
       "initFn": "warbandShowSetup"
     },
     "note": "The portal is a pure static site with no build step, so this config is read directly by the engine at load time and its shape is ours to define. The unified card schema does not apply: Warband is not card-shaped, in the same way Boggle is not."
+  },
+  "_rejected_stacking": "One unit per hex. A playtester asked whether stacking had been considered and rejected, assuming it had been; it had not, so this note exists to make the assumption an actual decision rather than an accident of the data model (a hex carries a single `occupant` uid, and always has). Kept single-occupancy FOR NOW, because two shipped mechanics are built on it. Overwhelm pays a bonus for each ADDITIONAL ADJACENT ally, which is the swarm archetype’s whole mechanic and is priced against the number of hexes that can touch a target; stacking would let a swarm concentrate without paying in position, and the bonus would have to be re-derived from something other than adjacency. Last Stand stamps a permanent terrain feature onto the hex where a unit died, and it is not defined for two units dying on one hex. Single occupancy is also what makes terrain and movement class matter: if bodies could pile up, a Heavy unit bogged in broken ground could be bypassed rather than gone around. A FUTURE OPENING, named by the designer and worth preserving: a unit could have an ability that recruits minions — gnats, say — and those minions might be stackable even while ordinary units are not. That is a narrower rule than general stacking and does not disturb Overwhelm or Last Stand, because the minions would be a distinct kind of thing with their own rules rather than a change to how every hex works. Revisit stacking through that door, not by lifting the single-occupancy rule wholesale.",
+  "_resource_names": {
+    "note": "Warband has THREE separate point economies and a playtester merged all three into one, calling activation \"movement points\". Nothing on screen had distinguished them. Each is named here so that the interface, the rules text and this file all use the same word for the same thing, and never use one economy’s word for another’s.",
+    "activation": "ACTIVATION. Spent to make a unit act at all, from a per-turn pool. Cost is by movement class, and each FURTHER action by the SAME unit in the same turn costs another multiple of that class cost. This is the economy players mistake for movement points, because spending it is what stops them moving.",
+    "deployment": "DEPLOYMENT. Spent only to bring drafted units onto the map, never on actions. Does not carry over between turns. Ramps 2, 3, 4, 5 and then 5 each turn.",
+    "movement": "MOVEMENT. The per-hex cost paid WITHIN a single move action, set by the hex’s terrain and the unit’s movement class. It is not a pool and it is not spent from one; it bounds how far one activation carries you.",
+    "display_rule": "Never print a bare \"points\". Always name which economy — activation, deployment or movement — including in refusals, because a refusal that says only \"not enough points\" is the message that created the confusion."
   }
 };
 if (typeof self !== 'undefined') self.WARBAND_CONFIG = WARBAND_CONFIG;
@@ -1279,7 +1287,7 @@ function runGame(opts = {}) {
   const rng = mulberry32(opts.seed ?? 1);
   const stratNames = [opts.p0 ?? 'midrange', opts.p1 ?? 'midrange'];
   const maxTurns = opts.maxTurns ?? MAX_TURNS;
-  const RULES = Object.assign({ density: 0.45, objectiveRate: 1, objectives: true, objectiveCount: null, poolPerUnits: 0, objectiveMode: OBJ_MODE, seizeGuard: 'per_match', seizeValue: null, outnumber: (CFG.overwhelm && CFG.overwhelm.bonus_per_additional_adjacent_ally) || 0, outnumberMax: 99, outnumberSides: false, sweep: (CFG.sweep && CFG.sweep.medium_only) ? 1 : 0, sweepPenalty: (CFG.sweep && CFG.sweep.penalty) || 0, sweepClass: 'medium', outnumberLightOnly: (CFG.overwhelm && CFG.overwhelm.light_only) || false, swarmBonus: 0, swarmCap: 2, breakMode: 'proportional', fixedThreshold: 12,
+  const RULES = Object.assign({ density: 0.45, objectiveRate: 1, objectives: true, objectiveCount: null, poolPerUnits: 0, objectiveMode: OBJ_MODE, seizeGuard: 'per_match', seizeValue: null, outnumber: (CFG.overwhelm && CFG.overwhelm.bonus_per_additional_adjacent_ally) || 0, outnumberMax: 99, outnumberSides: false, sweep: (CFG.sweep && CFG.sweep.medium_only) ? 1 : 0, sweepPenalty: (CFG.sweep && CFG.sweep.penalty) || 0, sweepClass: 'medium', outnumberLightOnly: (CFG.overwhelm && CFG.overwhelm.light_only) || false, swarmBonus: 0, swarmCap: 2, breakMode: 'proportional', fixedThreshold: 12, timeRule: 'proportional',
     // Death modelling, for the sacrifice-economy experiment. 0 = shipped behaviour
     // (the AI is death-BLIND: it neither avoids nor seeks its own destruction).
     // 1 = death-aware: moving onto a hex where the unit will die costs its victory
@@ -1669,22 +1677,51 @@ function runGame(opts = {}) {
   else if (broke(0)) winner = 1;
   else if (broke(1)) winner = 0;
   else {
-    // The match ran its length: the company that conceded the most loses. Points
-    // conceded is what the break point measures too, so a match decided by the
-    // clock is decided in the same currency as one decided by a rout. This used
-    // to compare against/breakAt, which is proportional rather than absolute.
+    // The match ran its length: the company that conceded the larger SHARE OF ITS
+    // OWN break threshold loses. Both branches of this if now speak in the same
+    // currency -- breaking is `against >= breakAt`, and the clock compares
+    // `against / breakAt` -- so one match is no longer judged by two different
+    // yardsticks depending on how it happened to end.
     //
-    // The absolute reading is not a formality. At the ten-turn cap 8.5% of
-    // matches run their full length (config.json, win_condition.time_rule,
-    // measured at 21,600 games), so this branch decides about one match in
-    // twelve, and re-scoring those matches proportionally flips about one in
-    // five of them. Which line stands here is a rules decision, not a tie-break.
+    // This was absolute conceded points until 2026-09-01, and the change was
+    // made on measurement rather than taste. Warband's draft does not produce
+    // equal-value companies (mean warband value: swarm 45.3, midrange 69.1,
+    // elite 78.9), and `breakAt` is 2/3 of your OWN total, so a cheap company
+    // has both a lower ceiling on what it can concede and a lower bar to reach.
+    // Under the absolute rule the cheaper warband won 76.4% of capped matches
+    // and win rate at the cap ran monotonically against price -- swarm 89.9%,
+    // midrange 58.1%, elite 30.2%. Proportionally the bias is gone (cheaper wins
+    // 52.0%, i.e. chance) and the spread flattens to 54.1 / 52.3 / 46.4.
     //
-    // The note that used to sit here said 4 games in 4,800 reached the cap and
-    // both readings agreed on every one. That was measured when max_turns was
-    // 40, and is kept only as history: at 40 the branch really was all but
-    // unreachable, which is why the choice looked like it did not matter.
-    winner = against[0] === against[1] ? 'draw' : (against[0] < against[1] ? 0 : 1);
+    // Size that honestly: capped matches are 8.5% of games and the two readings
+    // disagree on 23.1% of those, so the OVERALL archetype rates barely move.
+    // See config.json win_condition.time_rule for the end-to-end figures. This
+    // is a fairness fix inside the matches it decides, not a balance change,
+    // and it must not be presented as one -- that it costs the existing balance
+    // nothing is what made it safe to take rather than what justifies it.
+    //
+    // Absolute is kept reachable as RULES.timeRule so the comparison can be
+    // re-run without a revert, exactly as RULES.breakMode keeps the fixed break
+    // threshold reachable. The shipped rule is the default.
+    //
+    // Compared by cross-multiplication, NOT by dividing. against/breakAt is a
+    // ratio of integers, and two distinct ratios can collide as floats -- which
+    // matters because equality here means "draw", a third outcome rather than a
+    // rounding error. Cross-multiplied the comparison is exact.
+    //
+    // Two earlier notes are kept as history so they are not rediscovered as
+    // problems: this line was proportional once before while the other drivers
+    // were absolute, which was a genuine drift bug rather than this decision;
+    // and a claim that the two readings always agree was measured at a 40-turn
+    // cap, where the branch was all but unreachable. At the ten-turn cap they
+    // disagree on about one capped match in five.
+    if (RULES.timeRule === 'absolute') {
+      winner = against[0] === against[1] ? 'draw' : (against[0] < against[1] ? 0 : 1);
+    } else {
+      const b0 = Math.max(1, breakAt[0]), b1 = Math.max(1, breakAt[1]);
+      const share0 = against[0] * b1, share1 = against[1] * b0;
+      winner = share0 === share1 ? 'draw' : (share0 < share1 ? 0 : 1);
+    }
   }
 
   return {
@@ -1744,6 +1781,26 @@ function validateResult(r) {
     const loser = 1 - r.winner;
     const th = (r.rules && r.rules.breakMode === 'fixed') ? r.rules.fixedThreshold : r.breakAt[loser];
     if (r.against[loser] < th) return `declared winner ${r.winner} but loser did not reach break point`;
+  }
+  // A capped match is decided on share of break point, so the declared winner
+  // must hold the strictly smaller share and a declared draw must be an exact
+  // tie. Cross-multiplied, as the rule itself is.
+  //
+  // This lives in the validator rather than only in the test file because the
+  // sweeps run it over every result: a driver that drifts back to comparing raw
+  // conceded points is then caught by any sweep, not only by a test somebody
+  // remembered to run. The clock branch had NO coverage at all before this --
+  // the whole suite passed unchanged when the rule was switched -- and it is
+  // exactly the sort of branch that gets quietly reverted in a merge.
+  if (r.timeout && !(r.rules && r.rules.timeRule === 'absolute')) {
+    const s0 = r.against[0] * Math.max(1, r.breakAt[1]);
+    const s1 = r.against[1] * Math.max(1, r.breakAt[0]);
+    if (r.winner === 'draw') {
+      if (s0 !== s1) return `capped match declared a draw but the companies held different shares of their break points`;
+    } else {
+      const w = r.winner, shares = [s0, s1];
+      if (!(shares[w] < shares[1 - w])) return `capped match declared winner ${w}, which was not further from breaking`;
+    }
   }
   return null;
 }
@@ -1816,6 +1873,12 @@ const WB_COL = {
   // unit may GO; `hit` is what it may STRIKE. They must never be mistaken for one
   // another, so they differ in hue, in width and in dash -- not in shade alone.
   move: '#f0cf72', hit: '#ff6b3d',
+  // The third language: whether one of YOUR OWN units can still be used this
+  // turn. It must not be mistaken for either of the two above, so it is neither
+  // gold nor orange -- `ready` is a green nothing else on the board uses, and
+  // `partial` is a blue, carried at reduced opacity so "faded" reads as faded
+  // even to someone who cannot separate the two hues.
+  ready: '#9fe870', partial: '#5f97c4',
   label: '#cbc2ab',
 };
 // The hex radius. At 30 the terrain labels had to be truncated to seven
@@ -2093,6 +2156,59 @@ function wbCost(u) {
   return WB.ACT_COST[u.cls] * (1 + spent);
 }
 
+// ── readiness: the third thing the board has to say ─────────────────────────
+// A playtester who had not played a hex game before could not work out "why I
+// could get a unit to attack an adjacent one sometimes, but not other times".
+// The answer is always the activation economy, and it was never drawn: a unit
+// is beyond its own player because the pool is short, or because this would be
+// its second action of the turn and a second action costs double.
+//
+// Each of the ACTIVE side's units is therefore in one of three states, and a
+// ring is drawn for the first two only:
+//
+//   fresh    has not acted this turn, and can afford to     bright ring
+//   partial  has acted, and can still afford another        faded ring, other hue
+//   done     cannot afford another action                   no ring
+//
+// The ring answers "MAY I?", never "SHOULD I?". A unit whose only remaining move
+// is one hex to no advantage, or whose attack would barely scratch its target,
+// still gets the ring: that is a legal action, and whether it is worth taking is
+// the player's judgement to make. The interface must not quietly make it for
+// them by dimming a weak-but-legal option, because a player cannot tell a cue
+// that means "the rules forbid this" from one that means "I think this is a bad
+// idea", and will read the second as the first.
+//
+// So `done` means exactly one thing: the rules would refuse every action this
+// unit could take. Two ways that happens.
+//
+// The first is cost. A unit that has NOT acted but can no longer afford its
+// FIRST action is `done`, though "has not done something yet" would read as
+// bright. The pool is shared, so three Medium actions exhaust a pool of 6 and
+// strand a Heavy at 3 -- which is exactly the Man-at-Arms a playtester watched
+// sit out a whole match and blamed on terrain.
+//
+// The second is that there is nothing legal to spend it on: no hex it may enter,
+// no enemy it may strike, no ability it may use. Asked with the same functions
+// the action panel and the move handlers use, rather than a cheaper guess, so a
+// ring and a refusal can never disagree with each other.
+//
+// Ordered cheapest first: attack targets walk the unit list, abilities are a
+// table lookup, and reachable() is a flood fill, so it is asked last and only
+// when the first two came back empty. At most six units per side reach this.
+function wbReadiness(u) {
+  const S = warband_state;
+  if (!S || !u || !u.alive || !u.deployed) return null;
+  const pl = wbWhoActs(S);
+  if (pl == null || u.owner !== pl) return null;   // only the side on the clock
+  const pool = (S.pools && S.pools[pl]) || 0;
+  if (wbCost(u) > pool) return 'done';
+  const canDo = wbAttackTargets(u).length > 0
+    || wbUnitAbilities(u).some((a) => a.call)
+    || WB.reachable(S.G, u).length > 0;
+  if (!canDo) return 'done';
+  const acted = (S.acted && S.acted[pl] && S.acted[pl].get(u.uid)) || 0;
+  return acted === 0 ? 'fresh' : 'partial';
+}
 function wbDeployableHexes(pl) {
   const S = warband_state;
   return [...S.board.values()].filter((h) => h.occupant == null && WB.ZONES[h.terrain].allows_deployment
@@ -2436,10 +2552,19 @@ function wbRallyDone() { wbCommit({ type: 'rally_end' }); }
 // So a click that cannot select now either ACTS (an enemy, with one of yours
 // already selected, is an attack -- the model the player already expected) or
 // SAYS SO, and in either case it puts what was clicked on the screen to read.
+// Where the player last touched the board. The feedback a click produces is
+// drawn at this hex rather than at the top of the page, so a refusal lands
+// where the eye already is. Set at the two board entry points only; a notice
+// raised from somewhere else (a lost connection, a refused pass) keeps the
+// last board position, which is still nearer the player than the page head,
+// and falls back to the head when nothing has been touched yet.
+function wbAnchor(k) { wbUi.at = k == null ? null : wbText(k); }
+
 function wbSelect(uid) {
   const S = warband_state, pl = wbActive();
   wbUi.notice = null;
   const any = S && S.G ? S.G.units.get(uid) : null;
+  wbAnchor(any && any.at != null ? any.at : null);
   // Not this seat's turn. Looking is still allowed -- it is not a move -- so the
   // click inspects and says why nothing else happened.
   if (!wbCanAct(S)) {
@@ -2490,6 +2615,7 @@ function wbSelect(uid) {
 // Turns "this hex, given what is selected" into a move, and lets wbApply decide
 // whether it is legal. Nothing here changes the game.
 function wbHexClick(k) {
+  wbAnchor(k);
   const S = warband_state;
   if (!S || !S.board.get(k)) return;
   if (S.rally) {
@@ -2884,7 +3010,7 @@ function wbMoveDeploy(S, m) {
   const u = wbActingUnit(S, m.uid);
   if (!u) return wbNo('not your unit');
   if (u.deployed) return wbNo(`${u.name} is already on the field`);
-  if (u.cost > S.dp[pl]) return wbNo('not enough deployment points');
+  if (u.cost > S.dp[pl]) return wbNo(`not enough deployment — ${u.name} costs ${u.cost} and ${S.names[pl]} holds ${S.dp[pl]}`);
   const h = S.board.get(m.to);
   if (!h) return wbNo('no such hex');
   if (h.occupant != null) return wbNo('that hex is occupied');
@@ -2902,11 +3028,13 @@ function wbMoveUnit(S, m) {
   const u = wbActingUnit(S, m.uid);
   if (!u || !u.deployed) return wbNo('not your unit');
   const cost = wbCost(u);
-  if (cost > S.pools[pl]) return wbNo('not enough activation');
+  if (cost > S.pools[pl]) return wbNo(`not enough activation — ${u.name} needs ${cost} and ${S.names[pl]} holds ${S.pools[pl]}`);
   const h = S.board.get(m.to);
   if (!h) return wbNo('no such hex');
   if (h.occupant != null) return wbNo('that hex is occupied');
-  if (!WB.reachable(S.G, u).some((x) => x === h)) return wbNo('out of reach');
+  if (!WB.reachable(S.G, u).some((x) => x === h)) {
+    return wbNo(`out of reach — ${u.name} moves ${u.move} and ${u.cls} feet pay ${u.cls === 'light' ? '1 for any ground' : u.cls === 'heavy' ? 'a hex\u2019s cost plus 1' : "each hex\u2019s own cost"}`);
+  }
   WB.place(S.G, u, h);
   if (h.objective) {
     const was = h.controller; h.controller = pl;
@@ -2932,9 +3060,15 @@ function wbMoveAttack(S, m) {
   if (!target || !target.alive || !target.deployed) return wbNo('no such target');
   if (target.owner === pl) return wbNo('that is one of yours');
   const cost = wbCost(u);
-  if (cost > S.pools[pl]) return wbNo('not enough activation');
+  if (cost > S.pools[pl]) return wbNo(`not enough activation — ${u.name} needs ${cost} and ${S.names[pl]} holds ${S.pools[pl]}`);
   const uH = WB.hexOf(S.G, u), tH = WB.hexOf(S.G, target);
-  if (WB.hexDist(uH, tH) > WB.effRange(S.G, u)) return wbNo('out of range');
+  // RANGE, not movement, and the message says so: a tester could not work out
+  // why an adjacent enemy was sometimes attackable and sometimes not, and the
+  // three possible answers -- range, activation, line of sight -- all arrived as
+  // the same shrug.
+  if (WB.hexDist(uH, tH) > WB.effRange(S.G, u)) {
+    return wbNo(`out of range — ${u.name} strikes at ${WB.effRange(S.G, u)} hex${WB.effRange(S.G, u) === 1 ? '' : 'es'} and that one is ${WB.hexDist(uH, tH)} away`);
+  }
   // Refusals leave the game untouched. This used to append to the shared log,
   // so a peer could grow it without limit by repeating a move it knew would be
   // refused -- and the growth reached everyone on the next snapshot. The reason
@@ -2951,7 +3085,7 @@ function wbMoveRally(S, m) {
   if (!u.rallyN) return wbNo(`${u.name} cannot rally`);
   if (S.rally) return wbNo('already rallying');
   const cost = wbCost(u);
-  if (cost > S.pools[pl]) return wbNo('not enough activation');
+  if (cost > S.pools[pl]) return wbNo(`not enough activation — ${u.name} needs ${cost} and ${S.names[pl]} holds ${S.pools[pl]}`);
   if (!wbRallyTargets(u).length) return wbNo('nobody in earshot');
   wbSpend(S, u, cost);
   S.rally = { uid: u.uid, left: u.rallyN, moved: [] };
@@ -2975,7 +3109,9 @@ function wbMoveRallyMove(S, m) {
   const h = S.board.get(m.to);
   if (!h) return wbNo('no such hex');
   if (h.occupant != null) return wbNo('that hex is occupied');
-  if (!WB.reachable(S.G, f).some((x) => x === h)) return wbNo('out of reach');
+  if (!WB.reachable(S.G, f).some((x) => x === h)) {
+    return wbNo(`out of reach — ${f.name} moves ${f.move} and cannot make that hex on the captain\u2019s word`);
+  }
   WB.place(S.G, f, h);
   if (h.objective) h.controller = f.owner;
   S.log.push(`  ${f.name} moves on the captain's word`);
@@ -3849,18 +3985,63 @@ function wbOfferLine() {
 }
 
 // One line, in every phase, saying who you are and whether it is on you.
+// SVG has no line breaking, so the anchored notice wraps here. A word longer
+// than the column is left whole rather than broken: a unit name split across
+// two lines is worse than a line that runs slightly wide.
+function wbWrapText(text, n) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if ((cur + ' ' + w).length <= n) cur += ' ' + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 6);
+}
 function wbNoticeLine() {
   if (!wbUi.notice) return '';
+  // Already drawn on the board, at the hex it concerns. Showing it twice would
+  // reintroduce the thing this change exists to remove: a copy of the message
+  // far from the map, pushing the map down as it appears.
+  if (wbUi._noticeDrawn) return '';
   return `<div class="wb-notice" style="font-size:.75em;margin:0 0 8px;padding:5px 8px;border-radius:4px;
       background:rgba(190,120,80,.14);border:1px solid #97552a">${wbEsc(wbUi.notice)}</div>`;
 }
 
+// Whose turn it is, said loudly, in BOTH modes.
+//
+// This used to return nothing at all unless `wbMp` was set -- so the one mode
+// most playtesters actually use, two people at one screen, had no turn
+// indicator whatsoever. Two independent testers reported the same thing: "very
+// difficult to tell which team's turn it was". They were not missing it. It was
+// not there.
+//
+// It matters more here than in networked play, because the seat changes under
+// the player: deploying does not hand over, but acting does and passing does,
+// so the side on the clock can flip after every single action. A tester read
+// the activation line after such a flip, saw the OPPONENT'S pool, and reported
+// having spent four points without moving. The pool was never wrong; the line
+// never said whose it was.
 function wbTurnBanner() {
   const S = warband_state;
-  if (!wbMp || !S) return '';
+  if (!S) return '';
   const acts = wbWhoActs(S);
-  const mine = acts === wbMp.seat;
   const who = acts == null ? '' : wbEsc(S.names[acts] || `P${acts + 1}`);
+  if (!wbMp) {
+    // Hotseat: there is no "you", so name the company and colour the band with
+    // its own colour rather than with a yours/theirs distinction that has no
+    // meaning when both players share the screen.
+    const col = acts === 0 ? WB_COL.p0 : WB_COL.p1;
+    return `<div class="wb-turn" style="font-size:.95em;margin:0 0 8px;padding:7px 10px;border-radius:4px;
+        background:#221f1c;border:1px solid ${acts == null ? '#3a352d' : col};border-left-width:5px">
+        ${acts == null
+          ? 'The match is over.'
+          : `<b style="color:${col}">${who}</b> to act — turn ${wbNum(S.turn)}`}
+      </div>`;
+  }
+  const mine = acts === wbMp.seat;
   return `<div style="font-size:.75em;margin:0 0 8px;padding:5px 8px;border-radius:4px;
       background:${mine ? 'rgba(120,180,120,.14)' : '#221f1c'};border:1px solid ${mine ? WB_COL.p0 : '#3a352d'}">
       You are <b>${wbEsc(S.names[wbMp.seat] || `P${wbMp.seat + 1}`)}</b>
@@ -3875,6 +4056,11 @@ function wbTurnBanner() {
 // screen attached — in a test, or on a host applying somebody else's move.
 function wbShow() {
   const S = warband_state;
+  // Cleared per render, not per notice: the board sets it while building this
+  // screen and wbDraw reads it afterwards to decide whether the head still owes
+  // a copy. Left set, the first anchored notice would silence the head for the
+  // rest of the session, including on screens that have no board to anchor to.
+  wbUi._noticeDrawn = false;
   // A guest between joining and the first snapshot has no game and still has a
   // screen, and things that need to reach a player -- the answer to the button,
   // above all -- happen there too.
@@ -4326,6 +4512,17 @@ function wbMapSvg(opts = {}) {
         stroke="${WB_COL.p0}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
       if (canHit) out += `<circle class="wb-target" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
         pointer-events="none" stroke="${WB_COL.hit}" stroke-width="3" stroke-dasharray="5 4"/>`;
+      // Drawn BEFORE the unit circle and outside it, so it composes with the
+      // white selection stroke rather than replacing it -- a selected unit still
+      // shows whether it has anything left. Suppressed in preview, where there is
+      // no turn and therefore no such thing as readiness.
+      const ready = opts.preview ? null : wbReadiness(u);
+      if (ready === 'fresh') out += `<circle class="wb-ready" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}"
+        r="${(rUnit + 3).toFixed(1)}" fill="none" pointer-events="none"
+        stroke="${WB_COL.ready}" stroke-width="2.5"/>`;
+      else if (ready === 'partial') out += `<circle class="wb-ready-part" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}"
+        r="${(rUnit + 3).toFixed(1)}" fill="none" pointer-events="none"
+        stroke="${WB_COL.partial}" stroke-width="2" stroke-opacity=".5"/>`;
       const tclick = opts.preview
         ? `onclick="wbInspectHex('${wbAttrStr(k)}')" style="cursor:help"`
         : `onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer"`;
@@ -4339,6 +4536,36 @@ function wbMapSvg(opts = {}) {
       if (canHit) out += `<text x="${(c.x + rRing).toFixed(1)}" y="${(c.y - rRing + 4).toFixed(1)}" text-anchor="middle"
         font-size="13" fill="${WB_COL.hit}" pointer-events="none">⚔</text>`;
     }
+  }
+  // ── anchored feedback ──────────────────────────────────────────────────
+  // Inside the SVG rather than over it. The board has two zoom modes -- one
+  // scaled to the container, one full size inside a scrolling wrapper -- and an
+  // HTML overlay would have to track both. In SVG user units it is simply
+  // correct in both, scrolls with the map, and scales with it.
+  const noteAt = (!opts.preview && wbUi.notice && wbUi.at != null) ? S.board.get(wbUi.at) : null;
+  if (noteAt) {
+    const nc = wbPx(noteAt);
+    const lines = wbWrapText(wbUi.notice, 34);
+    const FS = 13, LH = FS + 4;
+    const boxW = Math.min(320, 14 + Math.max(...lines.map((l) => l.length)) * FS * 0.54);
+    const boxH = 10 + lines.length * LH;
+    // Above the hex by default; below it when above would leave the board. Then
+    // clamped horizontally, so a refusal on an edge hex is not half off-screen.
+    let by = nc.y - WB_SIZE - boxH - 8;
+    const above = by >= 4;
+    if (!above) by = nc.y + WB_SIZE + 8;
+    const bx = Math.max(4, Math.min(wpx - boxW - 4, nc.x - boxW / 2));
+    const tspans = lines.map((l, i) => `<text x="${(bx + 7).toFixed(1)}" y="${(by + LH * (i + 1) - 4).toFixed(1)}"
+      font-size="${FS}" fill="${WB_COL.text}">${wbEsc(l)}</text>`).join('');
+    out += `<g class="wb-anchored" pointer-events="none">
+      <line x1="${nc.x.toFixed(1)}" y1="${(above ? by + boxH : by).toFixed(1)}" x2="${nc.x.toFixed(1)}"
+        y2="${(above ? nc.y - WB_SIZE * .5 : nc.y + WB_SIZE * .5).toFixed(1)}"
+        stroke="#97552a" stroke-width="1.5"/>
+      <rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}"
+        rx="5" fill="#2a1d14" fill-opacity=".97" stroke="#97552a" stroke-width="1.5"/>
+      ${tspans}
+    </g>`;
+    wbUi._noticeDrawn = true;
   }
   return out + '</svg></div></div>';
 }
@@ -4444,12 +4671,16 @@ function wbRender() {
         ${S.rally ? `· <b style="color:${WB_COL.p0}">Rally</b> — ${picked ? `move <b>${wbEsc(picked.name)}</b>` : 'choose a man'} · ${S.rally.left} left` : ''}
       </div>
       <div style="font-size:.75em;color:#9a9282;margin-bottom:8px;line-height:1.6">
-        <b style="color:${WB_COL.text}">Activation: ${S.pools[pl]} left</b>
+        <b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s activation: ${S.pools[pl]} left</b>
         of ${S.pools[pl] + spent} this turn · ${spent} spent.
         One action costs ${Object.keys(WB.ACT_COST).map((c) => `${wbEsc(c)} ${wbNum(WB.ACT_COST[c])}`).join(' · ')}
         activation, and each further action by the SAME unit this turn costs another multiple of that.
-        <br><b style="color:${WB_COL.text}">Deployment: ${S.dp[pl]} left</b> — spent only on putting units on the
-        field, never on actions, and it does not carry over.
+        <br><b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s deployment: ${S.dp[pl]} left</b> — spent only on
+        putting units on the field, never on actions, and it does not carry over.
+        <br><b style="color:${WB_COL.text}">Movement</b> is the third and is not a pool at all: it is what each
+        hex costs to enter, set by its ground and the unit’s class, and it bounds how far ONE activation
+        carries you. Light pays 1 whatever the ground; Medium pays what the hex says; Heavy pays that plus 1
+        and cannot enter marsh.
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
       ${wbMapSvg()}
@@ -4472,15 +4703,57 @@ function wbRender() {
     </div>`);
 }
 
+// Compare two shares of a break point without overflowing.
+//
+// Both operands come off the wire, and wbNum admits ANY finite number -- so a
+// hostile snapshot can carry 1e308. Multiplying two of those gives Infinity,
+// and Infinity === Infinity would print "a draw" for a match that was not
+// drawn, next to a tally reading "Infinity% of its break point". Found in
+// review and demonstrated with a forged snapshot, not argued.
+//
+// 94906265 is floor(sqrt(2^53)): below it the product of two operands is exact
+// in a double. Every honest value is orders of magnitude inside that -- six
+// units cap a warband near 128, and a break threshold is 2/3 of that -- so the
+// exact branch is the only one a real match ever takes, and cross-multiplying
+// keeps "equal shares" exactly equal, which is a DRAW rather than a rounding
+// artefact. Beyond the bound only a forged snapshot reaches, exactness is
+// meaningless anyway, and dividing orders the two correctly without overflow.
+//
+// This guard lives here and not in core.js or interface.js on purpose: this is
+// the only driver that renders numbers it did not compute itself. The other
+// two work on state they built, where the values cannot be hostile.
+const WB_EXACT_MAX = 94906265;
+function wbShareCmp(a0, b0, a1, b1) {
+  const d0 = Math.max(1, b0), d1 = Math.max(1, b1);
+  const exact = a0 <= WB_EXACT_MAX && a1 <= WB_EXACT_MAX
+    && d0 <= WB_EXACT_MAX && d1 <= WB_EXACT_MAX;
+  const x = exact ? a0 * d1 : a0 / d0;
+  const y = exact ? a1 * d0 : a1 / d1;
+  return x === y ? 0 : (x < y ? -1 : 1);
+}
 function wbEnd() {
   const S = warband_state;
   const routed = wbBroke(0) || wbBroke(1);
   // A rout ends it there and then. Otherwise the match ran its full length, and
-  // the company that conceded the most loses -- the same currency the break
-  // point counts, so the clock does not decide the game by a different measure.
+  // the company that conceded the larger SHARE OF ITS OWN break threshold loses.
+  // Both endings therefore speak in one currency: breaking is `against >= breakAt`,
+  // and the clock compares `against / breakAt`. See core.js for the measurement
+  // that moved this off absolute conceded points on 2026-09-01.
+  //
+  // Cross-multiplied rather than divided, because equal shares is a DRAW -- a
+  // third outcome -- and float equality is the wrong instrument for deciding it.
+  const cmp = wbShareCmp(S.against[0], S.breakAt[0], S.against[1], S.breakAt[1]);
   const loser = routed
     ? (wbBroke(0) && wbBroke(1) ? null : (wbBroke(0) ? 0 : 1))
-    : (S.against[0] === S.against[1] ? null : (S.against[0] > S.against[1] ? 0 : 1));
+    : (cmp === 0 ? null : (cmp > 0 ? 0 : 1));
+  // The footer prints each company's share as a percentage beside the raw pair.
+  // A player who is told "B holds the field, further from breaking" and shown
+  // 33/62 against 28/51 should not have to do the division to check it -- this
+  // exact screen is what a playtester called odd under the old absolute rule,
+  // and the numbers that justify the verdict were on it but not the comparison.
+  // Divides BEFORE scaling. `against * 100` overflowed to Infinity on its own,
+  // which is how the tally came to read "Infinity% of its break point".
+  const pct = (p) => Math.round((S.against[p] / Math.max(1, S.breakAt[p])) * 100);
   // The footer decomposes `against` into what earned it, and every point of it
   // IS earned: the three places that raise against raise killPoints or objPoints
   // by the same amount in the same statement. A concession is the one thing that
@@ -4504,17 +4777,24 @@ function wbEnd() {
     ? (routed ? 'Both companies break — a draw.' : `${S.turn} turns, and nothing between them — a draw.`)
     : routed
       ? `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[1 - loser])}</b> holds the field. ${wbEsc(S.names[loser])} breaks.`
-      : `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[1 - loser])}</b> holds the field at the end of ${S.turn} turns, having conceded less.`;
+      : `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[1 - loser])}</b> holds the field at the end of ${S.turn} turns, further from breaking.`;
   wbDraw(`
     <div style="padding:16px;color:${WB_COL.text}">
       <div style="font-size:1.1em;color:${WB_COL.p0};font-weight:bold">The field</div>
-      <div style="margin:8px 0;font-size:.9em">${msg}</div>
+      <div class="wb-end-verdict" style="margin:8px 0;font-size:.9em">${msg}</div>
       ${wbPhaseLine('The match is over and nothing further can be played on this board. '
+        + 'The field is below as it finished — click any hex to read it. '
         + 'Muster again deals a fresh map and a fresh draft.')}
-      <div style="font-size:.78em;color:#9a9282">
+      ${/* The board the match was fought on, kept on screen. It used to vanish at
+           the final Regroup, which a playtester asked for plainly: "don’t hide the
+           map on game conclusion." Drawn in PREVIEW mode, so every hex inspects
+           rather than plays -- there is nothing left to play -- and so neither the
+           readiness rings nor the anchored notice are drawn on a finished match. */
+        wbMapSvg({ preview: true })}
+      <div class="wb-end-tally" style="font-size:.78em;color:#9a9282">
         ${S.turn} turns.
-        ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
-        ${wbEsc(S.names[1])}: ${S.against[1]}/${S.breakAt[1]} conceded (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
+        ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
+        ${wbEsc(S.names[1])}: ${S.against[1]}/${S.breakAt[1]} conceded, ${pct(1)}% of its break point (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
       </div>
       <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:#8a8272;line-height:1.6">
         ${S.log.map((l) => `<div>${wbEsc(l)}</div>`).join('')}
