@@ -539,7 +539,7 @@ var WARBAND_CONFIG = {
       "stats": {
         "hp": 14,
         "atk": 4,
-        "move": 2,
+        "move": 4,
         "range": 1
       },
       "keywords": [
@@ -561,7 +561,7 @@ var WARBAND_CONFIG = {
       "stats": {
         "hp": 7,
         "atk": 4,
-        "move": 3,
+        "move": 4,
         "range": 3
       },
       "keywords": [
@@ -582,7 +582,7 @@ var WARBAND_CONFIG = {
       "stats": {
         "hp": 11,
         "atk": 3,
-        "move": 3,
+        "move": 4,
         "range": 2
       },
       "keywords": [
@@ -778,7 +778,8 @@ var WARBAND_CONFIG = {
     "deployment": "DEPLOYMENT. Spent only to bring drafted units onto the map, never on actions. Does not carry over between turns. Ramps 2, 3, 4, 5 and then 5 each turn.",
     "movement": "MOVEMENT. The per-hex cost paid WITHIN a single move action, set by the hex’s terrain and the unit’s movement class. It is not a pool and it is not spent from one; it bounds how far one activation carries you.",
     "display_rule": "Never print a bare \"points\". Always name which economy — activation, deployment or movement — including in refusals, because a refusal that says only \"not enough points\" is the message that created the confusion."
-  }
+  },
+  "_heavy_movement_note": "HEAVY UNITS MOVE 4, set 2026-09-02. Man-at-Arms was 2, Bombardier and Warlord 3. The reason is that the move stat was INERT across the whole heavy class. A heavy pays each hex its movement_cost PLUS ONE and almost every terrain costs 1, so a heavy pays 2 a hex on ordinary ground. Against move stats of 2 and 3 that is one hex either way: measured over 200 boards, Man-at-Arms, Bombardier and Warlord ALL reached 4.8 hexes with a furthest distance of 1, while Medium reached 21.5 and Light 23.6. Two heavies with different numbers on their cards were identical on the board, and raising a 2 to a 3 would have changed nothing. Four is the first value that buys a second hex. WHAT IT COST. Over 7,200 games a side: Man-at-Arms units that never acted at all in a whole match fall from 59.2% to 46.9%, Bombardier from 28.5% to 21.0%, and the heavy class from 36.5% to 28.2%. Matches shorten slightly (7.10 to 6.74 turns) and fewer reach the cap (8.6% to 5.3%). Archetype balance is essentially untouched - swarm 47.2 to 48.6, midrange 56.4 to 56.0, elite 46.4 to 45.4, spread 10.1 to 10.7 - and first-player win rate stays inside target at 51.0%. That last part is the argument for this shape over the alternative: it fixes the unit without redistributing the archetypes, so it needs no balance pass to go with it. WHAT IT DOES NOT FIX, and is the next question rather than a defect of this change: 46.9% of Man-at-Arms still never act. The Warlord is also heavy and also crawled one hex, and sits at 2.2% either way, so the residue is not mobility. See DESIGN-LOG 3.4.1. IN FICTION: armoured men and gun crews march at a steady pace, and it is broken ground that stops them rather than their legs. The terrain rules are unchanged and still do the stopping - forest halts a heavy after one hex, marsh is barred outright, and barricades block movement entirely. TWO MEASUREMENTS, AND THEY DISAGREE ON SIGN, WHICH IS THE POINT: the controlled A/B above (7,200 games a side, identical seeds both arms) put the archetype spread at 10.1 before and 10.7 after; the canonical sweep at 21,600 games puts it at 11.7 before and 9.5 after (swarm 45.4 to 46.5, midrange 57.1 to 56.0, elite 47.4 to 47.5). With a standard error of 0.7 per archetype those are the same answer -- the spread did not move meaningfully in either direction -- and neither should be quoted as an improvement. What both agree on is the direction of the things this change was made for: mean match length 7.1 to 6.8 turns and matches reaching the cap 8.5% to 5.7%."
 };
 if (typeof self !== 'undefined') self.WARBAND_CONFIG = WARBAND_CONFIG;
 if (typeof window !== 'undefined') window.WARBAND_CONFIG = WARBAND_CONFIG;
@@ -987,8 +988,51 @@ const canEnter = (u, z) => !z.impassable && !z.blocks_movement && !(u.cls === 'h
 const stopsIn = (u, z) => z.special === 'ends_movement_medium_and_heavy' && u.cls !== 'light';
 const coverOf = (u) => CLASSES[u.cls].cover_reduction;
 
-function reachable(G, u) {
+// MARCH — experimental, off by default. RULES.march: 'off' | 'heavy' | 'all'.
+//
+// Why it exists. A Heavy pays each hex its cost PLUS ONE, and almost every
+// terrain costs 1, so a Heavy pays 2 a hex on ordinary ground. Against move
+// stats of 2 and 3 that means EVERY heavy unit reaches exactly one hex, always:
+// measured over 200 boards, Man-at-Arms, Bombardier and Warlord all reach 4.8
+// hexes with a furthest distance of 1, while Medium reaches 21.5 and Light 23.6.
+// The move stat is inert across the whole heavy class -- 2 and 3 buy the same
+// single hex -- so tuning it is not the lever it appears to be. Raising a Heavy
+// to two hexes needs move 4, or a change to the surcharge.
+//
+// The shape borrowed here is the one the genre already uses for this: 40k has
+// Advance, Bolt Action has Run -- go further, but not while fighting. It is
+// attractive because it is SELF-TARGETING. It only helps a unit that is not in
+// contact, which is exactly the late-arriving Man-at-Arms crossing an empty map
+// (DESIGN-LOG 3.4.1), and does nothing for a Heavy already in the line, so it
+// needs no compensating nerf to the thing Heavies are good at.
+//
+// It also un-inerts the stat: doubled, move 2 buys two hexes and move 3 buys
+// three, so Man-at-Arms and Warlord stop being identical on the board.
+//
+// No "may not attack after marching" clause is needed, because the activation
+// economy already prices it: a Heavy costs 3 to act and 6 for its second action
+// in a turn, so marching and then attacking would cost 9 from a pool of 6.
+//
+// In fiction: armoured men and gun crews can march -- that is what they are for
+// -- they simply cannot do it while skirmishing.
+function marchMult(G, u, RULES) {
+  const mode = (RULES && RULES.march) || 'off';
+  if (mode === 'off') return 1;
+  if (mode === 'heavy' && u.cls !== 'heavy') return 1;
+  const h = hexOf(G, u);
+  if (!h) return 1;
+  for (const nb of neighbors(G.board, h)) {
+    const o = occupantOf(G, nb);
+    if (o && o.alive && o.owner !== u.owner) return 1;   // in contact: no march
+  }
+  return (RULES && RULES.marchMult) || 2;
+}
+// RULES is optional: called without it -- as the table game and the analysis
+// harness do -- the allowance is u.move exactly as before, so the shipped rule
+// is unchanged and `npm run drift` still compares like with like.
+function reachable(G, u, RULES) {
   const board = G.board;
+  const allowance = u.move * marchMult(G, u, RULES);
   const seen = new Map([[u.at, 0]]);
   const out = [];
   let frontier = [{ h: hexOf(G, u), spent: 0, stopped: false }];
@@ -1004,7 +1048,7 @@ function reachable(G, u) {
         if ((sp === 'extra_activation_cost_enemies_only' || sp === 'extra_movement_cost_enemies_only')
             && nb.terrainOwner !== null && nb.terrainOwner !== u.owner) cost += 1;
         const spent = cur.spent + cost;
-        if (spent > u.move) continue;
+        if (spent > allowance) continue;
         const k = key(nb.q, nb.r);
         if (seen.has(k) && seen.get(k) <= spent) continue;
         seen.set(k, spent); out.push(nb);
@@ -1297,6 +1341,8 @@ function runGame(opts = {}) {
     // Level 1 exists to separate "the AI learned not to die" from "the AI learned
     // to spend bodies", which would otherwise be confounded at level 2.
     sacrifice: 0, sacCost: 60, sacGain: 1, measureLethal: 0,
+    // See marchMult. 'off' is the shipped rule; 'heavy' and 'all' are for measuring.
+    march: 'off', marchMult: 2,
     rallyScore: 38, fleeAware: 0 }, opts.rules || {});
 
   const board = makeBoard(rng, RULES.density, RULES.objectiveCount);
@@ -1355,6 +1401,11 @@ function runGame(opts = {}) {
   const deadNames = [[], []];   // which archetypes actually died, per player
   const margScore = [0, 0], margN = [0, 0];   // score of the LAST action each turn: what banking competes with
   const lethalMoves = [0, 0];   // moves taken onto a hex the mover was expected to die on
+  // Units that ACTED AT ALL, in the whole match, per player. `acted` resets every
+  // turn, so it cannot answer "did this unit ever do anything" -- which is the
+  // question DESIGN-LOG 3.4.1 asks, after a playtester watched a Man-at-Arms
+  // deploy and never reach a fight.
+  const everActed = [new Set(), new Set()];
   const dmgDealt = [0, 0], actionsBy = [0, 0];   // per-seat telemetry for run-experiments.js
 
   while (turn < maxTurns && !broke(0) && !broke(1)) {
@@ -1496,7 +1547,7 @@ function runGame(opts = {}) {
         }
         const curD = foes.length ? Math.min(...foes.map((e) => hexDist(uHex, hexOf(G, e)))) : 99;
         const holding = uHex.objective;
-        for (const to of reachable(G, u)) {
+        for (const to of reachable(G, u, RULES)) {
           const z = ZONES[to.terrain];
           const nd = foes.length ? Math.min(...foes.map((e) => hexDist(to, hexOf(G, e)))) : 99;
           let score = (curD - nd) * 2;
@@ -1595,6 +1646,7 @@ function runGame(opts = {}) {
         margScore[pl] += act.score / Math.max(1, act.cost); margN[pl] += 1;
         actionsBy[pl] += 1;
         if (act.type === 'move' && act.lethal) lethalMoves[pl] += 1;
+        if (act.u) everActed[pl].add(act.u.uid);
         if (act.type === 'rally') {
           rallyUses[pl] += 1;
           // Each rallied ally takes one free step toward the nearest enemy.
@@ -1604,7 +1656,7 @@ function runGame(opts = {}) {
             .sort((a, b) => (foes.length ? Math.min(...foes.map((e) => hexDist(hexOf(G, a), hexOf(G, e)))) - Math.min(...foes.map((e) => hexDist(hexOf(G, b), hexOf(G, e)))) : 0))
             .slice(0, act.u.rallyN);
           for (const f of picks) {
-            const opts = reachable(G, f);
+            const opts = reachable(G, f, RULES);
             if (!opts.length) continue;
             let bestHex = null, bestS = 0;          // 0 floor: never rally into a worse position
             for (const h of opts) {
@@ -1730,7 +1782,14 @@ function runGame(opts = {}) {
     against, conceded: against, killPoints, objPoints, unitsLost,
     survivors: [living(0).length, living(1).length],
     timeout: turn >= maxTurns && !broke(0) && !broke(1),
-    discards, forcedPicks, forcedRosters, lethalMoves, rallyUses, fleeTriggers, fleeCornered, deadNames, dmgDealt, actionsBy, marginalValue: [margN[0]?margScore[0]/margN[0]:0, margN[1]?margScore[1]/margN[1]:0], rules: RULES, seizeBonusPoints,
+    discards, forcedPicks, forcedRosters, lethalMoves,
+    everActed: [everActed[0].size, everActed[1].size],
+    undeployedNames: [0, 1].map((pl) => Array.from(G.units.values())
+      .filter((u) => u.owner === pl && !u.deployed).map((u) => u.name)),
+    idleNames: [0, 1].map((pl) => Array.from(G.units.values())
+      .filter((u) => u.owner === pl && !everActed[pl].has(u.uid))
+      .map((u) => u.name)),
+ rallyUses, fleeTriggers, fleeCornered, deadNames, dmgDealt, actionsBy, marginalValue: [margN[0]?margScore[0]/margN[0]:0, margN[1]?margScore[1]/margN[1]:0], rules: RULES, seizeBonusPoints,
   };
 }
 
