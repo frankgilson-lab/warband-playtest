@@ -881,6 +881,23 @@ const hexDist = (a, b) => {
   const dq = a.q - b.q, dr = a.r - b.r;
   return (Math.abs(dq) + Math.abs(dq + dr) + Math.abs(dr)) / 2;
 };
+// The greatest distance between any two hexes on this board. Derived from the
+// layout rather than written down as 11, so it stays true if W or H change --
+// makeBoard's coordinates are a pure function of them and consume no randomness,
+// so the diameter can be computed here once at load.
+//
+// Exists because a review found the trace's separation bounds checked only that
+// companies were at least one hex apart. A frame claiming twelve, on a board whose
+// diameter is eleven, validated -- and it landed on exactly the frame the closing
+// window reads as its starting separation.
+const BOARD_DIAMETER = (() => {
+  const cells = [];
+  for (let r = 0; r < H; r++) for (let i = 0; i < W; i++) cells.push({ q: i - (r >> 1), r });
+  let max = 0;
+  for (const a of cells) for (const b of cells) { const d = hexDist(a, b); if (d > max) max = d; }
+  return max;
+})();
+
 // ── line of sight ───────────────────────────────────────────────────────────
 function cubeRound(x, y, z) {
   let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
@@ -1061,6 +1078,29 @@ function reachable(G, u, RULES) {
 }
 
 // ─────────────────────────── combat ───────────────────────────
+// Which allied aura carrier, if any, is boosting `attacker` right now. Extracted
+// from damageOf so the diagnostic trace can attribute a boosted blow back to the
+// unit that enabled it WITHOUT re-implementing the search: an adversarial review
+// demonstrated an aura carrier that flipped a match while its dossier recorded
+// nothing at all, because the aura is applied here and the dossier only ever saw
+// the ally who landed the blow. Two copies of this scan would be two chances to
+// answer the question differently, which is the failure this repository is
+// already built to prevent elsewhere.
+//
+// Returns the FIRST carrier in range, matching the original loop exactly: the
+// bonus does not stack, so which carrier is found does not change the damage.
+function auraSource(G, attacker, RULES) {
+  if (!RULES || !RULES.auraActive) return null;
+  const aH = hexOf(G, attacker);
+  if (!aH) return null;
+  for (const h of G.board.values()) {
+    const f = occupantOf(G, h);
+    if (!f || !f.alive || !f.auraDmg || f.owner !== attacker.owner || f.uid === attacker.uid) continue;
+    if (hexDist(aH, h) <= f.auraRange) return f;
+  }
+  return null;
+}
+
 function damageOf(G, attacker, defender, RULES) {
   const board = G.board;
   const aH = hexOf(G, attacker), dH = hexOf(G, defender);
@@ -1075,11 +1115,8 @@ function damageOf(G, attacker, defender, RULES) {
   // Scoped to the attacker's own side, and never self-buffing, so the aura has to
   // be positioned among the men to do anything.
   if (RULES && RULES.auraActive) {
-    for (const h of board.values()) {
-      const f = occupantOf(G, h);
-      if (!f || !f.alive || !f.auraDmg || f.owner !== attacker.owner || f.uid === attacker.uid) continue;
-      if (hexDist(aH, h) <= f.auraRange) { dmg += f.auraDmg; break; }
-    }
+    const src = auraSource(G, attacker, RULES);
+    if (src) dmg += src.auraDmg;
   }
   // Strength in numbers: a Light unit fights better with its own kind beside it
   if (RULES && RULES.swarmBonus && attacker.cls === 'light') {
@@ -1260,6 +1297,44 @@ function objectiveScore(G, RULES) {
   return { held, gain };
 }
 
+// ── how two companies' shares of their break points compare ──────────────────
+// THE one implementation, used by runGame, validateResult, the analysis harness
+// and the table game. Returns -1 when player 0 holds the smaller share, i.e. is
+// further from breaking and therefore ahead; 0 means an exact tie, which is a
+// DRAW and so a third outcome rather than a rounding artefact.
+//
+// Cross-multiplied rather than divided, because float division cannot decide that
+// third outcome reliably. Exact whenever every operand fits the integer-safe
+// range: floor(sqrt(2^53)) is the largest value whose square is still exactly
+// representable, and a real match tops out around 200 conceded against a
+// threshold under 100, so legal play clears the bound by a factor of about a
+// million.
+//
+// Outside the bound, DIVIDE. Cross-multiplying large finite operands silently
+// produces Infinity on both sides, and `Infinity === Infinity` is a false draw --
+// two distinct ratios reported as a tie. Dividing orders them correctly and
+// cannot overflow. Equality on that branch is float equality and is NOT exact,
+// which is stated rather than hidden: no legal state reaches it, and a state that
+// does has already failed validateResult's range check.
+//
+// This guard used to live in engine.js alone, with a comment arguing the other
+// drivers "work on state they built, where the values cannot be hostile". That
+// reasoning was half right -- and it is exactly the "correct, or merely lucky?"
+// case DESIGN-LOG 5 says to resolve and write down. It also left one rule with
+// three implementations, which is the failure run-drift.js exists to prevent and
+// could not catch here, because the drift gate compares moves and never reaches
+// the terminal comparison. A portal reviewer found the divergence instead.
+const SHARE_EXACT_MAX = 94906265;
+function shareCmp(a0, b0, a1, b1) {
+  const d0 = Math.max(1, b0), d1 = Math.max(1, b1);
+  const exact = a0 >= 0 && a1 >= 0
+    && a0 <= SHARE_EXACT_MAX && a1 <= SHARE_EXACT_MAX
+    && d0 <= SHARE_EXACT_MAX && d1 <= SHARE_EXACT_MAX;
+  const x = exact ? a0 * d1 : a0 / d0;
+  const y = exact ? a1 * d0 : a1 / d1;
+  return x === y ? 0 : (x < y ? -1 : 1);
+}
+
 const STRATEGIES = {
   swarm: (o) => o.slice().sort((a, b) => ARCH[a].cost - ARCH[b].cost || a.localeCompare(b))[0],
   midrange: (o) => o.slice().sort((a, b) => {
@@ -1390,6 +1465,7 @@ function runGame(opts = {}) {
       if (u.banner) fallenBanners[u.owner] += 1;
     }
     deadNames[u.owner].push(u.name);
+    if (TRACE) { const d = dsr(u); d.deathTurn = turn; d.deathHex = h ? key(h.q, h.r) : null; }
     const gain = u.vp + (u.banner ? BANNER_BONUS : 0);
     against[u.owner] += gain; killPoints[1 - u.owner] += gain; unitsLost[u.owner] += 1;
   }
@@ -1407,6 +1483,111 @@ function runGame(opts = {}) {
   // deploy and never reach a fight.
   const everActed = [new Set(), new Set()];
   const dmgDealt = [0, 0], actionsBy = [0, 0];   // per-seat telemetry for run-experiments.js
+
+  // ── diagnostic trace (opt-in via opts.trace; read by run-diagnostic.js) ─────
+  // Every result this simulation reports today is a match-END scalar, so it can
+  // say an archetype wins 46% but not WHEN the match stopped being winnable, or
+  // whether a unit that "acted" ever actually mattered. This records the shape of
+  // a match rather than its verdict: one frame per completed turn, plus a dossier
+  // per unit.
+  //
+  // OBSERVATION ONLY. Nothing below draws from the RNG, mutates game state, or
+  // changes the order anything is evaluated in -- so a traced match must be
+  // identical to an untraced one, field for field. That is not a convention to be
+  // remembered; test/warband-diagnostic.test.js asserts it on every seed it runs,
+  // because instrumentation that quietly perturbs the thing it measures would
+  // invalidate every figure in DESIGN-LOG.md without failing anything.
+  //
+  // Off by default, and the guards matter: a sweep runs 21,600 matches, so the
+  // dossiers are built only when asked for.
+  const TRACE = Boolean(opts.trace);
+  const trace = [];
+  const dossier = new Map();          // uid -> what this unit did with its match
+  if (TRACE) {
+    for (const u of units.values()) {
+      dossier.set(u.uid, {
+        uid: u.uid, name: u.name, owner: u.owner, cls: u.cls,
+        cost: u.cost, vp: u.vp, banner: Boolean(u.banner),
+        deployTurn: null, deathTurn: null, deathHex: null,
+        actions: 0, dmgDealt: 0, dmgTaken: 0, kills: 0,
+        // Rally is counted separately because it is the one shipped ability that
+        // does its job WITHOUT dealing or taking a blow: the Warlord's own card
+        // says the captain "commands by moving men, not by existing". A measure of
+        // usefulness built only from damage and ground scores that unit at a third
+        // of the roster and is measuring its own blind spot, not the unit.
+        rallies: 0, ralliedAllies: 0,
+        // Blows this unit's aura boosted, and the damage it added. Zero on every
+        // shipped archetype, because none carries an aura -- but the mechanic is
+        // implemented and reachable from the experiment knobs, and an aura carrier
+        // that decides a match while its dossier reads all zeroes is exactly the
+        // silent failure this instrumentation exists to prevent.
+        auraAssists: 0, auraDmgAdded: 0,
+        // The turn this unit first dealt or received a blow. A unit can act every
+        // turn by walking toward a fight it never reaches, which is exactly what a
+        // playtester watched a Man-at-Arms do (DESIGN-LOG 3.4.1); everActed counts
+        // that as engaged and this does not.
+        firstContact: null,
+        objTurns: 0,
+      });
+    }
+  }
+  const dsr = (u) => dossier.get(u.uid);
+  // One blow, recorded from both ends. Dealt and taken are logged from the SAME
+  // applied number at the SAME site, so summed over every unit the two totals must
+  // be equal -- the invariant validateResult checks, and the one that catches a
+  // hook wired to the wrong variable while still printing plausible figures.
+  // RULES with the aura switched off, built once. Used to ask what a blow would
+  // have been without it.
+  const RULES_NO_AURA = Object.assign({}, RULES, { auraActive: false });
+
+  // `applied` maps a damageOf result to the number actually subtracted, so the
+  // aura's contribution is measured through the same arithmetic the blow went
+  // through. Sweep carry-through subtracts a penalty and floors at 1; an aimed
+  // blow is damageOf as-is.
+  const logBlow = (a, v, dmg, applied) => {
+    const da = dsr(a), dv = dsr(v);
+    da.dmgDealt += dmg; dv.dmgTaken += dmg;
+    if (da.firstContact == null) da.firstContact = turn;
+    if (dv.firstContact == null) dv.firstContact = turn;
+    // Credit the enabler as well as the striker -- but only for damage the aura
+    // ACTUALLY added. The first version credited the carrier's nominal auraDmg on
+    // every boosted blow, and a review showed that wrong for an implemented input:
+    // with every target's damage cap already binding, an aura changed not one blow
+    // and not one outcome, yet its carrier was recorded with 34 assists and 102
+    // damage added, and the report called it useful on that basis.
+    //
+    // Asking damageOf what the blow would have been without the aura keeps one
+    // implementation of the cap, the cover reduction and the minimum, instead of
+    // a second copy here that could disagree with the rules.
+    //
+    // Called before killUnit, so the attacker still stands where it struck and
+    // auraSource sees the board damageOf saw.
+    const src = auraSource(G, a, RULES);
+    if (!src) return;
+    const without = applied(damageOf(G, a, v, RULES_NO_AURA));
+    const added = dmg - without;
+    if (added <= 0) return;             // the aura was there and changed nothing
+    const ds = dsr(src);
+    ds.auraAssists += 1; ds.auraDmgAdded += added;
+  };
+  // Closest and mean separation between the two living companies, for the endgame
+  // passivity question (DESIGN-LOG 3.2): a leader paid to run out the clock should
+  // show as widening range in the closing turns. O(n^2) over at most 12 a side,
+  // and only when tracing.
+  const separation = () => {
+    const a = living(0), b = living(1);
+    if (!a.length || !b.length) return { min: null, mean: null };
+    let min = Infinity, sum = 0, n = 0;
+    for (const x of a) {
+      const xh = hexOf(G, x);
+      for (const y of b) {
+        const d = hexDist(xh, hexOf(G, y));
+        if (d < min) min = d;
+        sum += d; n += 1;
+      }
+    }
+    return { min, mean: sum / n };
+  };
 
   while (turn < maxTurns && !broke(0) && !broke(1)) {
     turn += 1;
@@ -1428,6 +1609,7 @@ function runGame(opts = {}) {
         if (!spots.length) break;
         spots.sort((a, b) => Math.abs(col(a.q, a.r) - (W - 1) / 2) - Math.abs(col(b.q, b.r) - (W - 1) / 2));
         place(G, u, spots[0]); u.deployed = true; pts -= u.cost;
+        if (TRACE) dsr(u).deployTurn = turn;
         if (spots[0].objective) spots[0].controller = pl;
       }
     }
@@ -1647,8 +1829,10 @@ function runGame(opts = {}) {
         actionsBy[pl] += 1;
         if (act.type === 'move' && act.lethal) lethalMoves[pl] += 1;
         if (act.u) everActed[pl].add(act.u.uid);
+        if (TRACE && act.u) dsr(act.u).actions += 1;
         if (act.type === 'rally') {
           rallyUses[pl] += 1;
+          if (TRACE) dsr(act.u).rallies += 1;
           // Each rallied ally takes one free step toward the nearest enemy.
           const foes = living(1 - pl);
           const picks = act.targets
@@ -1665,6 +1849,7 @@ function runGame(opts = {}) {
             }
             if (!bestHex) continue;
             place(G, f, bestHex);
+            if (TRACE) dsr(act.u).ralliedAllies += 1;
             if (bestHex.objective) bestHex.controller = f.owner;
             triggerFlight(f);
           }
@@ -1672,7 +1857,8 @@ function runGame(opts = {}) {
           const victim = redirect(G, act.target, act.dmg);
           const dmg = victim === act.target ? act.dmg : damageOf(G, act.u, victim, RULES);
           victim.hp -= dmg; dmgDealt[pl] += dmg;
-          if (victim.hp <= 0) { killUnit(victim); kills += 1; }
+          if (TRACE) logBlow(act.u, victim, dmg, (x) => x);
+          if (victim.hp <= 0) { killUnit(victim); kills += 1; if (TRACE) dsr(act.u).kills += 1; }
           // SWEEP: a Medium unit's blow carries through the press around its target, which is
           // precisely the formation Overwhelm requires Light units to adopt.
           if (sweeps(act.u, RULES) && act.target.at != null) {
@@ -1682,7 +1868,8 @@ function runGame(opts = {}) {
               if (act.u.range > 1 && !losClear(board, hexOf(G, act.u), hexOf(G, other))) continue;
               const d2 = Math.max(1, damageOf(G, act.u, other, RULES) - RULES.sweepPenalty);
               other.hp -= d2; dmgDealt[pl] += d2;
-              if (other.hp <= 0) { killUnit(other); kills += 1; }
+              if (TRACE) logBlow(act.u, other, d2, (x) => Math.max(1, x - RULES.sweepPenalty));
+              if (other.hp <= 0) { killUnit(other); kills += 1; if (TRACE) dsr(act.u).kills += 1; }
             }
           }
         } else {
@@ -1720,6 +1907,28 @@ function runGame(opts = {}) {
         if (!gain[pl]) continue;
         against[1 - pl] += gain[pl]; objPoints[pl] += gain[pl];
       }
+    }
+    if (TRACE) {
+      // Objective tenure is credited on the hex a unit ENDS the turn on, which is
+      // the same moment the objective payout is scored, so the two agree.
+      for (const h of board.values()) {
+        if (!h.objective) continue;
+        const occ = occupantOf(G, h);
+        if (occ && occ.alive) dsr(occ).objTurns += 1;
+      }
+      const { held } = objectiveScore(G, RULES);
+      const sep = separation();
+      // Running totals, not per-turn deltas. The report subtracts; the validator
+      // can then check that the frames reconcile with the match result exactly,
+      // which a stored delta would let drift silently.
+      trace.push({
+        turn, held,
+        against: against.slice(),
+        living: [living(0).length, living(1).length],
+        actions: actionsBy.slice(),
+        dmg: dmgDealt.slice(),
+        sepMin: sep.min, sepMean: sep.mean,
+      });
     }
     order = [order[1], order[0]];
   }
@@ -1770,9 +1979,8 @@ function runGame(opts = {}) {
     if (RULES.timeRule === 'absolute') {
       winner = against[0] === against[1] ? 'draw' : (against[0] < against[1] ? 0 : 1);
     } else {
-      const b0 = Math.max(1, breakAt[0]), b1 = Math.max(1, breakAt[1]);
-      const share0 = against[0] * b1, share1 = against[1] * b0;
-      winner = share0 === share1 ? 'draw' : (share0 < share1 ? 0 : 1);
+      const cmp = shareCmp(against[0], breakAt[0], against[1], breakAt[1]);
+      winner = cmp === 0 ? 'draw' : (cmp < 0 ? 0 : 1);
     }
   }
 
@@ -1789,6 +1997,8 @@ function runGame(opts = {}) {
     idleNames: [0, 1].map((pl) => Array.from(G.units.values())
       .filter((u) => u.owner === pl && !everActed[pl].has(u.uid))
       .map((u) => u.name)),
+    trace: TRACE ? trace : null,
+    dossiers: TRACE ? Array.from(dossier.values()) : null,
  rallyUses, fleeTriggers, fleeCornered, deadNames, dmgDealt, actionsBy, marginalValue: [margN[0]?margScore[0]/margN[0]:0, margN[1]?margScore[1]/margN[1]:0], rules: RULES, seizeBonusPoints,
   };
 }
@@ -1820,6 +2030,13 @@ function validateResult(r) {
     }
     if (r.breakAt[p] !== Math.ceil((r.totalVP[p] * BREAK_NUM) / BREAK_DEN)) return `player ${p} break threshold is not 2/3 of total`;
     if (r.against[p] < 0) return `player ${p} has negative points against`;
+    // The share comparison is exact only inside the integer-safe range. Legal play
+    // clears that bound by roughly a factor of a million, so this can only fire on
+    // a forged or corrupted state -- which is the point: it makes "no legal state
+    // reaches the inexact branch" a checked claim rather than an assumed one.
+    if (!(r.against[p] <= SHARE_EXACT_MAX && r.breakAt[p] <= SHARE_EXACT_MAX)) {
+      return `player ${p} has values outside the exactly comparable range (against ${r.against[p]}, breakAt ${r.breakAt[p]})`;
+    }
     // Kill scoring is capped by what the warband is worth PLUS the banner bonus:
     // an opponent cannot score more from your dead than your units are
     // collectively valued at, except that felling your banner pays an extra
@@ -1852,13 +2069,157 @@ function validateResult(r) {
   // the whole suite passed unchanged when the rule was switched -- and it is
   // exactly the sort of branch that gets quietly reverted in a merge.
   if (r.timeout && !(r.rules && r.rules.timeRule === 'absolute')) {
-    const s0 = r.against[0] * Math.max(1, r.breakAt[1]);
-    const s1 = r.against[1] * Math.max(1, r.breakAt[0]);
+    const cmp = shareCmp(r.against[0], r.breakAt[0], r.against[1], r.breakAt[1]);
     if (r.winner === 'draw') {
-      if (s0 !== s1) return `capped match declared a draw but the companies held different shares of their break points`;
-    } else {
-      const w = r.winner, shares = [s0, s1];
-      if (!(shares[w] < shares[1 - w])) return `capped match declared winner ${w}, which was not further from breaking`;
+      if (cmp !== 0) return `capped match declared a draw but the companies held different shares of their break points`;
+    } else if (!(r.winner === 0 ? cmp < 0 : cmp > 0)) {
+      return `capped match declared winner ${r.winner}, which was not further from breaking`;
+    }
+  }
+  // ── the diagnostic trace, when one was asked for ──────────────────────────
+  // These run inside the validator rather than only in a test file for the same
+  // reason the clock-tiebreak invariant does: every sweep validates every result,
+  // so a counter wired to the wrong variable is caught by any run, not only by a
+  // test somebody remembered. Instrumentation fails quietly by construction --
+  // a mis-hooked tally still prints a plausible number -- so the checks below are
+  // reconciliation against figures the match computed independently, never
+  // self-consistency of the trace with itself.
+  if (r.trace) {
+    if (!Array.isArray(r.dossiers)) return 'trace present without dossiers';
+    if (r.trace.length !== r.turns) return `trace has ${r.trace.length} frames for ${r.turns} turns`;
+    const last = r.trace[r.trace.length - 1];
+    if (!last) return 'trace is empty but the match ran at least one turn';
+    for (const p2 of [0, 1]) {
+      if (last.against[p2] !== r.against[p2]) return `final trace frame has ${last.against[p2]} against player ${p2}, result says ${r.against[p2]}`;
+      if (last.dmg[p2] !== r.dmgDealt[p2]) return `final trace frame has ${last.dmg[p2]} damage by player ${p2}, result says ${r.dmgDealt[p2]}`;
+      if (last.actions[p2] !== r.actionsBy[p2]) return `final trace frame has ${last.actions[p2]} actions by player ${p2}, result says ${r.actionsBy[p2]}`;
+    }
+    // Points against never come back down: a frame that shows them falling means
+    // the running totals were captured out of step with the scoring.
+    for (let i = 1; i < r.trace.length; i++) {
+      for (const p2 of [0, 1]) {
+        if (r.trace[i].against[p2] < r.trace[i - 1].against[p2]) return `points against player ${p2} fell between turns ${r.trace[i - 1].turn} and ${r.trace[i].turn}`;
+        if (r.trace[i].dmg[p2] < r.trace[i - 1].dmg[p2]) return `damage by player ${p2} fell between turns ${r.trace[i - 1].turn} and ${r.trace[i].turn}`;
+      }
+    }
+    if (r.dossiers.length !== 2 * STABLE) return `${r.dossiers.length} dossiers, expected ${2 * STABLE}`;
+    // Every point of damage was dealt by someone AND landed on someone. The two
+    // sides are logged from the same applied number at the same call site, so an
+    // inequality means a hook was missed or double-counted.
+    let dealt = 0, taken = 0;
+    const byOwner = [0, 0], deadByOwner = [0, 0];
+    for (const d of r.dossiers) {
+      dealt += d.dmgDealt; taken += d.dmgTaken;
+      byOwner[d.owner] += d.dmgDealt;
+      if (d.deathTurn != null) deadByOwner[d.owner] += 1;
+      if (d.deployTurn == null && d.actions > 0) return `${d.name} took ${d.actions} action(s) without ever deploying`;
+      if (d.firstContact == null && (d.dmgDealt > 0 || d.dmgTaken > 0)) return `${d.name} exchanged blows but has no first-contact turn`;
+      if (d.deathTurn != null && d.deathTurn > r.turns) return `${d.name} died on turn ${d.deathTurn}, after the match ended on ${r.turns}`;
+    }
+    if (dealt !== taken) return `dossiers account for ${dealt} damage dealt but ${taken} taken`;
+    // WIRING CHECK, not evidence: rallyUses and the dossier tally are incremented
+    // on adjacent lines, so agreement is nearly free. A review pointed out this was
+    // being described as independent, and that the test asserting it said the two
+    // were "tallied at a different site". They are not. It still catches a hook
+    // attached to the wrong unit or seat, which is why it stays.
+    for (const p2 of [0, 1]) {
+      const rl = r.dossiers.filter((d) => d.owner === p2).reduce((t, d) => t + d.rallies, 0);
+      if (rl !== r.rallyUses[p2]) return `dossiers record ${rl} rallies by player ${p2}, result says ${r.rallyUses[p2]}`;
+    }
+    // ── the fields the REPORT consumes ────────────────────────────────────────
+    // Everything above was added first and left these unchecked, which an
+    // adversarial review demonstrated by validating a trace carrying negative
+    // separation, ninety-nine survivors on a six-unit side, and every unit's
+    // action count zeroed. The report reads exactly those fields, so a miswired
+    // hook in any of them passed the very check the diagnostic run performs.
+    //
+    // Where a figure the match computed independently exists, reconcile against
+    // it; the rest are bounds or wiring checks, and each is labelled as what it
+    // actually is. A blanket claim of independence stood here for one commit and a
+    // review took it apart: several of these compare a tally with a figure
+    // incremented beside it, and one compared two calls to the same helper. Prose
+    // does not make a check independent -- the question is always which code path
+    // produced each side.
+    for (const p2 of [0, 1]) {
+      // REPEATED COMPUTATION, not an independent record -- corrected after a
+      // review pointed out that both sides call the same `living` helper over
+      // unchanged end-of-match state. It catches a frame captured at the wrong
+      // moment and nothing subtler. The genuinely independent strength check is
+      // the per-turn frame-versus-dossier one further down, which compares the
+      // frames against the dossiers' own deploy and death turns.
+      if (last.living[p2] !== r.survivors[p2]) return `final trace frame has ${last.living[p2]} of player ${p2} standing, result says ${r.survivors[p2]}`;
+      // WIRING CHECK, not evidence: these tallies are incremented beside the ones
+      // they are compared with, so agreement is cheap. It still catches a hook
+      // attached to the wrong unit or player.
+      const acts = r.dossiers.filter((d) => d.owner === p2).reduce((t, d) => t + d.actions, 0);
+      if (acts !== r.actionsBy[p2]) return `dossiers record ${acts} actions by player ${p2}, result says ${r.actionsBy[p2]}`;
+    }
+    // WIRING CHECK: r.kills and the dossier tally are incremented together at both
+    // kill sites, so this is one-sided-corruption cover, not independence.
+    const kills = r.dossiers.reduce((t, d) => t + d.kills, 0);
+    if (kills !== r.kills) return `dossiers record ${kills} kills, result says ${r.kills}`;
+    // INDEPENDENT: the rosters come out of the draft, the dossiers out of the match.
+    for (const p2 of [0, 1]) {
+      const fromDossiers = r.dossiers.filter((d) => d.owner === p2).map((d) => d.name).sort().join(',');
+      const fromRoster = r.rosters[p2].slice().sort().join(',');
+      if (fromDossiers !== fromRoster) return `player ${p2} dossiers name [${fromDossiers}] but the roster is [${fromRoster}]`;
+    }
+    for (let i = 0; i < r.trace.length; i++) {
+      const f = r.trace[i];
+      for (const p2 of [0, 1]) {
+        if (!(f.living[p2] >= 0 && f.living[p2] <= STABLE)) return `turn ${f.turn} reports ${f.living[p2]} of player ${p2} standing, outside 0..${STABLE}`;
+        // A company's strength at the end of a turn is exactly the units that have
+        // deployed by then and have not yet died. Reconciles the frames against the
+        // dossiers, which are two separate records of the match.
+        //
+        // This replaced an assertion that a company can only SHRINK, which was
+        // simply false and was caught by its own fixture: reinforcements arrive over
+        // several turns, so living grows as well as falls. Left as a note because
+        // the wrong version reads perfectly plausibly.
+        const standing = r.dossiers.filter((d) => d.owner === p2
+          && d.deployTurn != null && d.deployTurn <= f.turn
+          && (d.deathTurn == null || d.deathTurn > f.turn)).length;
+        if (f.living[p2] !== standing) return `turn ${f.turn} reports ${f.living[p2]} of player ${p2} standing, dossiers say ${standing}`;
+        if (!(f.held[p2] >= 0)) return `turn ${f.turn} reports ${f.held[p2]} objectives held by player ${p2}`;
+      }
+      // Separation exists exactly when both companies still have someone standing,
+      // which ties it to living and so, at the last frame, to survivors.
+      const bothAlive = f.living[0] > 0 && f.living[1] > 0;
+      if (bothAlive !== (f.sepMin != null)) return `turn ${f.turn} has ${f.sepMin == null ? 'no' : 'a'} separation but ${bothAlive ? 'both companies stand' : 'one company is gone'}`;
+      if (f.sepMin != null) {
+        // Bounded at BOTH ends. The first version checked only the lower bound,
+        // and a review validated a frame claiming the companies were twelve hexes
+        // apart on a board eleven across -- a value the closing-window report
+        // would have published as its starting separation. Checking one direction
+        // of a two-sided quantity is the same mistake as not checking it.
+        if (!(f.sepMin >= 1)) return `turn ${f.turn} reports companies ${f.sepMin} hexes apart`;
+        if (!(f.sepMin <= BOARD_DIAMETER)) return `turn ${f.turn} reports companies ${f.sepMin} hexes apart on a board ${BOARD_DIAMETER} across`;
+        if (!(f.sepMean >= f.sepMin)) return `turn ${f.turn} has mean separation ${f.sepMean} below its own minimum ${f.sepMin}`;
+        if (!(f.sepMean <= BOARD_DIAMETER)) return `turn ${f.turn} has mean separation ${f.sepMean} on a board ${BOARD_DIAMETER} across`;
+      }
+      // Objectives cannot outnumber the hexes they sit on.
+      if (f.held[0] + f.held[1] > W * H) return `turn ${f.turn} reports ${f.held[0] + f.held[1]} objectives held on a ${W * H}-hex board`;
+    }
+    for (const d of r.dossiers) {
+      // Nothing a unit did can be negative. Checked as a group because the
+      // one-directional bounds above were exactly the defect a review found: an
+      // objTurns of -1 passed and silently reclassified a unit from mattered to
+      // not, which is a report-visible change from an impossible value.
+      for (const f of ['actions', 'dmgDealt', 'dmgTaken', 'kills', 'objTurns',
+        'rallies', 'ralliedAllies', 'auraAssists', 'auraDmgAdded']) {
+        if (!(d[f] >= 0)) return `${d.name} has ${f} of ${d[f]}`;
+      }
+      // A unit can hold ground on at most one turn per turn.
+      if (d.objTurns > r.turns) return `${d.name} held ground on ${d.objTurns} turns of a ${r.turns}-turn match`;
+      if (d.objTurns > 0 && d.deployTurn == null) return `${d.name} held ground without ever deploying`;
+      if ((d.deathTurn == null) !== (d.deathHex == null)) return `${d.name} has an inconsistent death record`;
+      if (d.rallies === 0 && d.ralliedAllies > 0) return `${d.name} moved ${d.ralliedAllies} allies without rallying`;
+      if (d.auraAssists === 0 && d.auraDmgAdded > 0) return `${d.name} added aura damage without boosting a blow`;
+      if (d.kills > 0 && d.dmgDealt === 0) return `${d.name} killed ${d.kills} without dealing damage`;
+    }
+    for (const p2 of [0, 1]) {
+      if (byOwner[p2] !== r.dmgDealt[p2]) return `dossiers give player ${p2} ${byOwner[p2]} damage, result says ${r.dmgDealt[p2]}`;
+      if (deadByOwner[p2] !== r.unitsLost[p2]) return `dossiers record ${deadByOwner[p2]} of player ${p2}'s units dead, result says ${r.unitsLost[p2]}`;
     }
   }
   return null;
@@ -1867,6 +2228,8 @@ function validateResult(r) {
 // ── exports for all three hosts ───────────────────────────────────────────────
 const WarbandCore = {
   runGame, validateResult, STRATEGIES, SIMPLIFICATIONS, mulberry32,
+  // The single share comparison every driver must use; see shareCmp.
+  shareCmp, SHARE_EXACT_MAX,
   // exposed so the interactive engine can reuse the exact rules the sim validated
   makeBoard, makeUnit, draft, dealPack, objectiveScore, serializeG, hydrateG, sweeps, reachable, damageOf, effRange, redirect, losClear,
   hexOf, occupantOf, place,
@@ -1928,6 +2291,20 @@ const WB_COL = {
   burnt_ground: '#171412', fallen_banner: '#8a2b2b', officers_cairn: '#6a5b46',
   fallen_ranks: '#5a2f31',
   p0: '#c8a24a', p1: '#9c3a34', ink: '#141312', line: '#5a5347', text: '#d8cfbc',
+  // Company B's identity red, in a version that can be READ. #9c3a34 is a good
+  // token fill and a bad typeface: it scores 2.40:1 on the card ground and
+  // 2.71:1 on the page, against WCAG 1.4.3's 4.5:1 for normal text -- while
+  // Company A's gold sits at 6.81:1. So the most important thing on the screen,
+  // whose company a thing belongs to, was legible for one player and not the
+  // other. p1 stays as the FILL; p1Text is for type and thin strokes.
+  // test/warband-contrast.test.js recomputes every one of these and fails on a
+  // regression, because a palette is exactly the kind of thing that drifts back.
+  p1Text: '#e6564d',
+  // Secondary type, raised until it clears 4.5:1 on both grounds. These carried
+  // rules the newest player most needs -- keyword names, unit stats, the burned
+  // list -- at 2.94 to 4.31:1, which is to say the explanation was there and
+  // faint. Same hue, more light.
+  dim: '#8f8676', dimmer: '#908674',
   // The two highlight languages the board speaks. `move` is where the selected
   // unit may GO; `hit` is what it may STRIKE. They must never be mistaken for one
   // another, so they differ in hue, in width and in dash -- not in shade alone.
@@ -1938,7 +2315,7 @@ const WB_COL = {
   // `partial` is a blue, carried at reduced opacity so "faded" reads as faded
   // even to someone who cannot separate the two hues.
   ready: '#9fe870', partial: '#5f97c4',
-  label: '#cbc2ab',
+  label: '#e0d6bd',
 };
 // The hex radius. At 30 the terrain labels had to be truncated to seven
 // characters and set at 8px; there is room on the page for more board than that.
@@ -1983,21 +2360,21 @@ async function warbandShowSetup() {
         ${wbEsc(WB.CFG.tagline || '')}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <label style="font-size:.75em;color:#8a8272">Player 1
+        <label style="font-size:.75em;color:${WB_COL.dim}">Player 1
           <input id="wb-p0" class="ng-input" value="Company A" style="font-size:.85em;width:120px"></label>
-        <label style="font-size:.75em;color:#8a8272">Player 2
+        <label style="font-size:.75em;color:${WB_COL.dim}">Player 2
           <input id="wb-p1" class="ng-input" value="Company B" style="font-size:.85em;width:120px"></label>
-        <label style="font-size:.75em;color:#8a8272">Terrain
+        <label style="font-size:.75em;color:${WB_COL.dim}">Terrain
           <select id="wb-density" class="ng-input" style="font-size:.85em;width:120px">
             <option value="0.15">Open field</option>
             <option value="0.45" selected>Mixed</option>
             <option value="0.75">Broken ground</option>
           </select></label>
-        <label style="font-size:.75em;color:#8a8272">Seed
+        <label style="font-size:.75em;color:${WB_COL.dim}">Seed
           <input id="wb-seed" class="ng-input" value="1" style="font-size:.85em;width:70px"></label>
         <button class="ng-btn" onclick="warbandStart()" style="font-size:.9em">Muster →</button>
       </div>
-      <div style="font-size:.72em;color:#6f6759;max-width:640px;line-height:1.5">
+      <div style="font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
         Hotseat: both players use one screen. The map is visible <em>before</em> the draft — that is the point.
       </div>
     </div>`;
@@ -2107,10 +2484,10 @@ function wbUnitCard(name, opts = {}) {
     + (opts.onclick ? 'cursor:pointer' : '');
   return `<div ${opts.onclick ? `onclick="${opts.onclick}"` : ''} style="${style}">
     <div style="color:${owned};font-weight:bold;font-size:.85em">${wbEsc(name)}</div>
-    <div style="font-size:.68em;color:#8a8272">${cls} · cost ${a.cost} · ${a.vp} vp</div>
+    <div style="font-size:.68em;color:${WB_COL.dim}">${cls} · cost ${a.cost} · ${a.vp} vp</div>
     <div style="font-size:.72em;color:${WB_COL.text};margin-top:3px">
       ${s.hp} hp · ${s.atk} atk · ${cap}<br>move ${s.move} · range ${s.range}</div>
-    <div style="font-size:.65em;color:#7d7565;margin-top:3px">${wbEsc(kw)}</div>
+    <div style="font-size:.65em;color:${WB_COL.dim};margin-top:3px">${wbEsc(kw)}</div>
     <div style="margin-top:5px"><button class="ng-btn"
       onclick="event.stopPropagation();wbInspectArch('${wbAttrStr(name)}')"
       style="font-size:.62em;padding:1px 6px;opacity:.8">What is this?</button></div>
@@ -2125,13 +2502,13 @@ function wbRenderDraft() {
   // undefined, which WB.legal two lines down reads through.
   const picking = S.toPick == null ? 0 : S.toPick;
   const who = S.names[picking];
-  const roster = (p) => S.rosters[p].map((n) => wbUnitCard(n, { owner: p })).join('') || '<span style="color:#6f6759;font-size:.75em">nothing yet</span>';
+  const roster = (p) => S.rosters[p].map((n) => wbUnitCard(n, { owner: p })).join('') || '<span style="color:${WB_COL.dimmer};font-size:.75em">nothing yet</span>';
   wbDraw(`
     <div style="padding:14px;color:${WB_COL.text}">
       ${wbTurnBanner()}
       <div style="font-size:1.05em;color:${WB_COL.p0};font-weight:bold">Draft — pack ${S.packNo} of ${WB.STABLE}</div>
       <div style="font-size:.78em;color:#9a9282;margin:4px 0 6px">
-        <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(who)}</b> picks.
+        <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(who)}</b> picks.
         Everything is open: both companies and every discard stay visible.
       </div>
       ${wbPhaseLine(`This is the field you will fight on, and you are drafting against it &mdash;
@@ -2139,22 +2516,29 @@ function wbRenderDraft() {
         Take one of the three; the rest burn. When both companies hold ${wbNum(WB.STABLE)} units you assign
         your colours, and then take the field.`)}
       ${wbMapSvg({ preview: true })}
+      ${/* The ground is asked about ON THE MAP, so it is answered directly under
+           it, before the cards. */''}
+      ${wbInspectAt('hex')}
       ${/* Said once, plainly, immediately above the three cards it governs. The
            cards now carry the drafting company's colour, but colour is never the
            only channel -- config.json makes that a standing rule, because a
            player who cannot separate gold from dark red would otherwise have
            nothing at all to go on. */''}
       <div class="wb-draft-label" style="margin:14px 0 6px;padding:5px 10px;border-radius:4px;
-          border-left:5px solid ${picking === 0 ? WB_COL.p0 : WB_COL.p1};background:#221f1c">
-        <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1};font-size:.95em">${wbEsc(who)} drafting</b>
+          border-left:5px solid ${picking === 0 ? WB_COL.p0 : WB_COL.p1Text};background:#221f1c">
+        <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1Text};font-size:.95em">${wbEsc(who)} drafting</b>
         <span style="font-size:.72em;color:#9a9282">— take one of the three; the other two burn</span>
       </div>
       <div style="display:flex;gap:10px;margin:0 0 12px;flex-wrap:wrap">
         ${S.pack.map((n) => wbUnitCard(n, { owner: picking, onclick: `wbPick('${wbAttrStr(n)}')`, dim: !WB.legal(S.rosters[picking], n) })).join('')}
       </div>
+      ${/* Directly under the buttons that summon it. BELOW the cards rather than
+           above, so that answering does not shove the card you just clicked out
+           from under your cursor. */''}
+      ${wbInspectAt('arch')}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px">
         ${[0, 1].map((seat) => `<div>
-          <div class="wb-roster-head" style="font-size:.8em;font-weight:bold;color:${seat === 0 ? WB_COL.p0 : WB_COL.p1}">
+          <div class="wb-roster-head" style="font-size:.8em;font-weight:bold;color:${seat === 0 ? WB_COL.p0 : WB_COL.p1Text}">
             ${wbEsc(S.names[seat])}${picking === seat
               ? ` <span style="font-size:.85em;font-weight:normal;padding:1px 6px;border-radius:3px;
                   background:${seat === 0 ? WB_COL.p0 : WB_COL.p1};color:${WB_COL.ink}">picking now</span>`
@@ -2163,7 +2547,7 @@ function wbRenderDraft() {
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${roster(seat)}</div>
         </div>`).join('')}
       </div>
-      <div style="margin-top:10px;font-size:.7em;color:#6f6759">
+      <div style="margin-top:10px;font-size:.7em;color:${WB_COL.dimmer}">
         Burned: ${S.discards.length ? S.discards.map(wbEsc).join(', ') : '—'}
       </div>
     </div>`);
@@ -2180,7 +2564,7 @@ function wbRenderBanner() {
       ${wbTurnBanner()}
       <div style="font-size:1.05em;color:${WB_COL.p0};font-weight:bold">Colours</div>
       <div style="font-size:.78em;color:#9a9282;margin:4px 0 10px">
-        <b style="color:${p === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[p])}</b> — assign the company's colours to one unit.
+        <b style="color:${p === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[p])}</b> — assign the company's colours to one unit.
         When the bearer dies the banner falls: +2 activation every turn thereafter, and the enemy scores
         ${WB.CFG.banner_bonus_vp} bonus points for taking it.
       </div>
@@ -2189,6 +2573,12 @@ function wbRenderBanner() {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${S.rosters[p].map((n, i) => wbUnitCard(n, { owner: p, onclick: `wbSetBanner(${i})` })).join('')}
       </div>
+      ${/* Same rule as the draft: the answer goes under the button that asks. This
+           screen is short enough that the head was not far, but "not far" is not
+           the promise -- the promise is that you do not have to go looking.
+           No map here, so a hex question -- which cannot be asked on this screen
+           -- falls through to the head rather than vanishing. */''}
+      ${wbInspectAt('arch')}
     </div>`);
 }
 function wbSetBanner(i) { wbCommit({ type: 'banner', idx: i }); }
@@ -2471,7 +2861,7 @@ function wbKeywordBlock(ids) {
     return `<div style="margin-top:5px"><b style="color:${WB_COL.p0}">${wbEsc(kw ? kw.name : id)}</b>
       <span style="color:#9a9282">&mdash; ${wbEsc(kw ? kw.description : 'no glossary entry for this keyword')}</span></div>`;
   }).join('');
-  return rows || '<div style="margin-top:5px;color:#6f6759">No keywords.</div>';
+  return rows || '<div style="margin-top:5px;color:${WB_COL.dimmer}">No keywords.</div>';
 }
 
 // What `vp` means, which the player had no way to find out. Both numbers come
@@ -2503,7 +2893,7 @@ function wbArchPanel(name) {
   return `<div style="${WB_PANEL}">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
       <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(name)}</b>
-      <span style="font-size:.7em;color:#8a8272">${wbEsc(a.movement_class)} &middot; costs ${wbEsc(String(a.cost))} to deploy</span>
+      <span style="font-size:.7em;color:${WB_COL.dim}">${wbEsc(a.movement_class)} &middot; costs ${wbEsc(String(a.cost))} to deploy</span>
     </div>
     <div style="font-size:.75em;color:${WB_COL.text};margin-top:4px">
       ${wbEsc(String(st.hp))} hp &middot; ${wbEsc(String(st.atk))} atk &middot; range ${wbEsc(String(st.range))}
@@ -2541,14 +2931,14 @@ function wbHexPanel(k) {
   return `<div style="${WB_PANEL}">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
       <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(z.name)}</b>
-      <span style="font-size:.7em;color:#8a8272">hex ${wbEsc(k)}</span>
+      <span style="font-size:.7em;color:${WB_COL.dim}">hex ${wbEsc(k)}</span>
     </div>
     <div style="font-size:.73em;color:#9a9282;margin-top:4px;line-height:1.5">${wbEsc(z.description)}</div>
     <ul style="font-size:.72em;color:${WB_COL.text};margin:6px 0 0;padding-left:16px;line-height:1.55">
       ${facts.map((f) => `<li>${wbEsc(f)}</li>`).join('')}</ul>
     ${occ && occ.alive ? `<div style="font-size:.73em;margin-top:7px;border-top:1px solid #3a352d;padding-top:6px">
-      <b style="color:${occ.owner === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(occ.name)}</b>
-      <span style="color:#8a8272">&mdash; ${wbEsc(S.names[occ.owner] || '')}, ${wbNum(occ.hp)} hp</span>
+      <b style="color:${occ.owner === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(occ.name)}</b>
+      <span style="color:${WB_COL.dim}">&mdash; ${wbEsc(S.names[occ.owner] || '')}, ${wbNum(occ.hp)} hp</span>
       <div style="margin-top:4px;color:${WB_COL.text};line-height:1.5">${wbVpLine(occ.vp)}</div>
       <div style="margin-top:4px;max-height:150px;overflow:auto">${wbKeywordBlock(
         Object.prototype.hasOwnProperty.call(WB.ARCH, occ.name) ? WB.ARCH[occ.name].keywords : [])}</div>
@@ -2557,14 +2947,55 @@ function wbHexPanel(k) {
   </div>`;
 }
 
-// Composed into every screen by wbDraw, exactly as the notice is, so the draft
-// gets it for free -- and the draft is where it matters most.
-function wbInspectPanel() {
+// The answer to "What is this?", drawn WHERE IT WAS ASKED wherever a screen says
+// where that is, and at the top of the page otherwise.
+//
+// It was only ever at the top. On the draft screen that put it above the banner,
+// the intro paragraph and the whole map, while the button that summoned it sits
+// under the cards at the very bottom -- so a playtester pressed it, saw nothing
+// happen, and had to scroll up past the field to find her answer. In her words:
+// "I do expect, perhaps naively, that when I click 'what is this?' the
+// explanation will be somewhere near the button."
+//
+// This is the same rule the anchored refusals already follow, and the same
+// mechanism: a screen that draws the panel itself marks it drawn, and wbDraw then
+// knows the head no longer owes a copy. A screen that provides no slot keeps the
+// old behaviour, so nothing loses its explanation.
+function wbInspectBody() {
   const i = wbUi.inspect;
   if (!i || !warband_state) return '';
-  if (i.hex != null) return `<div class="wb-inspect" style="margin:0 0 8px">${wbHexPanel(i.hex)}</div>`;
-  if (i.arch != null) return `<div class="wb-inspect" style="margin:0 0 8px">${wbArchPanel(i.arch)}</div>`;
+  if (i.hex != null) return wbHexPanel(i.hex);
+  if (i.arch != null) return wbArchPanel(i.arch);
   return '';
+}
+
+// Called by a screen at the point the answer belongs, and told WHICH question it
+// is answering: 'hex' for the ground, 'arch' for a unit. Renders nothing if the
+// pending question is of the other kind, and claims the panel when it does draw,
+// so the head does not draw it again.
+//
+// The kind argument is the whole point and was missing at first. One slot under
+// the draft cards answered both questions, which fixed the card case and broke
+// the hex case: the map sits ABOVE the cards, so tapping a hex put its
+// explanation below three cards and off the bottom of a phone -- the very
+// "nothing happened" the change existed to remove, moved to a different question.
+// A reviewer caught it. Two questions asked in two places need two places to be
+// answered, and a slot that answers everything is a slot that is wrong somewhere.
+function wbInspectAt(kind) {
+  const i = wbUi.inspect;
+  if (!i || !warband_state) return '';
+  const isHex = i.hex != null;
+  if (kind === 'hex' ? !isHex : isHex) return '';
+  const body = wbInspectBody();
+  if (!body) return '';
+  wbUi._inspectDrawn = true;
+  return `<div class="wb-inspect" style="margin:0 0 12px">${body}</div>`;
+}
+
+function wbInspectPanel() {
+  if (wbUi._inspectDrawn) return '';
+  const body = wbInspectBody();
+  return body ? `<div class="wb-inspect" style="margin:0 0 8px">${body}</div>` : '';
 }
 
 // ── what happens next ────────────────────────────────────────────────────────
@@ -2930,9 +3361,9 @@ function wbPassConfirm() {
 // missed and cannot be clicked through.
 function wbPassPanel(f) {
   const names = f.units.map((u) => `${wbEsc(u.name)} (${u.cost})`).join(', ');
-  return `<div style="margin-top:10px;padding:10px 12px;border:2px solid ${WB_COL.p1};border-radius:6px;
+  return `<div style="margin-top:10px;padding:10px 12px;border:2px solid ${WB_COL.p1Text};border-radius:6px;
       background:rgba(156,58,52,.16);color:${WB_COL.text}">
-      <div style="font-weight:bold;color:${WB_COL.p1};font-size:.9em;margin-bottom:4px">Pass and your deployment is gone</div>
+      <div style="font-weight:bold;color:${WB_COL.p1Text};font-size:.9em;margin-bottom:4px">Pass and your deployment is gone</div>
       <div style="font-size:.78em;line-height:1.5">
         You still hold <b>${f.points}</b> deployment ${f.points === 1 ? 'point' : 'points'} —
         enough to put <b>${f.fits}</b> more ${f.fits === 1 ? 'company' : 'companies'} on the field.
@@ -4150,6 +4581,9 @@ function wbShow() {
   // a copy. Left set, the first anchored notice would silence the head for the
   // rest of the session, including on screens that have no board to anchor to.
   wbUi._noticeDrawn = false;
+  // Same reasoning, for the answer to "What is this?": a screen that draws the
+  // panel where it was asked claims it here, and wbDraw reads that afterwards.
+  wbUi._inspectDrawn = false;
   // A guest between joining and the first snapshot has no game and still has a
   // screen, and things that need to reach a player -- the answer to the button,
   // above all -- happen there too.
@@ -4173,12 +4607,16 @@ function wbLoad(pub) {
     // terrain read it after the kill -- so "still in the Map" is not "still
     // there". A selection that outlived its unit renders a corpse as selected and
     // sends moves the host will refuse forever.
-    const alive = (uid) => {
-      if (uid == null) return true;
-      const u = warband_state.G && warband_state.G.units.get(uid);
-      return !!u && u.alive;
-    };
-    if (alive(keep.unit) && alive(keep.deploy) && alive(keep.picked)) warband_state.sel = keep;
+    // Liveness alone is not enough -- see wbSelValid. A snapshot arriving after
+    // this client's own deployment leaves the unit alive and the `deploy` role
+    // spent, and keeping it made the board advertise thirteen hexes the host would
+    // refuse. Every surviving role is now re-asked, against the same predicates the
+    // appliers use.
+    warband_state.sel = keep;
+    const held = ['unit', 'deploy', 'picked'].filter((f) => keep[f] != null);
+    if (!held.length || !held.every((f) => wbSelValid(warband_state, f))) {
+      warband_state.sel = null;
+    }
   }
   return warband_state;
 }
@@ -4506,6 +4944,33 @@ function wbSelUnit(S, field) {
 }
 function wbRallyCaptain(S) { return S.rally ? S.G.units.get(S.rally.uid) : null; }
 
+// Is a selection's ROLE still something the rules allow, not merely its unit still
+// breathing? These are the same questions the authoritative appliers ask, kept
+// beside each other so the board cannot answer one way while the host answers the
+// other:
+//
+//   deploy  -> wbDeploy refuses a deployed unit          ("is already on the field")
+//   picked  -> wbRallyMove refuses one already moved     ("has already moved")
+//   unit    -> a unit in reserve has nothing to move or shoot with
+//
+// wbLoad used to keep any selection whose unit was alive, which is a much weaker
+// test than it looks: a unit is very much alive immediately after it deploys. So a
+// `deploy` selection survived its own deployment, the board went on lighting the
+// whole deployment zone for it, and the next click was refused by the applier.
+//
+// An affordance that invites a click the host will refuse is worse than none at
+// all. The first playtest failed because the interface answered wrong guesses with
+// silence; this failed the same rule from the other side, by answering a
+// right-LOOKING guess with a refusal. Highlights encode what the rules permit, so
+// they have to ask what the rules ask.
+function wbSelValid(S, field) {
+  const u = wbSelUnit(S, field);
+  if (!u || !u.alive) return false;
+  if (field === 'deploy') return !u.deployed;
+  if (field === 'picked') return !!S.rally && !S.rally.moved.includes(u.uid);
+  return !!u.deployed;
+}
+
 // The board speaks two highlight languages now, and they are deliberately not two
 // shades of one. GOLD, solid, on the hex outline: where the selected unit may GO.
 // ORANGE, dashed and heavier, ringing the enemy token: what it may HIT, this
@@ -4516,6 +4981,45 @@ function wbRallyCaptain(S) { return S.rally ? S.G.units.get(S.rally.uid) : null;
 // pieces -- but it no longer refuses INSPECTION. The whole design claim is that
 // composition is chosen against known terrain, and a map you cannot interrogate
 // while drafting is decoration.
+// A unit token, shaped by the company that owns it. Company A is a disc,
+// Company B a diamond.
+//
+// Ownership was carried by fill colour alone: same circle, same radius, and the
+// letter inside is the ARCHETYPE, not the owner. Two Dragoons from opposing
+// companies standing near each other were the same token in two hues, which
+// config.json already forbids -- it makes "colour is never the only channel" a
+// standing rule, on the grounds that a player who cannot separate gold from dark
+// red would otherwise have nothing to go on. The rule was written down and not
+// kept. WCAG 1.4.1 says the same thing.
+//
+// Shape rather than another ring, because the rings are taken: gold solid means
+// "may go here", orange dashed means "may strike this", green and blue mean "may
+// still act". A fourth ring would be a fourth thing to learn; a silhouette is
+// recognised without being taught, which is how physical wargames have always
+// done it.
+//
+// The diamond's half-diagonal is scaled so its area matches the disc's -- the
+// tap target must not shrink for one company, which would be a different
+// accessibility problem traded for this one.
+function wbToken(cx, cy, r, owner, fill, stroke, sw, inner) {
+  const x = Number(cx), y = Number(cy);
+  if (owner !== 1) {
+    return `<circle cx="${x}" cy="${y}" r="${r.toFixed(1)}" fill="${fill}"`
+      + ` stroke="${stroke}" stroke-width="${sw}" ${inner}`;
+  }
+  // Half-diagonal chosen so the diamond's area matches the disc's: a diamond of
+  // half-diagonal d has area 2d^2, so d = r * sqrt(pi/2) ~= 1.2533r.
+  const d = r * 1.2533;
+  const pts = [
+    `${x},${(y - d).toFixed(1)}`,
+    `${(x + d).toFixed(1)},${y}`,
+    `${x},${(y + d).toFixed(1)}`,
+    `${(x - d).toFixed(1)},${y}`,
+  ].join(' ');
+  return `<polygon points="${pts}" fill="${fill}"`
+    + ` stroke="${stroke}" stroke-width="${sw}" ${inner}`;
+}
+
 function wbMapSvg(opts = {}) {
   const S = warband_state;
   const hexes = [...S.board.values()];
@@ -4533,10 +5037,16 @@ function wbMapSvg(opts = {}) {
   // across a snapshot can belong to the side whose turn it no longer is, and gold
   // hexes for a unit the rules will refuse to move are the same lie in the other
   // language.
-  let mover = S.rally ? wbSelUnit(S, 'picked') : wbSelUnit(S, 'unit');
+  //
+  // Preview is the end-of-match map and the draft screen: both refuse gameplay
+  // clicks outright, so neither may light a hex. Highlights that cannot be acted
+  // on are the same lie again, just one the player cannot even test.
+  const live = !opts.preview;
+  const movingField = S.rally ? 'picked' : 'unit';
+  let mover = live && wbSelValid(S, movingField) ? wbSelUnit(S, movingField) : null;
   if (mover && mover.owner !== wbActive()) mover = null;
   const reach = mover ? new Set(WB.reachable(S.G, mover).map((x) => WB.key(x.q, x.r))) : null;
-  const shooter = S.rally ? null : wbSelUnit(S, 'unit');
+  const shooter = (live && !S.rally && wbSelValid(S, 'unit')) ? wbSelUnit(S, 'unit') : null;
   const hits = new Set(wbAttackTargets(shooter).map((t) => t.uid));
   const rUnit = WB_SIZE * 0.42, rRing = WB_SIZE * 0.60;
   // Two sizes, and the player picks. FIT scales the whole board into whatever
@@ -4560,7 +5070,7 @@ function wbMapSvg(opts = {}) {
     const hOcc = S.G ? WB.occupantOf(S.G, h) : null;
     const canMove = !!(reach && reach.has(k));
     const canHit = !!(hOcc && hOcc.alive && hits.has(hOcc.uid));
-    const dep = wbSelUnit(S, 'deploy') && h.occupant == null && z.allows_deployment
+    const dep = live && wbSelValid(S, 'deploy') && h.occupant == null && z.allows_deployment
       && (wbActive() === 0 ? WB.col(h.q, h.r) <= 1 : WB.col(h.q, h.r) >= WB.W - 2);
     // Classes are the machine-readable half of the two languages, and they are
     // what the tests assert against: a board that highlights nothing renders
@@ -4579,8 +5089,24 @@ function wbMapSvg(opts = {}) {
       stroke-width="${canHit ? 3 : lit ? 3 : 1}"
       ${canHit ? 'stroke-dasharray="6 4"' : ''} ${click}>
       <title>${wbEsc(z.name)} — ${wbEsc(z.description)}${hOcc && hOcc.alive ? ` | ${wbEsc(hOcc.name)}, ${wbNum(hOcc.hp)} hp` : ''}</title></polygon>`;
-    if (h.objective) out += `<circle cx="${c.x}" cy="${c.y}" r="${(WB_SIZE * .74).toFixed(1)}" fill="none" pointer-events="none"
-      stroke="${h.controller === 0 ? WB_COL.p0 : h.controller === 1 ? WB_COL.p1 : '#8d846f'}" stroke-width="2" stroke-dasharray="4 3"/>`;
+    if (h.objective) {
+      // Two problems, both from the same line. The controller was carried by
+      // colour alone, and the red ring scored barely above 1:1 against several
+      // terrain fills -- WCAG 1.4.11 asks 3:1 of a graphic that means something.
+      //
+      // So: a dark halo underneath, which makes the ring readable on any ground
+      // whatever its own colour; the readable red rather than the fill red; and
+      // a dash pattern that differs by controller, so who holds it survives
+      // being printed in grey.
+      const or_ = (WB_SIZE * .74).toFixed(1);
+      const ostroke = h.controller === 0 ? WB_COL.p0
+        : h.controller === 1 ? WB_COL.p1Text : '#b3a992';
+      const odash = h.controller === 0 ? '10 4' : h.controller === 1 ? '3 3' : '4 3';
+      out += `<circle cx="${c.x}" cy="${c.y}" r="${or_}" fill="none" pointer-events="none"
+        stroke="${WB_COL.ink}" stroke-width="4" stroke-opacity=".85"/>`;
+      out += `<circle cx="${c.x}" cy="${c.y}" r="${or_}" fill="none" pointer-events="none"
+        stroke="${ostroke}" stroke-width="2" stroke-dasharray="${odash}"/>`;
+    }
     // On a narrow screen the FITTED board puts this label at about four pixels,
     // which is not a small label but an unreadable smear over the fill it is
     // meant to explain. So on that screen the fitted board drops the text and
@@ -4599,7 +5125,16 @@ function wbMapSvg(opts = {}) {
         && WB.hexDist(WB.hexOf(S.G, cap), WB.hexOf(S.G, u)) <= cap.rallyRange;
       if (rallyable) out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none" pointer-events="none"
         stroke="${WB_COL.p0}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
-      if (canHit) out += `<circle class="wb-target" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
+      // A dark halo under the attack ring, so the orange is legible on ground it
+      // would otherwise disappear into -- it scored 2.32:1 against Officer's
+      // Cairn, below WCAG 1.4.11's 3:1 for a graphic that means something. The
+      // alternative was lightening the orange, and that was measured and
+      // rejected: every value that cleared 3:1 on every terrain fell to about
+      // 1.5:1 against the MOVE gold, which would have traded one accessibility
+      // property for a worse one. These two must never be confusable.
+      if (canHit) out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
+        pointer-events="none" stroke="${WB_COL.ink}" stroke-width="5" stroke-opacity=".8"/>`
+        + `<circle class="wb-target" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
         pointer-events="none" stroke="${WB_COL.hit}" stroke-width="3" stroke-dasharray="5 4"/>`;
       // Drawn BEFORE the unit circle and outside it, so it composes with the
       // white selection stroke rather than replacing it -- a selected unit still
@@ -4615,9 +5150,11 @@ function wbMapSvg(opts = {}) {
       const tclick = opts.preview
         ? `onclick="wbInspectHex('${wbAttrStr(k)}')" style="cursor:help"`
         : `onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer"`;
-      out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rUnit.toFixed(1)}" fill="${col}"
-        stroke="${isSel ? '#fff' : WB_COL.ink}" stroke-width="${isSel ? 3 : 1.5}" ${tclick}>
-        <title>${wbEsc(u.name)} — ${wbNum(u.hp)} hp, ${wbNum(u.vp)} vp to the enemy${canHit ? ' — click to attack' : ''}</title></circle>`;
+      const tokenTitle = `<title>${wbEsc(S.names[u.owner])} — ${wbEsc(u.name)}, ${wbNum(u.hp)} hp, `
+        + `${wbNum(u.vp)} vp to the enemy${canHit ? ' — click to attack' : ''}</title>`;
+      out += wbToken(c.x, (c.y - 5).toFixed(1), rUnit, u.owner, col,
+        isSel ? '#fff' : WB_COL.ink, isSel ? 3 : 1.5, `${tclick}>${tokenTitle}`)
+        + (u.owner === 1 ? '</polygon>' : '</circle>');
       out += `<text x="${c.x}" y="${(c.y - 1).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="bold"
         fill="${WB_COL.ink}" pointer-events="none">${wbEsc(u.name[0] || '?')}${u.banner ? '⚑' : ''}</text>`;
       out += `<text x="${c.x}" y="${(c.y + 15).toFixed(1)}" text-anchor="middle" font-size="11"
@@ -4681,11 +5218,18 @@ function wbActionPanel(S, pl, u) {
   const btn = (x) => (x.call
     ? `<button class="ng-btn" onclick="${x.call}" style="font-size:.78em">${wbEsc(x.name)}${x.cost != null ? ` (${wbNum(x.cost)})` : ''}</button>`
     : `<span style="display:inline-block;font-size:.78em;padding:3px 9px;border:1px dashed #4a443a;border-radius:4px;
-         color:#6f6759;background:#1a1917">${wbEsc(x.name)}${x.cost != null ? ` (${wbNum(x.cost)})` : ''} — ${wbEsc(x.why || 'unavailable')}</span>`);
-  return `<div class="wb-unit-actions" style="margin-top:10px;${WB_PANEL};border-color:${WB_COL.p0}">
+         color:${WB_COL.dimmer};background:#1a1917">${wbEsc(x.name)}${x.cost != null ? ` (${wbNum(x.cost)})` : ''} — ${wbEsc(x.why || 'unavailable')}</span>`);
+  // The panel wears the colour of the company that owns the unit, and says the
+  // name out loud. It was gold unconditionally, so Company B selected its own
+  // Warlord and got Company A's colour on the control surface -- the same
+  // semantic error the draft cards had, one screen over, teaching the player
+  // that gold means A everywhere until it suddenly means "selected". Colour is
+  // never the only channel, so the company is named as well as coloured.
+  const own = u.owner === 1 ? WB_COL.p1Text : WB_COL.p0;
+  return `<div class="wb-unit-actions" style="margin-top:10px;${WB_PANEL};border-color:${own}">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-      <b style="color:${WB_COL.p0};font-size:.9em">${wbEsc(u.name)}${u.banner ? ' ⚑' : ''}</b>
-      <span style="font-size:.7em;color:#8a8272">${wbEsc(u.cls)} · ${wbNum(u.hp)} hp · ${wbNum(u.atk)} atk
+      <b style="color:${own};font-size:.9em">${wbEsc(S.names[u.owner])} · ${wbEsc(u.name)}${u.banner ? ' ⚑' : ''}</b>
+      <span style="font-size:.7em;color:${WB_COL.dim}">${wbEsc(u.cls)} · ${wbNum(u.hp)} hp · ${wbNum(u.atk)} atk
         · range ${wbNum(u.range)} · move ${wbNum(u.move)}
         · ${Number.isFinite(u.cap) ? `cap ${wbNum(u.cap)}` : 'no damage cap'}</span>
     </div>
@@ -4704,16 +5248,16 @@ function wbActionPanel(S, pl, u) {
              ${wbNum(u.cost)} deployment ${u.cost === 1 ? 'point' : 'points'}.`}
     </div>
     <div style="margin-top:7px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <span style="font-size:.68em;color:#6f6759">Its abilities:</span>
+      <span style="font-size:.68em;color:${WB_COL.dimmer}">Its abilities:</span>
       ${abil.length ? abil.map(btn).join('')
-        : '<span style="font-size:.75em;color:#6f6759">None — this unit fights, and leaves its ground behind when it falls.</span>'}
+        : '<span style="font-size:.75em;color:${WB_COL.dimmer}">None — this unit fights, and leaves its ground behind when it falls.</span>'}
     </div>
     <div style="font-size:.73em;color:${WB_COL.text};margin-top:7px;line-height:1.5">${wbVpLine(u.vp)}</div>
     <div style="font-size:.72em;margin-top:5px;line-height:1.5;max-height:160px;overflow:auto">
       ${wbKeywordBlock(arch ? arch.keywords : [])}</div>
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="ng-btn" onclick="wbDeselect()" style="font-size:.72em;opacity:.8">Deselect</button>
-      <span style="font-size:.68em;color:#6f6759">with nothing in hand, every hex reads the ground</span>
+      <span style="font-size:.68em;color:${WB_COL.dimmer}">with nothing in hand, every hex reads the ground</span>
     </div>
   </div>`;
 }
@@ -4740,12 +5284,12 @@ function wbRender() {
     // upper edge: 66.07% of a threshold is Attrition by the config and read as
     // Last Stand here. The band name is the only place phases surface at all.
     const a = S.against[p], t = S.breakAt[p];
-    const band = 3 * a < t ? ['Skirmish', '#8a8272']
+    const band = 3 * a < t ? ['Skirmish', WB_COL.dim]
       : 3 * a < 2 * t ? ['Attrition', WB_COL.p0]
-      : ['Last Stand', WB_COL.p1];
+      : ['Last Stand', WB_COL.p1Text];
     return `<div style="flex:1">
-      <div style="font-size:.75em;color:${p === 0 ? WB_COL.p0 : WB_COL.p1};font-weight:bold">${wbEsc(S.names[p])}</div>
-      <div style="font-size:.68em;color:#8a8272">${band[0]} · ${S.against[p]} / ${S.breakAt[p]} conceded</div>
+      <div style="font-size:.75em;color:${p === 0 ? WB_COL.p0 : WB_COL.p1Text};font-weight:bold">${wbEsc(S.names[p])}</div>
+      <div style="font-size:.68em;color:${WB_COL.dim}">${band[0]} · ${S.against[p]} / ${S.breakAt[p]} conceded</div>
       <div style="height:7px;background:#26241f;border-radius:3px;margin-top:3px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${band[1]}"></div></div></div>`;
   };
@@ -4755,7 +5299,7 @@ function wbRender() {
       <div style="display:flex;gap:16px;margin-bottom:10px">${track(0)}${track(1)}</div>
       ${wbTurnBanner()}
       <div style="font-size:.85em;margin-bottom:4px">
-        <b style="color:${pl === 0 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[pl])}</b> — turn ${S.turn}
+        <b style="color:${pl === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[pl])}</b> — turn ${S.turn}
         ${selUnit ? `· selected <b>${wbEsc(selUnit.name)}</b>` : ''}
         ${S.rally ? `· <b style="color:${WB_COL.p0}">Rally</b> — ${picked ? `move <b>${wbEsc(picked.name)}</b>` : 'choose a man'} · ${S.rally.left} left` : ''}
       </div>
@@ -4776,17 +5320,17 @@ function wbRender() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         ${bench.map((u) => `<div onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer;border:1px solid ${u.cost <= S.dp[pl] ? WB_COL.p0 : '#3a3630'};
           border-radius:5px;padding:4px 8px;font-size:.72em;background:#221f1c;opacity:${u.cost <= S.dp[pl] ? 1 : .4}">
-          ${wbEsc(u.name)} <span style="color:#8a8272">${wbNum(u.cost)} dp</span></div>`).join('') || '<span style="font-size:.72em;color:#6f6759">all committed</span>'}
+          ${wbEsc(u.name)} <span style="color:${WB_COL.dim}">${wbNum(u.cost)} dp</span></div>`).join('') || '<span style="font-size:.72em;color:${WB_COL.dimmer}">all committed</span>'}
       </div>
       ${panelUnit ? wbActionPanel(S, pl, panelUnit) : ''}
       <div class="wb-match-controls" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:.68em;color:#6f6759">The match:</span>
+        <span style="font-size:.68em;color:${WB_COL.dimmer}">The match:</span>
         ${S.rally ? `<button class="ng-btn" onclick="wbRallyDone()" style="font-size:.8em">Done rallying</button>` : ''}
         ${forfeit ? '' : `<button class="ng-btn" onclick="wbPass()" style="font-size:.8em">Pass</button>`}
         <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.8em;opacity:.6">Abandon</button>
       </div>
       ${forfeit ? wbPassPanel(forfeit) : ''}
-      <div style="margin-top:10px;max-height:110px;overflow:auto;font-size:.7em;color:#8a8272;line-height:1.6">
+      <div style="margin-top:10px;max-height:110px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.slice(-9).reverse().map((l) => `<div>${wbEsc(l)}</div>`).join('')}
       </div>
     </div>`);
@@ -4811,14 +5355,22 @@ function wbRender() {
 // This guard lives here and not in core.js or interface.js on purpose: this is
 // the only driver that renders numbers it did not compute itself. The other
 // two work on state they built, where the values cannot be hostile.
-const WB_EXACT_MAX = 94906265;
+// The share comparison lives in core.js as `shareCmp` and is used by every driver:
+// runGame, validateResult, the analysis harness and this one. It was duplicated
+// here for a while, with a comment arguing the other drivers work on state they
+// built and so could not be hostile. That left one rule with three
+// implementations -- the failure `npm run drift` exists to prevent, which it could
+// not catch because the gate compares moves and never reaches the terminal
+// comparison. A portal reviewer found the divergence instead.
+//
+// Kept as a thin wrapper rather than inlined at the call site so that a host which
+// somehow loads engine.js without core.js fails loudly here rather than deciding a
+// match by `undefined`.
 function wbShareCmp(a0, b0, a1, b1) {
-  const d0 = Math.max(1, b0), d1 = Math.max(1, b1);
-  const exact = a0 <= WB_EXACT_MAX && a1 <= WB_EXACT_MAX
-    && d0 <= WB_EXACT_MAX && d1 <= WB_EXACT_MAX;
-  const x = exact ? a0 * d1 : a0 / d0;
-  const y = exact ? a1 * d0 : a1 / d1;
-  return x === y ? 0 : (x < y ? -1 : 1);
+  if (!WB || typeof WB.shareCmp !== 'function') {
+    throw new Error('warband/engine.js: core.js is not loaded, so the end of a match cannot be decided');
+  }
+  return WB.shareCmp(a0, b0, a1, b1);
 }
 function wbEnd() {
   const S = warband_state;
@@ -4865,8 +5417,8 @@ function wbEnd() {
     // arrived some other way, and a hydrated snapshot off the wire does.
     ? (routed ? 'Both companies break — a draw.' : `${S.turn} turns, and nothing between them — a draw.`)
     : routed
-      ? `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[1 - loser])}</b> holds the field. ${wbEsc(S.names[loser])} breaks.`
-      : `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1}">${wbEsc(S.names[1 - loser])}</b> holds the field at the end of ${S.turn} turns, further from breaking.`;
+      ? `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[1 - loser])}</b> holds the field. ${wbEsc(S.names[loser])} breaks.`
+      : `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[1 - loser])}</b> holds the field at the end of ${S.turn} turns, further from breaking.`;
   wbDraw(`
     <div style="padding:16px;color:${WB_COL.text}">
       <div style="font-size:1.1em;color:${WB_COL.p0};font-weight:bold">The field</div>
@@ -4885,7 +5437,7 @@ function wbEnd() {
         ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
         ${wbEsc(S.names[1])}: ${S.against[1]}/${S.breakAt[1]} conceded, ${pct(1)}% of its break point (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
       </div>
-      <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:#8a8272;line-height:1.6">
+      <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.map((l) => `<div>${wbEsc(l)}</div>`).join('')}
       </div>
       <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.85em;margin-top:12px">Muster again</button>
