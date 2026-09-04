@@ -2577,7 +2577,7 @@ function wbRenderDraft() {
           <div class="wb-roster-head" style="font-size:.8em;font-weight:bold;color:${seat === 0 ? WB_COL.p0 : WB_COL.p1Text}">
             ${wbEsc(S.names[seat])}${picking === seat
               ? ` <span style="font-size:.85em;font-weight:normal;padding:1px 6px;border-radius:3px;
-                  background:${seat === 0 ? WB_COL.p0 : WB_COL.p1};color:${WB_COL.ink}">picking now</span>`
+                  background:${seat === 0 ? WB_COL.p0 : WB_COL.p1Text};color:${WB_COL.ink}">picking now</span>`
               : ''}
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${roster(seat)}</div>
@@ -4659,7 +4659,11 @@ function wbTurnBanner() {
     // Hotseat: there is no "you", so name the company and colour the band with
     // its own colour rather than with a yours/theirs distinction that has no
     // meaning when both players share the screen.
-    const col = acts === 0 ? WB_COL.p0 : WB_COL.p1;
+    // p1Text, not p1. The banner is type and a rule, so it needs the readable
+    // variant: the fill red scored 2.396:1 here where Company A's gold scored
+    // 6.811, which is the same both-companies-legible failure this was supposed
+    // to have fixed, surviving in the one band that names whose turn it is.
+    const col = acts === 0 ? WB_COL.p0 : WB_COL.p1Text;
     return `<div class="wb-turn" style="font-size:.95em;margin:0 0 8px;padding:7px 10px;border-radius:4px;
         background:#221f1c;border:1px solid ${acts == null ? '#3a352d' : col};border-left-width:5px">
         ${acts == null
@@ -5272,9 +5276,15 @@ function wbMapSvg(opts = {}) {
       else if (ready === 'partial') out += `<circle class="wb-ready-part" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}"
         r="${(rUnit + 3).toFixed(1)}" fill="none" pointer-events="none"
         stroke="${WB_COL.partial}" stroke-width="2" stroke-opacity=".5"/>`;
+      // The SAME routing as the invisible hex target around it. The first version
+      // changed only the surrounding target, so one hex ran two different
+      // commands depending on where the finger landed: outside the token a staged
+      // deployment was refused and kept, on the token it was silently replaced.
+      // Splitting a target and routing the halves differently is worse than not
+      // enlarging it at all.
       const tclick = opts.preview
         ? `onclick="wbInspectHex('${wbAttrStr(k)}')" style="cursor:help"`
-        : `onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer"`;
+        : `onclick="wbHexUnit('${wbAttrStr(k)}',${wbAttrNum(u.uid)})" style="cursor:pointer"`;
       // The unit's tap target is the whole hex, not the token drawn on it. An
       // invisible polygon on the hex outline carries the unit's own click, so a
       // near miss selects the unit instead of landing on the ground beneath --
