@@ -2470,7 +2470,8 @@ function wbPick(name) { wbCommit({ type: 'draft', name }); }
 // a neutral colour here, it is Company A.
 function wbUnitCard(name, opts = {}) {
   const a = WB.ARCH[name], s = a.stats;
-  const owned = opts.owner === 1 ? WB_COL.p1 : WB_COL.p0;
+  const owned = opts.owner === 1 ? WB_COL.p1Text : WB_COL.p0;
+  const deathZone = a.death_terrain ? WB.ZONES[a.death_terrain] : null;
   const cls = { light: '◦ Light', medium: '◈ Medium', heavy: '⬢ Heavy' }[a.movement_class];
   const cap = a.damage_cap ? `cap ${a.damage_cap}` : 'no cap';
   const kw = a.keywords.join(' ');
@@ -2488,10 +2489,45 @@ function wbUnitCard(name, opts = {}) {
     <div style="font-size:.72em;color:${WB_COL.text};margin-top:3px">
       ${s.hp} hp · ${s.atk} atk · ${cap}<br>move ${s.move} · range ${s.range}</div>
     <div style="font-size:.65em;color:${WB_COL.dim};margin-top:3px">${wbEsc(kw)}</div>
+    ${/* The ability in words, on the card, because the card is the object the
+         decision is made about. It carried bare codes -- G V RLY -- and the
+         sentence explaining them lived one click away behind "What is this?",
+         which is required reading disguised as supplementary. Every word of this
+         already existed in config.json; DESIGN-LOG 1's lesson was that having
+         the text is not the same as putting it where the choice is made. */''}
+    ${a.ab ? `<div style="font-size:.66em;color:${WB_COL.text};margin-top:4px;line-height:1.45;
+      border-top:1px solid #332f2a;padding-top:4px">${wbEsc(a.ab)}</div>` : ''}
+    ${deathZone ? `<div style="font-size:.63em;color:${WB_COL.dim};margin-top:3px;line-height:1.4">
+      <b>Last Stand:</b> leaves ${wbEsc(deathZone.name)} on the hex where it falls.</div>` : ''}
     <div style="margin-top:5px"><button class="ng-btn"
       onclick="event.stopPropagation();wbInspectArch('${wbAttrStr(name)}')"
       style="font-size:.62em;padding:1px 6px;opacity:.8">What is this?</button></div>
   </div>`;
+}
+
+// What the draft has consumed, in a form you can reason with. It was a
+// comma-separated list of names -- so "everything stays visible" was true of the
+// names and false of everything you would actually use them for. A player on pack
+// five asking "did the Bombardier with Bypass go, or was that the one they took?"
+// got a memory test dressed as open information, which lands hardest on the
+// newcomer who has not yet learned all seven archetypes.
+//
+// Grouped by archetype with a count, because scarcity is the question being
+// asked, and each chip opens the same panel the draft cards do.
+function wbBurnedChips(discards) {
+  if (!discards || !discards.length) return '—';
+  const byName = new Map();
+  for (const n of discards) byName.set(n, (byName.get(n) || 0) + 1);
+  return [...byName.entries()].map(([name, n]) => {
+    const a = WB.ARCH[name];
+    const kw = a && a.keywords ? a.keywords.join(' ') : '';
+    return `<button class="ng-btn" onclick="wbInspectArch('${wbAttrStr(name)}')"
+      style="font-size:.68em;padding:2px 7px;margin:0 4px 4px 0;opacity:.9;
+        border-radius:3px;background:#1a1917;color:${WB_COL.dim}">
+      ${wbEsc(name)}${n > 1 ? ` &times;${wbNum(n)}` : ''}
+      ${a ? `<span style="opacity:.75">· ${wbNum(a.cost)}${kw ? ` · ${wbEsc(kw)}` : ''}</span>` : ''}
+    </button>`;
+  }).join('');
 }
 
 function wbRenderDraft() {
@@ -2548,7 +2584,7 @@ function wbRenderDraft() {
         </div>`).join('')}
       </div>
       <div style="margin-top:10px;font-size:.7em;color:${WB_COL.dimmer}">
-        Burned: ${S.discards.length ? S.discards.map(wbEsc).join(', ') : '—'}
+        Burned: ${wbBurnedChips(S.discards)}
       </div>
     </div>`);
 }
@@ -3080,6 +3116,24 @@ function wbRallyDone() { wbCommit({ type: 'rally_end' }); }
 // and falls back to the head when nothing has been touched yet.
 function wbAnchor(k) { wbUi.at = k == null ? null : wbText(k); }
 
+// The click that lands on an occupied hex. Which command it is depends on what is
+// already pending, and the two are not interchangeable -- the claim that they were
+// is what this fixes.
+//
+// A staged DEPLOYMENT or rally move is a command about the HEX. Sent through
+// wbHexClick it is refused with "That hex is occupied" and the staged choice is
+// KEPT, so the player tries another hex. Sent to wbSelect it silently became a
+// different command about a different unit, throwing away what they had staged
+// and saying nothing about it.
+//
+// Everything else is a command about the UNIT: your own selects, an enemy with one
+// of yours selected attacks, an enemy without one explains why not.
+function wbHexUnit(k, uid) {
+  const S = warband_state;
+  if (S && S.sel && (S.sel.deploy != null || S.sel.picked != null)) return void wbHexClick(k);
+  wbSelect(uid);
+}
+
 function wbSelect(uid) {
   const S = warband_state, pl = wbActive();
   wbUi.notice = null;
@@ -3129,7 +3183,18 @@ function wbSelect(uid) {
     if (idle) { wbUi.inspect = { arch: u.name }; wbShow(); return; }
     S.sel = { deploy: u.uid }; wbShow(); return;
   }
-  S.sel = { unit: u.uid }; wbShow();
+  S.sel = { unit: u.uid };
+  // Covering the hex with the unit's own target took away the only gesture that
+  // opened the ground beneath it -- and that panel is where cover, line of sight,
+  // ranged bonus, movement cost and objective status are explained together.
+  // Skittish makes the loss sharpest: a unit can be shoved onto ground the player
+  // never chose and then could not read.
+  //
+  // So selecting a unit now also shows what it is standing on, which is the
+  // information the gesture used to carry and is more relevant here than it was
+  // there: it is the ground the move being contemplated starts from.
+  if (u.at != null) wbUi.inspect = { hex: u.at };
+  wbShow();
 }
 
 // Turns "this hex, given what is selected" into a move, and lets wbApply decide
@@ -3209,7 +3274,48 @@ function wbDeselect() {
 // desktop, where the board fits at full size and this control changes nothing at
 // all. So the player chooses which one they want, rather than this file choosing
 // for them and being wrong half the time.
-function wbBoardZoom() { wbUi.boardFull = !wbUi.boardFull; wbShow(); }
+function wbBoardZoom() {
+  const S = warband_state;
+  const now = wbUi.boardFull == null ? (S && S.phase !== 'draft') : !!wbUi.boardFull;
+  wbUi.boardFull = !now;
+  wbShow();
+}
+
+// Escape lets go of whatever is selected, from anywhere, without hunting for the
+// button. Selection is a MODE -- gold hexes submit a move, an enemy submits an
+// attack -- and a mode with no universal exit is how a player inspecting Forest
+// discovers they have marched into it and paid for the privilege. `Deselect`
+// existed, in the action panel, below the board, which is not an exit so much as
+// a destination.
+//
+// Clicking the already-selected unit deliberately does NOT deselect, though it is
+// the other conventional gesture. That gesture is reserved: a unit acting on
+// ITSELF is exactly what clicking your own selected unit should come to mean, and
+// spending it on a convenience Escape already provides would mean taking it back
+// later from players who had learned it.
+function wbKeyDown(e) {
+  if (!e || e.key !== 'Escape') return;
+  const S = warband_state;
+  if (!S || !S.sel) return;
+  // Abandoning a match resets wbUi and deliberately LEAVES warband_state in
+  // memory, selection and all. A handler that asked only "is something selected"
+  // therefore fired on the setup screen and redrew the abandoned game over the
+  // form -- found in review, and considerably worse than swallowing a keystroke.
+  // wbShow sets this flag as it draws a game screen and wbSessionEnd clears it
+  // with the rest of wbUi, so it means "a game is what the player is looking at"
+  // rather than "a game exists".
+  if (!wbUi.onScreen) return;
+  // Escape belongs to a text field while one has focus: the player is editing a
+  // name, not commanding a unit.
+  const el = typeof document !== 'undefined' ? document.activeElement : null;
+  const tag = el && el.tagName ? String(el.tagName).toLowerCase() : '';
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable)) return;
+  e.preventDefault();
+  wbDeselect();
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('keydown', wbKeyDown);
+}
 
 function wbAttack(S, u, target, cost) {
   const pl = u.owner;
@@ -3722,7 +3828,7 @@ function wbFreshSession() {
     inspect: null,
     // FIT or FULL board. A fact about this screen, not about the match, and it
     // belongs to the session for the same reason the selection does not travel.
-    boardFull: false,
+    boardFull: null,   // null = follow the phase; see wbMapSvg
     confirmPass: false,// this player's Pass is armed and waiting on an answer, and is NOT game state
     rejectDrawn: 0,    // when a refusal off the wire was last allowed to redraw
     syncAnswered: 0,   // when the last sync-triggered push went out
@@ -4584,6 +4690,12 @@ function wbShow() {
   // Same reasoning, for the answer to "What is this?": a screen that draws the
   // panel where it was asked claims it here, and wbDraw reads that afterwards.
   wbUi._inspectDrawn = false;
+  // "A game is what the player is looking at", as distinct from "a game exists".
+  // Abandoning resets wbUi and leaves warband_state behind, so this clears with
+  // the rest of the session and the Escape handler stops firing over the setup
+  // form. Set before the early return below, because a waiting guest is also on
+  // a game screen.
+  wbUi.onScreen = true;
   // A guest between joining and the first snapshot has no game and still has a
   // screen, and things that need to reach a player -- the answer to the button,
   // above all -- happen there too.
@@ -5055,7 +5167,20 @@ function wbMapSvg(opts = {}) {
   // size and lets the wrapper scroll, which is what a thumb needs, at the cost of
   // seeing about half the field at a time. On any container at least ${wpx}px wide
   // the two are identical, so this costs a desktop nothing.
-  const full = !!wbUi.boardFull;
+  // Fit and Full serve opposed needs, so the DEFAULT follows the phase rather
+  // than being one global setting the player has to discover and re-toggle.
+  //
+  // The draft is drafting against the whole visible field, so it needs Fit --
+  // that is the mechanic. Play needs targets a thumb can hit: measured, a unit
+  // token in Fit mode is about 20px across at 360px and 22px at 390px, against
+  // WCAG 2.5.8's 24px minimum, and missing it lands on the hex beneath, which is
+  // a DIFFERENT command. Not a small target: a wrong one.
+  //
+  // wbUi.boardFull stays authoritative once the player touches the control, so
+  // the default is a starting point and never an override.
+  const full = wbUi.boardFull == null
+    ? (warband_state && warband_state.phase !== 'draft')
+    : !!wbUi.boardFull;
   let out = `<div class="wb-board" style="max-width:100%">
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">
       <button class="ng-btn wb-board-zoom" onclick="wbBoardZoom()" style="font-size:.68em;opacity:.85">${
@@ -5150,6 +5275,19 @@ function wbMapSvg(opts = {}) {
       const tclick = opts.preview
         ? `onclick="wbInspectHex('${wbAttrStr(k)}')" style="cursor:help"`
         : `onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer"`;
+      // The unit's tap target is the whole hex, not the token drawn on it. An
+      // invisible polygon on the hex outline carries the unit's own click, so a
+      // near miss selects the unit instead of landing on the ground beneath --
+      // which is a different command, and the reason a small target here is
+      // dangerous rather than merely annoying.
+      //
+      // Safe because the hex UNDER a unit never needs to be clicked as a hex:
+      // wbSelect already handles every case wbHexClick would take there -- your
+      // own unit selects, an enemy with one of yours selected attacks, an enemy
+      // without one explains why not. Moving onto an occupied hex is illegal in
+      // the first place.
+      if (!opts.preview) out += `<polygon points="${poly(c)}" fill="none" pointer-events="all"
+        style="cursor:pointer" onclick="wbHexUnit('${wbAttrStr(k)}',${wbAttrNum(u.uid)})"/>`;
       const tokenTitle = `<title>${wbEsc(S.names[u.owner])} — ${wbEsc(u.name)}, ${wbNum(u.hp)} hp, `
         + `${wbNum(u.vp)} vp to the enemy${canHit ? ' — click to attack' : ''}</title>`;
       out += wbToken(c.x, (c.y - 5).toFixed(1), rUnit, u.owner, col,
@@ -5159,6 +5297,27 @@ function wbMapSvg(opts = {}) {
         fill="${WB_COL.ink}" pointer-events="none">${wbEsc(u.name[0] || '?')}${u.banner ? '⚑' : ''}</text>`;
       out += `<text x="${c.x}" y="${(c.y + 15).toFixed(1)}" text-anchor="middle" font-size="11"
         fill="${WB_COL.text}" pointer-events="none">${wbNum(u.hp)}</text>`;
+      // What this unit's NEXT action costs, on the unit. The economy was
+      // documented in a paragraph and revealed one unit at a time, so the actual
+      // tactical question -- what does each of my options cost me right now --
+      // was answered by clicking units in turn and holding the answers in your
+      // head. A readiness ring says a unit CAN act; it cannot say that one
+      // choice costs 1 and another costs 6, which are different objects.
+      //
+      // Only for the side to act, and only for its own units: an opponent's
+      // costs are not the player's decision and would be noise.
+      // Not on a preview board. The end screen renders with preview:true and
+      // refuses every gameplay click, but wbActive() is phase-blind and a
+      // finishing action advances it, so the losing side's units were being
+      // labelled with the cost of an action nothing can take.
+      if (!opts.preview && u.owner === wbActive() && u.owner === (wbMp ? wbMp.seat : u.owner)) {
+        const nextCost = wbCost(u);
+        const afford = nextCost <= (S.pools ? S.pools[u.owner] : 0);
+        out += `<text x="${(c.x + rUnit + 2).toFixed(1)}" y="${(c.y + 4).toFixed(1)}" text-anchor="middle"
+          font-size="11" font-weight="bold" pointer-events="none"
+          fill="${afford ? WB_COL.text : WB_COL.dimmer}"
+          ${afford ? '' : 'text-decoration="line-through"'}>${wbNum(nextCost)}</text>`;
+      }
       if (canHit) out += `<text x="${(c.x + rRing).toFixed(1)}" y="${(c.y - rRing + 4).toFixed(1)}" text-anchor="middle"
         font-size="13" fill="${WB_COL.hit}" pointer-events="none">⚔</text>`;
     }
@@ -5452,6 +5611,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
   wbPassConfirm, wbPassCancel,
   wbRally, wbRallyDone,
   wbSerialize, wbHydrate, wbMakeRng, wbApply, wbShow, wbLoad, wbNewGame,
+  wbHexUnit, wbKeyDown,
   wbNotice: () => wbUi.notice,
   startWarbandMultiplayer, wbCommit, wbWhoActs, wbCanAct,
   wbMpSelf: () => wbMp,
