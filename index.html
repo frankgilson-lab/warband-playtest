@@ -2447,7 +2447,7 @@ function wbNextPack(S) {
   // defect an adversarial review found in the harness.
   const dealt = WB.dealPack(S.rng, S.rosters[S.first], S.rosters[1 - S.first]);
   if (dealt.forced) {
-    S.log.push('Draft: no archetype is legal for both companies -- the composition filters have a gap.');
+    wbLog(S, null, 'Draft: no archetype is legal for both companies -- the composition filters have a gap.');
   }
   S.pack = dealt.pack; S.packNo += 1; S.toPick = S.first;
 }
@@ -3077,12 +3077,12 @@ function wbTriggerFlight(S, mover) {
     const fH = WB.hexOf(S.G, f);
     const dest = S.board.get(WB.key(fH.q + (fH.q - mH.q), fH.r + (fH.r - mH.r)));
     if (!dest || dest.occupant != null || !WB.canEnter(f, WB.ZONES[dest.terrain])) {
-      S.log.push(`${f.name} is cornered — nowhere to fall back`);
+      wbLog(S, f.owner, `${f.name} is cornered — nowhere to fall back`);
       continue;
     }
     WB.place(S.G, f, dest);
     if (dest.objective) dest.controller = f.owner;
-    S.log.push(`${f.name} gives ground before ${mover.name}`);
+    wbLog(S, f.owner, `${f.name} gives ground before ${mover.name}`);
   }
 }
 
@@ -3324,7 +3324,7 @@ function wbAttack(S, u, target, cost) {
   const victim = WB.redirect(S.G, target, dmg);
   const real = victim === target ? dmg : WB.damageOf(S.G, u, victim, wbRules());
   victim.hp -= real;
-  S.log.push(`${u.name} hits ${victim.name} for ${real}${victim === target ? '' : ' (Guard)'}`);
+  wbLog(S, u.owner, `${u.name} hits ${victim.name} for ${real}${victim === target ? '' : ' (Guard)'}`);
   if (victim.hp <= 0) wbKill(S, victim);
   // Sweep: a Medium unit's blow carries into the press around its target
   if (WB.sweeps(u, wbRules()) && target.at != null) {
@@ -3333,7 +3333,7 @@ function wbAttack(S, u, target, cost) {
       if (!o || !o.alive || o.owner === pl || o === victim) continue;
       if (u.range > 1 && !WB.losClear(S.board, uH, WB.hexOf(S.G, o))) continue;
       const d2 = Math.max(1, WB.damageOf(S.G, u, o, wbRules()) - (WB.CFG.sweep.penalty || 0));
-      o.hp -= d2; S.log.push(`  sweep carries into ${o.name} for ${d2}`);
+      o.hp -= d2; wbLog(S, u.owner, `  sweep carries into ${o.name} for ${d2}`);
       if (o.hp <= 0) wbKill(S, o);
     }
   }
@@ -3364,7 +3364,10 @@ function wbKill(S, u) {
   }
   const gain = u.vp + (u.banner ? (WB.CFG.banner_bonus_vp || 0) : 0);
   S.against[u.owner] += gain; S.killPoints[1 - u.owner] += gain;
-  S.log.push(`${u.name} falls — ${wbEsc(WB.ZONES[h ? h.terrain : 'open'].name)} remains (+${gain} vp)`);
+  // The fallen unit's own company, not the killer's: this is a loss on their side
+  // of the ledger, and scrolling back for what happened to YOUR men is the
+  // reading the request was about.
+  wbLog(S, u.owner, `${u.name} falls — ${wbEsc(WB.ZONES[h ? h.terrain : 'open'].name)} remains (+${gain} vp)`);
 }
 
 function wbSpend(S, u, cost) {
@@ -3490,7 +3493,7 @@ function wbRegroup(S) {
   for (const pl of [0, 1]) {
     if (!gain[pl]) continue;
     S.against[1 - pl] += gain[pl]; S.objPoints[pl] += gain[pl];
-    S.log.push(`${S.names[pl]} holds the field (${held[pl]}–${held[1 - pl]}) +${gain[pl]} vp`);
+    wbLog(S, pl, `${S.names[pl]} holds the field (${held[pl]}–${held[1 - pl]}) +${gain[pl]} vp`);
   }
   S.order = [S.order[1], S.order[0]];
   wbBeginTurn(S);
@@ -3644,7 +3647,7 @@ function wbMoveDeploy(S, m) {
   if (!(pl === 0 ? WB.col(h.q, h.r) <= 1 : WB.col(h.q, h.r) >= WB.W - 2)) return wbNo('outside your deployment zone');
   WB.place(S.G, u, h); u.deployed = true; S.dp[pl] -= u.cost;
   if (h.objective) h.controller = pl;
-  S.log.push(`${S.names[pl]} deploys ${u.name}`);
+  wbLog(S, pl, `${S.names[pl]} deploys ${u.name}`);
   S.sel = null;
   return wbOk;
 }
@@ -3669,10 +3672,10 @@ function wbMoveUnit(S, m) {
     if (SE && u.cls === 'light' && was !== pl && !S.seizedEver.has(gk)) {
       S.seizedEver.add(gk);
       S.against[1 - pl] += SE.value; S.objPoints[pl] += SE.value;
-      S.log.push(`${u.name} seizes an objective (+${SE.value} vp)`);
+      wbLog(S, u.owner, `${u.name} seizes an objective (+${SE.value} vp)`);
     }
   }
-  wbSpend(S, u, cost); S.log.push(`${u.name} moves`);
+  wbSpend(S, u, cost); wbLog(S, u.owner, `${u.name} moves`);
   wbTriggerFlight(S, u);
   S.sel = null;
   return wbOk;
@@ -3716,7 +3719,7 @@ function wbMoveRally(S, m) {
   wbSpend(S, u, cost);
   S.rally = { uid: u.uid, left: u.rallyN, moved: [] };
   S.sel = null;
-  S.log.push(`${u.name} rallies the line (${cost} activation)`);
+  wbLog(S, u.owner, `${u.name} rallies the line (${cost} activation)`);
   return wbOk;
 }
 
@@ -3740,7 +3743,7 @@ function wbMoveRallyMove(S, m) {
   }
   WB.place(S.G, f, h);
   if (h.objective) h.controller = f.owner;
-  S.log.push(`  ${f.name} moves on the captain's word`);
+  wbLog(S, f.owner, `  ${f.name} moves on the captain's word`);
   wbTriggerFlight(S, f);
   S.rally.moved.push(f.uid);
   S.rally.left -= 1;
@@ -4515,7 +4518,7 @@ function wbMpBind() {
     if (!warband_state) { wbMpEmptyRoom(); return; }
     const S = warband_state;
     if (S.phase === 'over') return;   // already resolved; there is nothing left to concede
-    S.log.push(`${S.names[seat] || `P${seat + 1}`} has left the field, and concedes.`);
+    wbLog(S, seat, `${S.names[seat] || `P${seat + 1}`} has left the field, and concedes.`);
     wbConcede(S, seat);
     // The host is the authority and this is the last thing it will decide about
     // this match, so the resolution has to go out: kept local, it is a game the
@@ -4816,6 +4819,38 @@ function wbNum(v) {
 // log lines during play and detonate only when the end screen rendered the whole
 // log. Identity uses the same helper so a hostile match id becomes a stable
 // primitive (or null), never a fresh object reference on every snapshot.
+// A log line, and the company it belongs to. A playtester asked for this:
+//
+//   "Since each team is assigned a color, it would be nice if that team's color
+//    was integrated into the movement and attack history, so I can scroll back
+//    and easily review what has happened."
+//
+// The owner has to be RECORDED rather than derived. Entries name the archetype --
+// "Dragoon moves" -- and both companies can field a Dragoon, so reading the owner
+// back out of the text is ambiguous exactly when it matters most.
+//
+// `owner` is null for lines that belong to neither side, such as the draft's own
+// notices. Old snapshots hold plain strings and hydrate to null, so a match in
+// flight across this change loses the colour and nothing else.
+// One history line, in the colour of the company that made it and behind the same
+// mark its tokens wear on the board -- a disc for Company A, a diamond for
+// Company B. Colour is never the only channel, so a printed or colour-blind
+// scrollback still separates the two sides; and reusing the board's own shapes
+// means the mark costs nothing to learn.
+//
+// p1Text, not p1: this is type, and the fill red is not legible as type.
+function wbLogLine(l) {
+  const o = l && typeof l === 'object' ? l.o : null;
+  const t = l && typeof l === 'object' ? l.t : l;
+  const col = o === 0 ? WB_COL.p0 : o === 1 ? WB_COL.p1Text : WB_COL.dim;
+  const mark = o === 0 ? '● ' : o === 1 ? '◆ ' : '';
+  return `<div style="color:${col}">${mark}${wbEsc(t)}</div>`;
+}
+
+function wbLog(S, owner, text) {
+  S.log.push({ o: owner === 0 || owner === 1 ? owner : null, t: text });
+}
+
 function wbText(v, fallback = '') {
   try { return String(v); } catch (_) { return fallback; }
 }
@@ -5038,7 +5073,14 @@ function wbHydrate(pub) {
     // The play screen reads only the last nine entries, so render-time escaping
     // cannot validate an older one. Coerce every entry at the wire boundary or a
     // clean play snapshot can become an end-screen exception several turns later.
-    log: Array.isArray(pub.log) ? pub.log.map((entry) => wbText(entry)) : [],
+    // Both shapes, because a snapshot written before the log carried an owner is
+    // still a valid snapshot. Everything off the wire is hostile, so the owner is
+    // narrowed to 0, 1 or null rather than trusted.
+    log: Array.isArray(pub.log) ? pub.log.map((entry) => (
+      entry && typeof entry === 'object'
+        ? { o: entry.o === 0 || entry.o === 1 ? entry.o : null, t: wbText(entry.t) }
+        : { o: null, t: wbText(entry) }
+    )) : [],
     sel: null,
     armies: null,
   };
@@ -5500,7 +5542,7 @@ function wbRender() {
       </div>
       ${forfeit ? wbPassPanel(forfeit) : ''}
       <div style="margin-top:10px;max-height:110px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
-        ${S.log.slice(-9).reverse().map((l) => `<div>${wbEsc(l)}</div>`).join('')}
+        ${S.log.slice(-9).reverse().map(wbLogLine).join('')}
       </div>
     </div>`);
 }
@@ -5607,7 +5649,7 @@ function wbEnd() {
         ${wbEsc(S.names[1])}: ${S.against[1]}/${S.breakAt[1]} conceded, ${pct(1)}% of its break point (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
       </div>
       <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
-        ${S.log.map((l) => `<div>${wbEsc(l)}</div>`).join('')}
+        ${S.log.map(wbLogLine).join('')}
       </div>
       <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.85em;margin-top:12px">Muster again</button>
       ${wbMp && wbMp.mode === 'guest' ? WB_RESYNC_BTN : ''}
