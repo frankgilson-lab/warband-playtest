@@ -1,3 +1,4 @@
+<meta name="wb-build" content="6c5037b 2026-09-08">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -6452,6 +6453,154 @@ function wbShareCmp(a0, b0, a1, b1) {
   }
   return WB.shareCmp(a0, b0, a1, b1);
 }
+// ── the end-of-match report ───────────────────────────────────────────────────
+// The page composes a report and hands it to the player to send. It does NOT
+// send anything, and that is the design rather than a limitation: the footer
+// promises that nothing leaves this page, the playtesters are people the designer
+// already talks to, and a copy button needs no key, no third party and no
+// endpoint to keep alive. See DESIGN-LOG.md §3.15 for the instrumentation that
+// was surveyed and deliberately not built.
+//
+// Two things make a report worth having, and both come from PLAYTEST-LOG.md:
+//
+//   1. ASK AT THE END OF THE MATCH. Thirty seconds later the tab is closed and
+//      whatever annoyed them is gone. This is the only moment they have just
+//      finished feeling something.
+//   2. PRE-FILL EVERY FACT THE PAGE ALREADY KNOWS. An entry without a build
+//      identifier cannot be compared to any other entry, and no playtester will
+//      ever supply one — but the page knows the build, the seed, the ground, the
+//      length, the result and who they played. They should only have to write the
+//      part nobody else can write.
+//
+// And ONE question, chosen by how the match actually ended, because a form with
+// five boxes is a form nobody finishes. Which question is asked is itself a
+// design decision: each of them below is aimed at an open question in
+// DESIGN-LOG.md §3, so an answer lands somewhere rather than being interesting.
+
+// Stamped into the page's shell by scripts/build-playtest.mjs. Absent everywhere
+// else — the portal serves engine.js unmodified — so this must degrade rather
+// than throw.
+function wbBuildStamp() {
+  try {
+    const meta = document.querySelector && document.querySelector('meta[name="wb-build"]');
+    const v = meta && meta.getAttribute('content');
+    return v ? String(v).slice(0, 60) : 'unknown build';
+  } catch (_) { return 'unknown build'; }
+}
+
+// Which seats a person was sitting in. A bot game is seat 0 human; hotseat is
+// both. Reported because the answers mean different things — a tester who has
+// only played the bot has not yet met a real opponent.
+function wbHumanSeats(S) {
+  const out = [];
+  for (const pl of [0, 1]) if (!wbBotHolds(pl)) out.push(pl);
+  return out;
+}
+
+// The one question. `loser` is the company that lost, or null for a draw;
+// `routed` says whether it ended by breaking rather than on the clock.
+function wbReportQuestion(S, routed, loser) {
+  const humans = wbHumanSeats(S);
+  const solo = humans.length === 1;
+  const you = solo ? humans[0] : null;
+
+  // The clock ending is the one the design most needs evidence on: whether ten
+  // turns is right (§3.1), and whether a match decided on share of break point
+  // rather than by a rout feels earned (§4).
+  if (!routed) {
+    return loser === null
+      ? 'Neither company was closer to breaking, so it ended level. Did a draw feel like a fair '
+        + 'result here, or like the game failed to decide something?'
+      : 'This one ran the full ' + wbNum(S.turn) + ' turns and was decided on points rather than by '
+        + 'anyone breaking. Did that ending feel earned, or arbitrary?';
+  }
+
+  if (solo && loser === 1 - you) {
+    // They beat the bot. HOW is the useful part; that it happened is expected.
+    return 'You broke the sparring bot on turn ' + wbNum(S.turn) + '. How did you do it — and was '
+      + 'there a point where it stopped being able to threaten you?';
+  }
+  if (solo && loser === you) {
+    return 'The sparring bot broke you on turn ' + wbNum(S.turn) + '. Did you see it coming, and is '
+      + 'there a moment you would play differently?';
+  }
+  // Hotseat. §3.2 is about whether a player who is ahead can simply disengage.
+  return 'It ended on turn ' + wbNum(S.turn) + ' with ' + (loser === null ? 'neither company' : 'one company')
+    + ' broken. In the last two or three turns, was the result still in doubt — or had it been settled '
+    + 'a while before the game admitted it?';
+}
+
+// The facts the page already knows, as the head of the report. Deliberately
+// plain text: it is going into a mail client or a chat window.
+function wbReportFacts(S, routed, loser) {
+  const humans = wbHumanSeats(S);
+  const opponent = humans.length === 1 ? 'the sparring bot'
+    : humans.length === 2 ? 'another person, hotseat'
+    : 'bot against bot';
+  const ground = { 0.15: 'open field', 0.45: 'mixed', 0.75: 'broken ground' }[S.density] || String(S.density);
+  const share = (p) => `${wbNum(S.against[p])}/${wbNum(S.breakAt[p])}`;
+  const verdict = loser === null ? 'level — neither company closer to breaking'
+    : `${S.names[1 - loser]} won; ${S.names[loser]} ${routed ? 'broke' : 'was further from breaking'}`;
+  return [
+    `Warband playtest report`,
+    `build ${wbBuildStamp()}`,
+    `seed ${wbNum(S.seed)}, ${ground} ground, ${wbNum(S.turn)} turns, against ${opponent}`,
+    `result: ${verdict}`,
+    `conceded: ${S.names[0]} ${share(0)}, ${S.names[1]} ${share(1)}`,
+  ].join('\n');
+}
+
+// Assemble at click time from the DOM, and never re-render the player's own
+// words into HTML. The report is written to a textarea's `value`, so nothing the
+// player typed is ever parsed as markup.
+function wbReportText(S, routed, loser) {
+  const val = (id) => {
+    const el = document.getElementById(id);
+    return el && typeof el.value === 'string' ? el.value.trim() : '';
+  };
+  const a = val('wb-rep-a'), b = val('wb-rep-b');
+  return [
+    wbReportFacts(S, routed, loser),
+    '',
+    wbReportQuestion(S, routed, loser),
+    a || '(no answer)',
+    '',
+    'Anything else:',
+    b || '(nothing)',
+  ].join('\n');
+}
+
+// Copy, and show the text either way. The clipboard API needs a secure context
+// and a user gesture — it has both here — but it can still be refused, and a
+// button that silently does nothing is worse than no button. So the assembled
+// report is always revealed in a selectable box, and the copy is the convenience
+// rather than the mechanism.
+function wbReportCopy() {
+  const S = warband_state;
+  if (!S) return;
+  const routed = wbBroke(0) || wbBroke(1);
+  const cmp = wbShareCmp(S.against[0], S.breakAt[0], S.against[1], S.breakAt[1]);
+  const loser = routed
+    ? (wbBroke(0) && wbBroke(1) ? null : (wbBroke(0) ? 0 : 1))
+    : (cmp === 0 ? null : (cmp > 0 ? 0 : 1));
+  const text = wbReportText(S, routed, loser);
+
+  const out = document.getElementById('wb-rep-out');
+  if (out) { out.value = text; out.style.display = 'block'; try { out.select(); } catch (_) {} }
+  const say = document.getElementById('wb-rep-said');
+
+  const done = (msg) => { if (say) { say.textContent = msg; say.style.display = 'block'; } };
+  try {
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => done('Copied. Paste it into an email or a DM — whatever you normally use to reach me.'))
+        .catch(() => done('Could not reach the clipboard, so it is in the box below — select it and copy.'));
+      return;
+    }
+  } catch (_) { /* falls through to the box */ }
+  done('It is in the box below — select it and copy.');
+}
+
 function wbEnd() {
   const S = warband_state;
   const routed = wbBroke(0) || wbBroke(1);
@@ -6517,6 +6666,33 @@ function wbEnd() {
         ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
         ${wbEsc(S.names[1])}: ${S.against[1]}/${S.breakAt[1]} conceded, ${pct(1)}% of its break point (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
       </div>
+      ${/* The report sits ABOVE the log and below the tally, which is where a
+           player's eye already is when the verdict lands. Below the log it would be
+           past 220px of scrollback and would never be seen. */''}
+      <div style="margin-top:14px;border:1px solid ${WB_COL.line};border-left:3px solid ${WB_COL.p0};
+        background:#191715;padding:12px 14px;font-size:.78em;color:${WB_COL.text};line-height:1.55">
+        <div style="color:${WB_COL.p0};font-weight:bold;margin-bottom:6px">Tell me how that went</div>
+        <div style="color:${WB_COL.dim};margin-bottom:8px">${wbEsc(wbReportQuestion(S, routed, loser))}</div>
+        <textarea id="wb-rep-a" rows="3" placeholder="However short you like. Blunt is more useful than kind."
+          style="width:100%;box-sizing:border-box;background:${WB_COL.ink};color:${WB_COL.text};
+          border:1px solid ${WB_COL.line};border-radius:3px;padding:6px;font-family:inherit;font-size:1em"></textarea>
+        <textarea id="wb-rep-b" rows="2" placeholder="Anything else — including anything you had to work out rather than could see."
+          style="width:100%;box-sizing:border-box;margin-top:6px;background:${WB_COL.ink};color:${WB_COL.text};
+          border:1px solid ${WB_COL.line};border-radius:3px;padding:6px;font-family:inherit;font-size:1em"></textarea>
+        <button class="ng-btn" onclick="wbReportCopy()" style="font-size:.95em;margin-top:8px">Copy my report</button>
+        ${/* The seed, the build and the result go in on their own. Saying so is not
+             decoration: a player who cannot see what is being copied has to take it
+             on trust, and this page's whole promise is that nothing leaves it
+             without them. */''}
+        <div style="color:${WB_COL.dimmer};margin-top:6px;font-size:.92em">
+          The seed, the build and the result are filled in for you. Nothing is sent from this
+          page &mdash; copying puts the text on your clipboard and that is all.
+        </div>
+        <div id="wb-rep-said" style="display:none;color:${WB_COL.p0};margin-top:6px"></div>
+        <textarea id="wb-rep-out" rows="8" readonly style="display:none;width:100%;box-sizing:border-box;
+          margin-top:6px;background:${WB_COL.ink};color:${WB_COL.dim};border:1px solid ${WB_COL.line};
+          border-radius:3px;padding:6px;font-family:inherit;font-size:.95em"></textarea>
+      </div>
       <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.map(wbLogLine).join('')}
       </div>
@@ -6540,6 +6716,9 @@ if (typeof window !== 'undefined') Object.assign(window, {
   // the bot's surface for tests and for any future caller that arms one without
   // the setup form.
   wbSetupSeatKind, wbLegalMoves, wbBotStep, wbBotNudge, wbBotChoose,
+  // wbReportCopy is an inline onclick handler and MUST be here; the other two are
+  // exported so tests can ask what the report says without scraping a screen.
+  wbReportCopy, wbReportQuestion, wbReportText,
   // Exported so a test can ask what a pass would cost WITHOUT going back through
   // wbLegalMoves. The first version of the forfeit test called the enumerator
   // twice and called that a check: the same omitted offer made the bot pass and
