@@ -183,7 +183,7 @@ var WARBAND_CONFIG = {
     {
       "id": "watch_fire",
       "name": "Watch-Fire",
-      "description": "A dragoon's picket fire, still burning. Enemy units pay 1 extra MOVEMENT to move through; allies move through normally. Permanent for the rest of the match.",
+      "description": "A dragoon's picket fire, still burning. An ENEMY unit standing in it pays 1 extra ACTIVATION for every action it takes -- men work slowly in the glare of a fire they did not light. Crossing it costs nothing extra; the tax is on holding the ground. Allies are unaffected. Permanent for the rest of the match.",
       "allows_deployment": false,
       "blocks_movement": false,
       "impassable": false,
@@ -1047,6 +1047,41 @@ function marchMult(G, u, RULES) {
 // RULES is optional: called without it -- as the table game and the analysis
 // harness do -- the allowance is u.move exactly as before, so the shipped rule
 // is unchanged and `npm run drift` still compares like with like.
+// Which allies move on the captain's word: the in-earshot allies whose movement
+// is worth the most activation, capped at what the Rally keyword grants.
+//
+// THIS EXISTS BECAUSE runGame DISAGREED WITH ITSELF. It scored a rally on the
+// `rallyN` HEAVIEST allies in range — the comment at the decision site explains
+// why, that shifting Heavy infantry is efficient and shifting skirmishers who
+// move for 1 is not — and then stored the whole in-range list on the action and
+// moved the `rallyN` allies CLOSEST TO THE ENEMY instead. Measured over 2,600
+// applied rallies: the set the applying branch SELECTED differed from the scored
+// set in 19.5% of them and carried 92.1% of the scored activation, and the set
+// that actually reached `place` differed in 21.7% and carried 89.9% — the loop
+// skips a selected ally with nowhere useful to go. Nothing threw: the simulation
+// simply valued a move it was not making.
+//
+// Two sorts that are meant to agree are a standing invitation to drift apart, so
+// the repair is one function with two callers rather than two matching sorts.
+// interface.js calls it too, which is not a behaviour change there — it already
+// used exactly this rule — and does collapse two of the drivers' four rally
+// procedures into one.
+//
+// `mine` is the caller's list of that player's living, deployed units; each
+// driver has its own spelling of that and neither should have to export it.
+//
+// The uid tiebreak is new and deliberate: activation cost alone is not a total
+// order (two Mediums tie), which left the answer resting on the order each
+// driver happened to build `mine` in, and on Array.sort's stability.
+function rallyPicks(G, cap, mine) {
+  const capHex = hexOf(G, cap);
+  if (!capHex) return [];
+  return mine
+    .filter((f) => f.uid !== cap.uid && hexOf(G, f) && hexDist(capHex, hexOf(G, f)) <= cap.rallyRange)
+    .sort((a, b) => ACT_COST[b.cls] - ACT_COST[a.cls] || a.uid - b.uid)
+    .slice(0, cap.rallyN);
+}
+
 function reachable(G, u, RULES) {
   const board = G.board;
   const allowance = u.move * marchMult(G, u, RULES);
@@ -1061,8 +1096,13 @@ function reachable(G, u, RULES) {
         const z = ZONES[nb.terrain];
         if (!canEnter(u, z) || nb.occupant != null) continue;
         let cost = moveCost(u, z);
+        // Only the MOVEMENT special taxes movement. Watch-Fire used to be in this
+        // condition too, which made it identical to Fallen Ranks -- a playtester
+        // read both cards and asked whether they differed, and they did not.
+        // Watch-Fire now taxes ACTIVATION, in actionCost, which is what its own
+        // `special` had always claimed.
         const sp = ZONES[nb.terrain].special;
-        if ((sp === 'extra_activation_cost_enemies_only' || sp === 'extra_movement_cost_enemies_only')
+        if (sp === 'extra_movement_cost_enemies_only'
             && nb.terrainOwner !== null && nb.terrainOwner !== u.owner) cost += 1;
         const spent = cur.spent + cost;
         if (spent > allowance) continue;
@@ -1099,6 +1139,39 @@ function auraSource(G, attacker, RULES) {
     if (hexDist(aH, h) <= f.auraRange) return f;
   }
   return null;
+}
+
+// What this unit's NEXT action costs, given how many it has already taken this
+// turn. THE one implementation: runGame, the analysis harness and the table game
+// all call it, because an action's price is a rule and a rule with three
+// implementations is the failure `npm run drift` exists to catch.
+//
+// What drift does and does not cover here, measured rather than assumed: its
+// single-action pass snapshots POOLS and compares them after applying the
+// identical move, so it does catch the table game and the harness pricing an
+// action differently -- injecting the old class-only price into the engine made a
+// 20-seed run report thousands of `move: pools` differences. What it does not
+// cover is runGame, whose pass checks outcome invariants rather than prices: a
+// one-line revert there passed 1,200 matches silently. So the gap is one caller,
+// not the whole gate.
+//
+// Base is the movement class, multiplied by the actions already spent -- a Light
+// unit pays 1, then 2, then 3; a Heavy pays 3, then 6.
+//
+// On top of that, standing in an ENEMY Watch-Fire costs one more for everything
+// this unit does. That is what watch_fire's `special` has always declared and
+// nothing implemented: it was applied as a movement tax instead, which made it
+// identical to Fallen Ranks and cost the roster a sixth of Last Stand's variety.
+// The tax is on OCCUPYING the hex, not on crossing it -- men work slowly around a
+// fire they did not light, and a unit that stands in one is working in its glare.
+function actionCost(G, u, spent) {
+  let cost = ACT_COST[u.cls] * (1 + (spent || 0));
+  const h = G && G.board ? hexOf(G, u) : null;
+  if (h && h.terrainOwner != null && h.terrainOwner !== u.owner
+      && ZONES[h.terrain] && ZONES[h.terrain].special === 'extra_activation_cost_enemies_only') {
+    cost += 1;
+  }
+  return cost;
 }
 
 function damageOf(G, attacker, defender, RULES) {
@@ -1717,7 +1790,7 @@ function runGame(opts = {}) {
       let best = null;
       for (const u of mine) {
         const uHex = hexOf(G, u);
-        const cost = ACT_COST[u.cls] * (1 + (acted[pl].get(u.uid) ?? 0));
+        const cost = actionCost(G, u, acted[pl].get(u.uid) ?? 0);
         if (cost > pools[pl]) continue;
         const sur = (cost - ACT_COST[u.cls]) * 4;
         for (const e of foes) {
@@ -1801,15 +1874,17 @@ function runGame(opts = {}) {
         // A converter rather than a bonus: it costs the commander's own action,
         // which for a Heavy is the most expensive action in the game.
         if (u.rallyN) {
-          const targets = mine.filter((f) => f.uid !== u.uid && hexDist(uHex, hexOf(G, f)) <= u.rallyRange);
           // Worth the commander's action only in proportion to what the rallied
           // units WOULD have paid to move: shifting Heavy infantry is efficient,
-          // shifting skirmishers who move for 1 is not.
-          const picks = targets.slice()
-            .sort((a, b) => ACT_COST[b.cls] - ACT_COST[a.cls]).slice(0, u.rallyN);
+          // shifting skirmishers who move for 1 is not. core.rallyPicks is THE
+          // answer to "who moves", and the picks are carried on the action so
+          // that the units scored here are the units moved below. Storing the
+          // whole in-range list and re-deriving the picks differently is the bug
+          // that helper exists to prevent.
+          const picks = rallyPicks(G, u, mine);
           const saved = picks.reduce((t, f) => t + ACT_COST[f.cls], 0);
           const score = saved * RULES.rallyScore - sur;
-          if (picks.length && score > 0 && (!best || score > best.score)) best = { type: 'rally', u, score, cost, targets };
+          if (picks.length && score > 0 && (!best || score > best.score)) best = { type: 'rally', u, score, cost, picks };
         }
       }
       return best;
@@ -1834,12 +1909,11 @@ function runGame(opts = {}) {
           rallyUses[pl] += 1;
           if (TRACE) dsr(act.u).rallies += 1;
           // Each rallied ally takes one free step toward the nearest enemy.
+          // THE SAME PICKS THE SCORE WAS COMPUTED ON, carried on the action
+          // rather than re-derived — see core.rallyPicks for what re-deriving
+          // them cost.
           const foes = living(1 - pl);
-          const picks = act.targets
-            .slice()
-            .sort((a, b) => (foes.length ? Math.min(...foes.map((e) => hexDist(hexOf(G, a), hexOf(G, e)))) - Math.min(...foes.map((e) => hexDist(hexOf(G, b), hexOf(G, e)))) : 0))
-            .slice(0, act.u.rallyN);
-          for (const f of picks) {
+          for (const f of act.picks) {
             const opts = reachable(G, f, RULES);
             if (!opts.length) continue;
             let bestHex = null, bestS = 0;          // 0 floor: never rally into a worse position
@@ -2232,6 +2306,8 @@ const WarbandCore = {
   shareCmp, SHARE_EXACT_MAX,
   // exposed so the interactive engine can reuse the exact rules the sim validated
   makeBoard, makeUnit, draft, dealPack, objectiveScore, serializeG, hydrateG, sweeps, reachable, damageOf, effRange, redirect, losClear,
+  rallyPicks,
+  actionCost,
   hexOf, occupantOf, place,
   neighbors, hexDist, key, col, legal, coverOf, moveCost, canEnter, stopsIn,
   ZONES, ARCH, CLASSES, CFG, W, H, BASE_POOL, STABLE, PACK, RAMP, PLATEAU, ACT_COST, MAX_TURNS,
@@ -2315,10 +2391,45 @@ const WB_COL = {
   // `partial` is a blue, carried at reduced opacity so "faded" reads as faded
   // even to someone who cannot separate the two hues.
   ready: '#9fe870', partial: '#5f97c4',
+  // The fourth language, and the newest: whose men will move on the captain's
+  // word. It was drawn in `p0` gold for BOTH companies, which broke this
+  // palette's own rule twice over — gold is what `move` means, so the board said
+  // "you may go here" in one place and "this man may be rallied" in another
+  // using the same hue; and Company B's own rally was ringed in Company A's
+  // colour. Company identity is redundant here anyway: a rally only ever reaches
+  // your own men, and the token underneath already carries the company.
+  //
+  // Chosen the way `hit` was: measured, not picked. At hue 285 its nearest
+  // neighbour among the other five ring and company colours is 78.3 degrees away
+  // (the `partial` blue).
+  //
+  // Contrast, stated precisely, because the first version of this comment was
+  // not: against the ink colour ITSELF it is 8.04:1, but the halo is drawn at
+  // stroke-opacity .8, so what a reader actually sees is that violet against ink
+  // composited 4:1 over the terrain underneath — 6.90:1 at worst (Officer's
+  // Cairn) and 8.02:1 at best across the twelve fills. Comfortably past WCAG
+  // 1.4.11's 3:1 for a graphic that means something, which is the claim that
+  // matters; 8.04 was the palette-pair number and describing it as the rendered
+  // one overstated a real result.
+  rally: '#d492ea',
   label: '#e0d6bd',
 };
 // The hex radius. At 30 the terrain labels had to be truncated to seven
 // characters and set at 8px; there is room on the page for more board than that.
+// One padding for every screen that draws the board, because a fitted board
+// scales into whatever width its wrapper leaves it. The four screens carried
+// 14, 14, 12 and 16, so the battlefield changed width by +4px and then -8px --
+// and changed its left edge with them -- as the player crossed from the draft to
+// play to the finished match. Found in adversarial review after the map was made
+// constant in presence and forgotten in position: same slot in document order is
+// not the same place on the glass.
+//
+// Vertical drift is NOT fixed by this and is accepted for now: each screen has a
+// genuinely different amount of text above its map, and holding the board at a
+// fixed height would mean reserving a header and living with whitespace. Revisit
+// with qualitative playtest feedback rather than by measurement -- see
+// DESIGN-LOG 3.12.
+const WB_SCREEN_PAD = 14;
 const WB_SIZE = 42;
 // Margin around the board, proportional so the padding does not shrink relative
 // to the hexes whenever the radius changes. Tightened from 0.6: at 0.6 the two
@@ -2364,6 +2475,11 @@ async function warbandShowSetup() {
           <input id="wb-p0" class="ng-input" value="Company A" style="font-size:.85em;width:120px"></label>
         <label style="font-size:.75em;color:${WB_COL.dim}">Player 2
           <input id="wb-p1" class="ng-input" value="Company B" style="font-size:.85em;width:120px"></label>
+        <label style="font-size:.75em;color:${WB_COL.dim}">Second seat
+          <select id="wb-p1-kind" class="ng-input" onchange="wbSetupSeatKind()" style="font-size:.85em;width:130px">
+            <option value="human" selected>Human</option>
+            <option value="bot">Sparring bot</option>
+          </select></label>
         <label style="font-size:.75em;color:${WB_COL.dim}">Terrain
           <select id="wb-density" class="ng-input" style="font-size:.85em;width:120px">
             <option value="0.15">Open field</option>
@@ -2377,7 +2493,28 @@ async function warbandShowSetup() {
       <div style="font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
         Hotseat: both players use one screen. The map is visible <em>before</em> the draft — that is the point.
       </div>
+      <div id="wb-bot-note" style="display:none;font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
+        The sparring bot drafts, assigns its colours and fights on its own. It is a
+        <em>sparring partner rather than an opponent</em>: it charges the nearest enemy and takes
+        whatever it can reach, so beating it says more about the bot than about the game. It plays
+        the same rules you do.
+      </div>
     </div>`;
+}
+
+// The second seat's name follows what it is, so "Sparring bot" reaches the turn
+// banner, the log and the end screen without any of them learning about bots. A
+// name the player has edited themselves is left alone.
+const WB_BOT_NAME = 'Sparring bot';
+function wbSetupSeatKind() {
+  const sel = document.getElementById('wb-p1-kind');
+  const name = document.getElementById('wb-p1');
+  const note = document.getElementById('wb-bot-note');
+  if (!sel || !name) return;
+  const bot = sel.value === 'bot';
+  if (note) note.style.display = bot ? 'block' : 'none';
+  if (bot && name.value === 'Company B') name.value = WB_BOT_NAME;
+  else if (!bot && name.value === WB_BOT_NAME) name.value = 'Company B';
 }
 
 // ── setup → draft ─────────────────────────────────────────────────────────────
@@ -2399,7 +2536,17 @@ function warbandStart() {
     names: [document.getElementById('wb-p0').value || 'Company A',
             document.getElementById('wb-p1').value || 'Company B'],
   });
+  // AFTER wbNewGame, which came through wbSessionEnd and cleared any previous
+  // bot. Seat 1 only: the point is that one person can play a match, and a bot in
+  // the first seat would take the screen before they had seen it.
+  const kind = document.getElementById('wb-p1-kind');
+  if (kind && kind.value === 'bot') {
+    wbBot = { seats: [1], delay: 550, timer: null, refusals: 0 };
+    wbLog(warband_state, null, `${warband_state.names[1]} is a sparring bot, not a player.`);
+  }
   wbShow();
+  // The bot may hold the first pick of the draft, and nothing has committed yet.
+  wbBotNudge();
 }
 
 // The game itself, with no form attached. warbandStart reads the setup panel and
@@ -2424,7 +2571,7 @@ function wbNewGame({ seed, density, names }) {
     names: [names[0] || 'Company A', names[1] || 'Company B'],
     phase: 'draft', rosters: [[], []], discards: [], pack: [], packNo: 0,
     first: rng() < 0.5 ? 0 : 1, firstPackFirst: null, toPick: null,
-    armies: null, turn: 0, order: null, pools: [0, 0], acted: null, dp: [0, 0],
+    armies: null, turn: 0, order: null, pools: [0, 0], poolStart: null, acted: null, dp: [0, 0],
     against: [0, 0], objPoints: [0, 0], killPoints: [0, 0], fallenBanners: [0, 0],
     totalVP: [0, 0], breakAt: [0, 0], sel: null, rally: null, passed: [false, false],
     rev: 0, log: [], seizedEver: new Set(),
@@ -2497,8 +2644,18 @@ function wbUnitCard(name, opts = {}) {
          the text is not the same as putting it where the choice is made. */''}
     ${a.ab ? `<div style="font-size:.66em;color:${WB_COL.text};margin-top:4px;line-height:1.45;
       border-top:1px solid #332f2a;padding-top:4px">${wbEsc(a.ab)}</div>` : ''}
+    ${/* The name of the ground was not enough, and a playtester said so: "it
+         mentioned what their Last Stand abilities were, but no description of the
+         terrain modification that I could find". They were right, and it was worse
+         than not finding it -- at draft time there was nowhere to look. The card
+         gave a name, the archetype panel did not mention the ground at all, and
+         the hex panel that carries the description describes a hex that does not
+         exist until something dies on it.
+         Last Stand is this game's signature mechanic and the draft is where it is
+         priced, so the sentence config.json already holds goes on the card. */''}
     ${deathZone ? `<div style="font-size:.63em;color:${WB_COL.dim};margin-top:3px;line-height:1.4">
-      <b>Last Stand:</b> leaves ${wbEsc(deathZone.name)} on the hex where it falls.</div>` : ''}
+      <b>Last Stand:</b> leaves ${wbEsc(deathZone.name)} where it falls${
+        deathZone.description ? ` — ${wbEsc(deathZone.description)}` : ''}</div>` : ''}
     <div style="margin-top:5px"><button class="ng-btn"
       onclick="event.stopPropagation();wbInspectArch('${wbAttrStr(name)}')"
       style="font-size:.62em;padding:1px 6px;opacity:.8">What is this?</button></div>
@@ -2540,7 +2697,7 @@ function wbRenderDraft() {
   const who = S.names[picking];
   const roster = (p) => S.rosters[p].map((n) => wbUnitCard(n, { owner: p })).join('') || '<span style="color:${WB_COL.dimmer};font-size:.75em">nothing yet</span>';
   wbDraw(`
-    <div style="padding:14px;color:${WB_COL.text}">
+    <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
       ${wbTurnBanner()}
       <div style="font-size:1.05em;color:${WB_COL.p0};font-weight:bold">Draft — pack ${S.packNo} of ${WB.STABLE}</div>
       <div style="font-size:.78em;color:#9a9282;margin:4px 0 6px">
@@ -2551,7 +2708,7 @@ function wbRenderDraft() {
         <b>click any hex to read the ground</b>, and <b>What is this?</b> on a card to read the unit.
         Take one of the three; the rest burn. When both companies hold ${wbNum(WB.STABLE)} units you assign
         your colours, and then take the field.`)}
-      ${wbMapSvg({ preview: true })}
+      ${wbBoardSlot({ preview: true })}
       ${/* The ground is asked about ON THE MAP, so it is answered directly under
            it, before the cards. */''}
       ${wbInspectAt('hex')}
@@ -2596,7 +2753,7 @@ function wbBannerPhase(S) {
 function wbRenderBanner() {
   const S = warband_state, p = S.bannerFor;
   wbDraw(`
-    <div style="padding:14px;color:${WB_COL.text}">
+    <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
       ${wbTurnBanner()}
       <div style="font-size:1.05em;color:${WB_COL.p0};font-weight:bold">Colours</div>
       <div style="font-size:.78em;color:#9a9282;margin:4px 0 10px">
@@ -2604,16 +2761,28 @@ function wbRenderBanner() {
         When the bearer dies the banner falls: +2 activation every turn thereafter, and the enemy scores
         ${WB.CFG.banner_bonus_vp} bonus points for taking it.
       </div>
-      ${wbPhaseLine(`The draft is finished. Pick the bearer, and when both companies have chosen, the
-        match begins: you deploy from your own edge columns, then play alternates one action at a time.`)}
+      ${wbPhaseLine(`The draft is finished and the field is still below you &mdash; <b>click any hex to
+        read the ground</b>, because the bearer is a bet on which unit will be fought over, and where
+        the fighting happens is a question about terrain. When both companies have chosen, the match
+        begins on this same board: you deploy from your own edge columns, then play alternates one
+        action at a time.`)}
+      ${/* The board, in the slot every screen puts it in. It was absent here until
+           2026-09-05, which made this the one point in a live game where the map
+           went away -- at the last decision before deployment, while the player
+           was working out where their company would stand. See wbBoardSlot. */''}
+      ${wbBoardSlot({ preview: true })}
+      ${/* The ground is asked about ON THE MAP, so it is answered directly under
+           it and above the cards -- the same rule, and the same order, as the
+           draft screen. This anchor did not exist while the screen had no map,
+           and a hex question fell through to the head; both halves had to change
+           together, or a hex click would answer somewhere nobody is looking. */''}
+      ${wbInspectAt('hex')}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${S.rosters[p].map((n, i) => wbUnitCard(n, { owner: p, onclick: `wbSetBanner(${i})` })).join('')}
       </div>
       ${/* Same rule as the draft: the answer goes under the button that asks. This
            screen is short enough that the head was not far, but "not far" is not
-           the promise -- the promise is that you do not have to go looking.
-           No map here, so a hex question -- which cannot be asked on this screen
-           -- falls through to the head rather than vanishing. */''}
+           the promise -- the promise is that you do not have to go looking. */''}
       ${wbInspectAt('arch')}
     </div>`);
 }
@@ -2637,7 +2806,13 @@ function wbBeginPlay(S) {
 }
 
 const wbLiving = (pl) => warband_state.armies[pl].filter((u) => u.alive && u.deployed);
-const wbBroke = (pl) => warband_state.against[pl] >= warband_state.breakAt[pl];
+// Split so that a caller holding a state can ask the question without going
+// through the global. wbLegalMoves needs exactly this test and had no way to ask
+// it, which is how it came to advertise moves on an already-decided position.
+// ONE implementation, two callers — a second spelling of the break rule is the
+// last thing this file needs.
+const wbBrokeIn = (S, pl) => S.against[pl] >= S.breakAt[pl];
+const wbBroke = (pl) => wbBrokeIn(warband_state, pl);
 
 // `over` is a phase, not a guess. A break can happen mid-turn and wbRender
 // catches that; running out of turns can only happen here, at the boundary.
@@ -2651,6 +2826,11 @@ function wbBeginTurn(S) {
   S.pools = [0, 1].map((pl) => Math.max(0, WB.BASE_POOL
     + wbLiving(pl).reduce((s, u) => s + u.cmd, 0)
     + S.fallenBanners[pl] * (WB.CFG.activation.banner_bonus ?? 1)));
+  // What the turn STARTED with, recorded rather than reconstructed later. See
+  // wbSpentThisTurn: once the Watch-Fire surcharge exists, what a past action cost
+  // cannot be recovered from the board, because the unit may have moved out of the
+  // fire since.
+  S.poolStart = S.pools.slice();
   S.acted = [new Map(), new Map()];
   S.dp = [0, 1].map(() => (S.turn <= WB.RAMP.length ? WB.RAMP[S.turn - 1] : WB.PLATEAU));
   S.activeIdx = 0; S.sel = null; S.rally = null;
@@ -2668,7 +2848,10 @@ function wbActive() {
 function wbCost(u) {
   const S = warband_state;
   const spent = (S.acted && S.acted[u.owner] && S.acted[u.owner].get(u.uid)) || 0;
-  return WB.ACT_COST[u.cls] * (1 + spent);
+  // core.actionCost is THE implementation, so the table game cannot price an
+  // action differently from the sweeps. It also carries the Watch-Fire tax:
+  // standing in an enemy picket fire costs one more for everything you do.
+  return WB.actionCost(S.G, u, spent);
 }
 
 // ── readiness: the third thing the board has to say ─────────────────────────
@@ -2795,20 +2978,79 @@ function wbIdleReason(S, u) {
 
 // ── the activation economy, in numbers ───────────────────────────────────────
 // The pool changes with a Leader alive and with every fallen banner, so pips are
-// ambiguous: five pips out of an unknown total says nothing. What was spent is
-// DERIVED rather than remembered -- an action by a unit that has already acted n
-// times costs its class cost times (n + 1), so n actions have cost the class cost
-// times 1 + 2 + ... + n. Nothing else in any driver subtracts from the pool.
+// ambiguous: five pips out of an unknown total says nothing. What this company has
+// spent this turn is therefore REMEMBERED rather than derived: the difference
+// between the pool the turn started with and the pool it holds now. Nothing else
+// in any driver subtracts from the pool, so that difference is the whole story.
+//
+// This used to re-derive it from each unit's class and action count. That was a
+// second implementation of an action's price -- exactly what core.actionCost was
+// introduced to prevent -- and it cannot be repaired by calling actionCost with
+// the unit's current hex, because the question is what a PAST action cost: a unit
+// that moved out of an enemy Watch-Fire paid the surcharge and no longer stands
+// anywhere that says so.
+//
+// THE RECONSTRUCTION IS GONE RATHER THAN KEPT AS A FALLBACK, and the reasoning
+// is worth writing down twice over, because the first version of it overstated
+// the case and round 10 corrected it.
+//
+// It was justified as covering snapshots written "before poolStart and the
+// surcharge existed", where class and count were the whole price. Round 9 pointed
+// out that no such snapshot exists: the commit that introduced the surcharge did
+// NOT serialise poolStart, so the only format the fallback ever meets is one in
+// which a surcharge may already have been paid. The accurate statement is that it
+// CANNOT RELIABLY reconstruct that history -- not that it is always wrong. For a
+// turn with no surcharged action in it the old answer was correct, and removing
+// it does cost that. What it cannot do is tell the two cases apart, and it
+// reported both in the same voice: "4 left of 5 · 1 spent" for an action that
+// cost 2.
+//
+// So this answers `null` for "not known from this snapshot", and the screen omits
+// the clause rather than inventing a figure. Losing a sometimes-correct number is
+// the price of never printing a confident wrong one. See the activation line in
+// wbRender.
 function wbSpentThisTurn(S, pl) {
-  const m = S.acted && S.acted[pl];
-  if (!m || typeof m.forEach !== 'function') return 0;
-  let spent = 0;
-  m.forEach((n, uid) => {
-    const u = S.G && S.G.units.get(uid);
-    const each = u ? (WB.ACT_COST[u.cls] || 0) : 0;
-    spent += (each * n * (n + 1)) / 2;
-  });
-  return spent;
+  const start = S && Array.isArray(S.poolStart) ? S.poolStart[pl] : null;
+  const now = S && Array.isArray(S.pools) ? S.pools[pl] : null;
+  if (!Number.isFinite(start) || !Number.isFinite(now)) return null;
+  // Three checks, and the third exists because the first two are BOTH relative to
+  // the current pool -- which is the ledger's "bounds checked in one direction"
+  // lesson landing on the code written to satisfy it.
+  //
+  // `start < now` is a consistency check against the balance still held, not a
+  // lower bound on what the rules can grant, and when the pool is exhausted it
+  // has nothing to bite on: at `pools: [0, 6]` an empty array hydrated to [0, 0]
+  // and rendered "0 left of 0 this turn · 0 spent". A turn cannot begin with
+  // nothing. So the floor is stated in the rules' own terms.
+  if (start < now) return null;
+  if (start < wbPoolFloor(S, pl) || start > wbPoolCeiling(S, pl)) return null;
+  return start - now;
+}
+
+// The smallest and largest pools the rules could have granted this company this
+// turn. Both exist to REFUSE a wire value, never to compute one, and both are
+// deliberately loose: they catch nonsense rather than second-guessing a
+// legitimate figure whose units have died since the turn began.
+//
+// wbBeginTurn grants BASE_POOL plus the command of units alive AND deployed plus
+// a bonus per fallen banner. Command and banners are both non-negative in every
+// shipped archetype and there is no mechanic that lowers either, so BASE_POOL is
+// the floor; if a unit with negative command is ever added, this floor is the
+// thing that has to move with it.
+function wbPoolFloor() {
+  return WB.BASE_POOL;
+}
+
+// The largest pool the rules could have granted this company this turn, used to
+// refuse a wire value rather than to compute anything. wbBeginTurn counts the
+// command of units alive AND deployed; this counts every unit in the army, so it
+// is an over-estimate on purpose -- it exists to catch nonsense, not to second-
+// guess a legitimate figure whose units have died since the turn began.
+function wbPoolCeiling(S, pl) {
+  const army = (S.armies && S.armies[pl]) || [];
+  const cmd = army.reduce((t, u) => t + (Number.isFinite(u.cmd) ? u.cmd : 0), 0);
+  const banners = S.fallenBanners && Number.isFinite(S.fallenBanners[pl]) ? S.fallenBanners[pl] : 0;
+  return WB.BASE_POOL + cmd + banners * (WB.CFG.activation.banner_bonus ?? 1);
 }
 
 // ── active abilities ─────────────────────────────────────────────────────────
@@ -2924,6 +3166,7 @@ function wbArchPanel(name) {
       <div style="margin-top:7px">${WB_CLOSE_BTN}</div></div>`;
   }
   const a = WB.ARCH[name], st = a.stats;
+  const deathZ = a.death_terrain ? WB.ZONES[a.death_terrain] : null;
   const cap = a.damage_cap ? `cap ${a.damage_cap}` : 'no damage cap';
   const hasAb = typeof a.ab === 'string' && !/^none\b/i.test(a.ab);
   return `<div style="${WB_PANEL}">
@@ -2940,6 +3183,12 @@ function wbArchPanel(name) {
       ${wbVpLine(a.vp)}</div>
     ${hasAb ? `<div style="font-size:.72em;color:#9a9282;margin-top:6px;line-height:1.5">
       <b style="color:${WB_COL.p0}">Ability</b> &mdash; ${wbEsc(a.ab)}</div>` : ''}
+    ${/* This panel did not mention the death terrain at all -- not even its name --
+         which is how "no description of the terrain modification that I could
+         find" was literally true at draft time. */''}
+    ${deathZ ? `<div style="font-size:.72em;color:#9a9282;margin-top:6px;line-height:1.5">
+      <b style="color:${WB_COL.p0}">Last Stand</b> &mdash; leaves ${wbEsc(deathZ.name)}
+      where it falls. ${wbEsc(deathZ.description || '')}</div>` : ''}
     <div style="font-size:.72em;margin-top:6px;line-height:1.5;max-height:190px;overflow:auto">
       ${wbKeywordBlock(a.keywords)}</div>
     <div style="margin-top:8px">${WB_CLOSE_BTN}</div>
@@ -2949,6 +3198,28 @@ function wbArchPanel(name) {
 // One hex: what the ground does, and who is standing on it. Every fact is read
 // off the zone record rather than restated here, so retuning the config retunes
 // the text.
+// Whose dead made this ground, as a phrase to append to a terrain name. Empty for
+// terrain the map was dealt with.
+//
+// It matters because several Last Stand terrains are ASYMMETRIC -- Fallen Ranks
+// and Watch-Fire tax enemies and not allies -- so "who left this" is the
+// difference between an obstacle and a weapon, and the board was not saying.
+// `terrainOwner` has been recorded and serialised the whole time; a playtester
+// asked for it: "might be useful to tag the hex modifications (Barricade and
+// Watch Fire) with which team placed them."
+// Escapes here rather than at the call site. A company name is player-supplied
+// text off the wire, and this helper's return value was interpolated straight into
+// an SVG <title> -- a name of `A</title><image href=x onerror=alert(1)><title>`
+// closed the element and ran. Everything around it in that title was escaped,
+// which is what made the gap easy to miss: a helper returning MARKUP-READY text
+// must escape its own inputs, because otherwise every caller has to remember and
+// one already did not.
+function wbGroundOwner(S, h) {
+  if (!h || h.terrainOwner == null || !S || !S.names) return '';
+  const who = S.names[h.terrainOwner] || `P${h.terrainOwner + 1}`;
+  return ` (left by ${wbEsc(who)})`;
+}
+
 function wbHexPanel(k) {
   const S = warband_state;
   const h = S && S.board ? S.board.get(k) : null;
@@ -2966,7 +3237,11 @@ function wbHexPanel(k) {
   const occ = S.G ? WB.occupantOf(S.G, h) : null;
   return `<div style="${WB_PANEL}">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-      <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(z.name)}</b>
+      <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(z.name)}</b>${
+        h.terrainOwner != null
+          ? `<span style="font-size:.7em;color:${h.terrainOwner === 0 ? WB_COL.p0 : WB_COL.p1Text}">
+              ${h.terrainOwner === 0 ? '●' : '◆'} left by ${wbEsc(S.names[h.terrainOwner] || `P${h.terrainOwner + 1}`)}</span>`
+          : ''}
       <span style="font-size:.7em;color:${WB_COL.dim}">hex ${wbEsc(k)}</span>
     </div>
     <div style="font-size:.73em;color:#9a9282;margin-top:4px;line-height:1.5">${wbEsc(z.description)}</div>
@@ -3047,14 +3322,43 @@ function wbPlayHint(S, pl) {
   if (S.rally) return 'Rally: click one of your own men inside a dashed ring, then click the hex to move them to.';
   const sel = wbSelUnit(S, 'unit');
   if (sel) {
+    // A selection survives an incoming snapshot on purpose, so the unit under it
+    // may belong to the company that is NOT acting -- the same preserved
+    // selection that lit the wrong deployment edge. The action panel has always
+    // said so and the board paints no moves for it; this sentence went on
+    // promising gold hexes, and the affordability clause below would have gone
+    // on to quote the OTHER company's pool back as "you hold".
+    if (sel.owner !== pl) {
+      return `<b>${wbEsc(sel.name)}</b> belongs to <b>${wbEsc(S.names[sel.owner] || '')}</b>, and it is not
+        their turn &mdash; nothing can be done with it. Click any hex to read the ground, or one of your
+        own units to act.`;
+    }
     const hits = wbAttackTargets(sel).length;
-    return `<b>${wbEsc(sel.name)}</b> is selected. Gold hexes are where it can move &mdash; click one.
+    // The board stopped offering moves the player cannot pay for; this sentence
+    // did not, and went on promising gold hexes on a screen showing none. Two
+    // instructions contradicting the board is the same defect the highlight gate
+    // was fixing, one layer up.
+    const canPay = wbCost(sel) <= S.pools[sel.owner];
+    return `<b>${wbEsc(sel.name)}</b> is selected. ${canPay
+        ? 'Gold hexes are where it can move &mdash; click one.'
+        : `It cannot act again this turn &mdash; its next action costs
+           <b>${wbNum(wbCost(sel))}</b> and you hold <b>${wbNum(S.pools[sel.owner])}</b>.`}
       ${hits ? 'Enemies ringed in orange are in reach &mdash; click one to attack.'
              : 'No enemy is in reach of it right now.'}
       Click any other hex and it tells you what is on that ground rather than moving there.
       <b>Deselect</b> to read the gold ones too.`;
   }
-  if (wbSelUnit(S, 'deploy')) return `Now click a gold hex inside your own edge columns to put that unit on
+  // The same question the branch above now asks, for the same reason: a staged
+  // deployment survives an incoming snapshot, so this can be Company A's reserve
+  // while Company B is the one reading the sentence. The board draws no gold for
+  // it and wbMoveDeploy answers "not your unit" -- fixing only the on-field
+  // selection left the invitation to deploy standing next to zero gold hexes.
+  const dep = wbSelUnit(S, 'deploy');
+  if (dep && dep.owner !== pl) {
+    return `<b>${wbEsc(dep.name)}</b> is staged by <b>${wbEsc(S.names[dep.owner] || '')}</b>, and it is not
+      their turn &mdash; it cannot be put on the field now. Click any hex to read the ground.`;
+  }
+  if (dep) return `Now click a gold hex inside your own edge columns to put that unit on
     the field. Any other hex tells you what is on it instead.`;
   if (S.dp[pl] > 0 && S.armies[pl].some((u) => u.alive && !u.deployed && u.cost <= S.dp[pl])) {
     return 'Deploy first: click a unit on the bench below, then a gold hex in your own edge columns. Deploying costs deployment points, not activation, and unspent deployment points do not carry over.';
@@ -3275,9 +3579,12 @@ function wbDeselect() {
 // all. So the player chooses which one they want, rather than this file choosing
 // for them and being wrong half the time.
 function wbBoardZoom() {
-  const S = warband_state;
-  const now = wbUi.boardFull == null ? (S && S.phase !== 'draft') : !!wbUi.boardFull;
-  wbUi.boardFull = !now;
+  // Inverts whatever the board is ACTUALLY doing, which is why it asks
+  // wbBoardFull rather than working it out again. The default used to be written
+  // out twice -- here and in wbMapSvg -- as `phase !== 'draft'`, two copies of
+  // one rule and one edit away from a button that reports the opposite of the
+  // board beside it.
+  wbUi.boardFull = !wbBoardFull();
   wbShow();
 }
 
@@ -3777,6 +4084,317 @@ function wbMovePass(S) {
   return wbOk;
 }
 
+// ── the sparring bot ──────────────────────────────────────────────────────────
+// A local opponent, so that one person can play a whole match and report on it.
+// It is called a sparring bot rather than an opponent everywhere a player can see
+// it, because that is what it is: it charges, and the second match against it is
+// easier than the first.
+//
+// IT IS DELIBERATELY NOT A SEARCH, and the measurements are in DESIGN-LOG.md
+// §3.14 so that nobody has to take that on trust. Warband offers a mean of 65
+// legal moves per ply and 174 in the middle game. The portal harness's MCTS,
+// which runs against this game today with no adapter, gets ~2.3 rollouts per
+// candidate move at a budget a browser can afford — and over twelve matches with
+// alternating seats it scored 2 against a heuristic of this shape's 10, at about
+// 900ms a decision. Undirected search is worse than this file AND slower. Do not
+// replace it with one without repeating those numbers.
+//
+// IT IS A FORK OF THE SIMULATION'S TACTICAL POLICY, NOT A CALL INTO IT, and the
+// separation is the whole point. The AI in core.js and interface.js is a measuring
+// instrument, held constant so sweep numbers stay comparable across changes; the
+// scoring below exists to be tuned for how a match FEELS. If the two were one
+// function, the first tuning pass would silently re-base every balance figure in
+// this repository. Nothing here may be imported by a driver that measures.
+//
+// What it does not know, written down so it is not rediscovered as a bug: its own
+// break threshold, so it cannot tell it is one casualty from losing; how to
+// assemble Overwhelm, though Light adjacency stacking is a core mechanic; the
+// banner trade, where losing the bearer costs 2 victory points and pays the owner
+// activation every remaining turn; Guard redirection, so it will happily swing at
+// a target whose damage lands on somebody else; and how to retreat, ever.
+//
+// LOCAL, and never serialised. Which seats a bot holds is a fact about this
+// client and this session, exactly like `wbMp` — putting it in the snapshot would
+// tell a guest something about the host. A bot never runs in multiplayer at all.
+let wbBot = null;   // { seats: number[], delay: ms, timer, refusals }
+
+const wbBotHolds = (pl) => !!(wbBot && pl != null && wbBot.seats.includes(pl));
+
+function wbBotStop() {
+  if (wbBot && wbBot.timer != null && typeof clearTimeout === 'function') clearTimeout(wbBot.timer);
+  if (wbBot) wbBot.timer = null;
+}
+
+// ── what is legal ─────────────────────────────────────────────────────────────
+// Every move the seat to act could make right now, as move objects.
+//
+// This did not exist before the bot, and its absence is the reason the bot needed
+// writing rather than wiring: the affordance layer answers this question in
+// pieces and none of the pieces is a move. wbAttackTargets returns units,
+// wbDeployableHexes returns hexes, WB.reachable returns hexes. Assembling them is
+// a second chance to disagree with the appliers about what is legal, so each
+// branch below calls the SAME helper its applier calls, and
+// test/warband-bot.test.js holds the whole set against interface.legalActions on
+// mirrored positions. A bot that cannot see a move is playing a smaller game than
+// the one the sweeps validate, and it would lose quietly rather than loudly.
+function wbLegalMoves(S) {
+  if (!S) return [];
+
+  if (S.phase === 'draft') {
+    if (S.toPick == null) return [];
+    // Deduplicated: a pack may show the same archetype twice and the two cards
+    // are the same decision. dealPack guarantees at least one legal pick.
+    return [...new Set(S.pack)]
+      .filter((name) => WB.legal(S.rosters[S.toPick], name))
+      .map((name) => ({ type: 'draft', name }));
+  }
+
+  if (S.phase === 'banner') {
+    if (S.bannerFor == null) return [];
+    return S.rosters[S.bannerFor].map((_, idx) => ({ type: 'banner', idx }));
+  }
+
+  if (S.phase !== 'play' || !S.armies || !S.G) return [];
+  // The SAME terminal test wbApply applies on the way in, and for the same
+  // reason: a match can arrive already decided while still labelled `play` — a
+  // snapshot of a finished game, a queued intent that outlived the rout that
+  // ended it. Checking only the phase string offered 71 moves on a position the
+  // applier answers with "the match is over", including deployments. Round 13
+  // found this; there is no live-play route to it, but the enumerator's promise
+  // is about legality and it was not keeping it.
+  if (wbBrokeIn(S, 0) || wbBrokeIn(S, 1)) return [];
+  const pl = wbActive();
+  if (pl == null) return [];
+
+  // A rally in progress narrows the move set: the activation is already spent and
+  // the captain's men are waiting, so wbDispatch refuses anything outside
+  // WB_RALLY_MOVES. Offering the bot a move the rules would then refuse is the
+  // same defect as an affordance that lies, one layer further in.
+  //
+  // NOTE THAT WB_RALLY_MOVES INCLUDES `pass`, and it is a genuinely different
+  // decision from rally_end: both clear the rally, but a pass also ends this
+  // company's turn. Round 13 found it missing here, and found the first version
+  // of the test asserting its absence — writing the defect into the
+  // specification, which is the failure TESTING.md rule 4 is about. The bot's own
+  // scoring keeps pass below rally_end so behaviour is unchanged; what changed is
+  // that the enumerator now describes the rules rather than the policy.
+  if (S.rally) {
+    const out = [];
+    const cap = S.G.units.get(S.rally.uid);
+    if (cap) {
+      for (const f of wbRallyTargets(cap)) {
+        if (S.rally.moved.includes(f.uid)) continue;
+        for (const h of WB.reachable(S.G, f)) out.push({ type: 'rally_move', uid: f.uid, to: WB.key(h.q, h.r) });
+      }
+    }
+    out.push({ type: 'rally_end' });
+    out.push({ type: 'pass' });
+    return out;
+  }
+
+  const out = [];
+  // Hoisted: it is the same list for every unit on the bench, and it walks the
+  // whole board.
+  let spots = null;
+  for (const u of S.armies[pl]) {
+    if (!u.alive) continue;
+    if (!u.deployed) {
+      // Deployment is paid from its own budget and is refused above it, exactly
+      // as wbMoveDeploy refuses it.
+      if (u.cost > S.dp[pl]) continue;
+      if (spots === null) spots = wbDeployableHexes(pl);
+      for (const h of spots) out.push({ type: 'deploy', uid: u.uid, to: WB.key(h.q, h.r) });
+      continue;
+    }
+    if (wbCost(u) > S.pools[pl]) continue;
+    for (const t of wbAttackTargets(u)) out.push({ type: 'attack', uid: u.uid, target: t.uid });
+    for (const h of WB.reachable(S.G, u)) out.push({ type: 'move', uid: u.uid, to: WB.key(h.q, h.r) });
+    if (u.rallyN && wbRallyTargets(u).length) out.push({ type: 'rally', uid: u.uid });
+  }
+  // Always available, and always last: a pass is what the bot does when nothing
+  // else scores, and scoring it below everything is what stops it ending its turn
+  // with activation and a bench in hand.
+  out.push({ type: 'pass' });
+  return out;
+}
+
+// ── what is worth doing ───────────────────────────────────────────────────────
+
+// How far a hex sits from the middle of the board, front-to-back then top-to
+// bottom. Deployment zones are two columns wide, so the column term prefers the
+// FORWARD column — which is the rule the simulation's automatic deployment uses,
+// and the row term is this file's own: without it the bot fills a deployment
+// column from one end and its company arrives in a corner, which reads as broken
+// rather than as weak.
+function wbBotOffCentre(h) {
+  return Math.abs(WB.col(h.q, h.r) - (WB.W - 1) / 2) * 2 + Math.abs(h.r - (WB.H - 1) / 2);
+}
+
+// The escalating cost of acting twice with one unit, made visible to the policy.
+//
+// This is the one place the sparring bot is deliberately better than the
+// simulation's tactical score, and it is a LEGIBILITY fix rather than a strength
+// one. Greedy with no penalty pours the whole activation pool into whichever unit
+// scores highest, so one man crosses the board and the other five never move. A
+// player reads that as a broken bot, not a weak one, and reports the wrong thing.
+// core.actionCost already charges for it; this makes the choice see the charge.
+function wbBotReuse(S, u) {
+  const n = (S.acted && S.acted[u.owner] && S.acted[u.owner].get(u.uid)) || 0;
+  return n * 8;
+}
+
+// One ply, no lookahead. Higher is better; ties go to whichever came first out of
+// wbLegalMoves, which is stable for a given position.
+function wbBotScore(S, m) {
+  const pl = wbActive();
+
+  // Below everything else on purpose. A pass ends this company's DEPLOYMENT as
+  // well as its actions (see wbPassForfeits), so a bot that passed while it could
+  // still take the field would throw away units for nothing.
+  if (m.type === 'pass') return -1000;
+  if (m.type === 'rally_end') return -1;
+
+  if (m.type === 'deploy') {
+    const u = S.G.units.get(m.uid);
+    const h = S.board.get(m.to);
+    if (!u || !h) return -Infinity;
+    // Above every action, because deployment costs no activation and is forfeited
+    // by the pass that is one branch away. Costliest first is the simulation's
+    // rule and is kept: the expensive units are the ones a ramping budget can
+    // strand on the bench.
+    return 500 + u.cost * 4 - wbBotOffCentre(h);
+  }
+
+  if (m.type === 'attack') {
+    const u = S.G.units.get(m.uid), e = S.G.units.get(m.target);
+    if (!u || !e) return -Infinity;
+    // Guard redirection is NOT modelled: WB.redirect may land this damage on a
+    // different unit entirely, and the bot will not have noticed. Listed in the
+    // header as a known blindness rather than papered over here, because the fix
+    // is a real change to how the policy values a target and wants measuring.
+    const dmg = WB.damageOf(S.G, u, e, wbRules());
+    const kill = e.hp <= dmg;
+    return (kill ? 100 + e.vp * 10 : dmg * 6) - wbBotReuse(S, u);
+  }
+
+  if (m.type === 'rally') {
+    const u = S.G.units.get(m.uid);
+    return 20 - (u ? wbBotReuse(S, u) : 0);
+  }
+
+  // move and rally_move are scored the same way: both are one unit changing hex,
+  // and the only difference is who paid for it.
+  const u = S.G.units.get(m.uid);
+  const to = S.board.get(m.to);
+  if (!u || !to) return -Infinity;
+  const foes = wbLiving(1 - pl);
+  if (!foes.length) return 0;
+  const uH = WB.hexOf(S.G, u);
+  if (!uH) return -Infinity;
+  const near = (h) => Math.min(...foes.map((e) => WB.hexDist(h, WB.hexOf(S.G, e))));
+  let v = (near(uH) - near(to)) * 2;
+  if (to.objective) v += to.controller === u.owner ? 6 : (u.cls === 'light' ? 30 : 22);
+  if (WB.ZONES[to.terrain].grants_cover) v += 2;
+  return v - (m.type === 'rally_move' ? 0 : wbBotReuse(S, u));
+}
+
+// The move the bot would make in this position, or null if it has none.
+//
+// Draft and colours are separated out because neither is a tactical question and
+// both already have an answer the simulation has been using for tens of thousands
+// of games. Reusing those two ANSWERS is not the same as sharing the tactical
+// policy: STRATEGIES is a drafting rule, it is not tuned for feel, and the bot
+// drafting like the sweeps is what keeps a human's opponent a normal company
+// rather than a curiosity.
+function wbBotChoose(S) {
+  const moves = wbLegalMoves(S);
+  if (!moves.length) return null;
+
+  if (S.phase === 'draft') {
+    // core.STRATEGIES breaks ties alphabetically; picking through it rather than
+    // restating its scores is what stopped the harness and the sweeps drafting
+    // different companies from the same pack about a third of the time.
+    const want = WB.STRATEGIES.midrange(moves.map((m) => m.name));
+    return moves.find((m) => m.name === want) || moves[0];
+  }
+
+  if (S.phase === 'banner') {
+    // The median-cost unit, which is the simulation's rule. The colours are worth
+    // 2 victory points to whoever takes them, so the cheapest unit is a gift and
+    // the best one is a liability; the middle is the answer both other drivers
+    // already give.
+    const roster = S.rosters[S.bannerFor];
+    const byCost = roster
+      .map((name, idx) => ({ idx, cost: WB.ARCH[name].cost }))
+      .sort((a, b) => a.cost - b.cost || a.idx - b.idx);
+    const want = byCost[Math.floor(byCost.length / 2)].idx;
+    return moves.find((m) => m.idx === want) || moves[0];
+  }
+
+  let best = null, bestScore = -Infinity;
+  for (const m of moves) {
+    const v = wbBotScore(S, m);
+    if (v > bestScore) { bestScore = v; best = m; }
+  }
+  return best;
+}
+
+// ── driving it ────────────────────────────────────────────────────────────────
+
+// One move, synchronously. Returns what wbApply returned, or null if it was not
+// the bot's turn. Separated from the timer so that tests can play a whole match
+// without one — engine.js runs headless in a vm with no setTimeout at all, which
+// is how run-drift.js drives it.
+function wbBotStep() {
+  const S = warband_state;
+  if (!S || !wbBot || wbMp) return null;
+  if (S.phase === 'over') return null;
+  if (!wbBotHolds(wbWhoActs(S))) return null;
+
+  const move = wbBotChoose(S);
+  if (!move) return null;
+  const r = wbCommit(move);
+
+  // A refusal means wbLegalMoves and the appliers disagree, which is a bug in one
+  // of them and not something to spin on. Three in a row and the bot stands down
+  // and says so, leaving a playable game behind rather than a frozen one: the
+  // human can finish the match at both seats, which is where they started.
+  if (!r || !r.ok) {
+    wbBot.refusals = (wbBot.refusals || 0) + 1;
+    if (wbBot.refusals >= 3) {
+      wbBotStop();
+      const seats = wbBot.seats.slice();
+      wbBot = null;
+      if (S.phase !== 'over') {
+        wbLog(S, null, `The sparring bot stood down: it offered a move the rules refused${r && r.why ? ` (${r.why})` : ''}.`);
+        for (const pl of seats) wbLog(S, pl, `${S.names[pl]} is a human seat again.`);
+      }
+      wbShow();
+    }
+    return r;
+  }
+  wbBot.refusals = 0;
+  return r;
+}
+
+// Schedule the next bot move, if there is one to make. Called at the end of every
+// commit and after a new game, so it covers the draft, the colours screen,
+// deployment and play without knowing about any of them — wbWhoActs already
+// answers "whose turn is it" the same way in every session phase.
+//
+// The pause is not decoration. Warband alternates ONE ACTION AT A TIME, so there
+// is no bot "turn" to fill with a spinner: its moves land between the human's,
+// and without a gap between them the board changes under a player who is still
+// reading it.
+function wbBotNudge() {
+  if (!wbBot || wbMp) return;
+  wbBotStop();
+  const S = warband_state;
+  if (!S || S.phase === 'over' || !wbBotHolds(wbWhoActs(S))) return;
+  if (typeof setTimeout !== 'function') return;   // headless: tests call wbBotStep
+  wbBot.timer = setTimeout(() => { if (wbBot) { wbBot.timer = null; wbBotStep(); } }, wbBot.delay);
+}
+
 // ── multiplayer ───────────────────────────────────────────────────────────────
 // Host-authoritative, over the portal's Supabase transport (multiplayer.js). The
 // host runs the real game; a guest sends intents and renders the snapshots that
@@ -3878,6 +4496,11 @@ function wbSessionEnd() {
   if (typeof clearTimeout === 'function') {
     for (const t of [wbUi.syncOwed, wbUi.askOwed, wbUi.drawOwed]) if (t != null) clearTimeout(t);
   }
+  // The bot is a fact about this session, like the room, so it ends with it.
+  // warbandStart re-establishes one AFTER wbNewGame, which is why clearing it
+  // here does not stop a bot game from starting.
+  wbBotStop();
+  wbBot = null;
   wbUi = wbFreshSession();
 }
 
@@ -3930,6 +4553,10 @@ function wbCommit(move) {
   if (!r.ok) wbUi.notice = r.why ? `${r.why[0].toUpperCase()}${r.why.slice(1)}.` : null;
   if (r.ok && wbMp && wbMp.mode === 'host') wbMpPush();
   wbShow();
+  // The bot answers here rather than inside each click handler, for the same
+  // reason the notice is cleared here: there are seven entry points and every one
+  // of them can hand the turn to a seat the human is not sitting in.
+  wbBotNudge();
   return r;
 }
 
@@ -4776,7 +5403,7 @@ function wbSerialize(S) {
     bannerFor: S.bannerFor == null ? null : S.bannerFor,
     bannerIdx: arr(S.bannerIdx),
     turn: S.turn, order: arr(S.order), activeIdx: S.activeIdx == null ? null : S.activeIdx,
-    pools: arr(S.pools), dp: arr(S.dp),
+    pools: arr(S.pools), poolStart: arr(S.poolStart), dp: arr(S.dp),
     acted: S.acted ? S.acted.map((m) => Array.from(m)) : null,
     against: arr(S.against), objPoints: arr(S.objPoints), killPoints: arr(S.killPoints),
     fallenBanners: arr(S.fallenBanners), totalVP: arr(S.totalVP), breakAt: arr(S.breakAt),
@@ -4860,6 +5487,14 @@ function wbNums(a) { return Array.isArray(a) ? a.map(wbNum) : null; }
 // not null -- a null here reads as a crash two frames later, in a template.
 function wbNumPair(a) {
   return Array.isArray(a) ? [wbNum(a[0]), wbNum(a[1])] : [0, 0];
+}
+// A pair of whole non-negative numbers, or nothing at all. Unlike wbNumPair this
+// REFUSES rather than coerces, because the caller can say "not known" and a pool
+// that was never stated must not arrive downstream looking like zero.
+function wbWholePair(a) {
+  if (!Array.isArray(a) || a.length !== 2) return null;
+  if (!a.every((v) => Number.isInteger(v) && v >= 0)) return null;
+  return [a[0], a[1]];
 }
 // A seat, or nothing. toPick indexes names[] and rosters[], bannerFor indexes
 // rosters[], order[] holds two of them, and owner indexes acted[] and armies[].
@@ -5043,7 +5678,27 @@ function wbHydrate(pub) {
     turn: wbNum(pub.turn),
     order: Array.isArray(pub.order) ? [wbSeat(pub.order[0]), wbSeat(pub.order[1])] : null,
     activeIdx: pub.activeIdx == null ? null : wbNum(pub.activeIdx),
-    pools: wbNumPair(pub.pools), dp: wbNumPair(pub.dp),
+    pools: wbNumPair(pub.pools),
+    // Absent on a snapshot older than the field, and then the screen says what it
+    // holds and not what it spent. There is no longer a reconstruction to fall
+    // back to -- this comment said there was for one commit after it was deleted.
+    //
+    // Strict rather than coerced, which wbNumPair is not: it turns `[]` into
+    // [0, 0], `[6]` into [6, 0], and `"6"` into 6, so three different malformed
+    // values arrived downstream wearing the shape of an answer. A starting pool
+    // is a pair of whole non-negative numbers or it is nothing.
+    //
+    // AND IT IS GATED ON `pools` TOO, which is the correction that matters. The
+    // spend is a subtraction, so it is only as trustworthy as BOTH its operands,
+    // and the previous round hardened one of them. `pools` still goes through the
+    // coercing reader -- it has to, the game plays out of it -- so `[]` or
+    // `["x", 12]` becomes a clean-looking 0, and a perfectly valid start of 6
+    // minus that fabricated 0 rendered "0 left of 6 this turn · 6 spent". An
+    // entire invented ledger, with every guard satisfied, because the value those
+    // guards examine is genuinely fine. If the current pool is not a whole pair,
+    // what was spent is not known, whatever the start says.
+    poolStart: wbWholePair(pub.pools) ? wbWholePair(pub.poolStart) : null,
+    dp: wbNumPair(pub.dp),
     // A Map per seat, built only out of pairs. `new Map(anything)` throws on
     // anything that is not iterable, and wbCost reaches through acted[owner] on
     // every unit it prices.
@@ -5178,6 +5833,84 @@ function wbToken(cx, cy, r, owner, fill, stroke, sw, inner) {
     + ` stroke="${stroke}" stroke-width="${sw}" ${inner}`;
 }
 
+// ── the board slot ───────────────────────────────────────────────────────────
+// THE MAP IS THE CONSTANT. Every screen of a live game draws it, in one place --
+// directly under the phase line, above whatever that screen asks you to click --
+// and screens within a stage of the game draw it at one size. A screen that
+// wants no board has to come here and say why, in writing.
+//
+// It reads that way round because the other way round has now failed twice. Each
+// render function used to decide alone, so the end screen hid the map at the
+// final Regroup until a playtester asked for it back in plain words -- "don't
+// hide the map on game conclusion" -- and that was fixed where it was found,
+// leaving the colours screen hiding it at a different phase boundary for another
+// week. Fixing instances of a rule nobody has written down produces the next
+// instance.
+//
+// The argument is continuity of planning, and it is stronger than the argument
+// about any one screen's decision being terrain-dependent. A player reading the
+// board is forming a deployment while they read it, and deployment is the very
+// next thing the game asks for. Taking the board away -- or moving it, or
+// resizing it -- interrupts a thought still in progress. So "this particular
+// choice is about units rather than ground" is not a defence for hiding the map.
+//
+// The setup screen is the one legitimate absence, and it is not a caller: the
+// board is dealt WITH the draft, so before that there is nothing to draw.
+//
+// PREVIEW is not a layout choice and must never be read as one. It refuses
+// gameplay clicks and omits the readiness rings, which is right wherever nothing
+// can be played -- the draft, the colours screen, and a finished match. It
+// occupies the same slot at the same size as a live board.
+function wbBoardSlot(opts = {}) {
+  return wbMapSvg(opts);
+}
+
+// Two sizes, and the player picks. FIT scales the whole board into whatever width
+// it is given -- the whole battlefield at once, at the cost of small hexes on a
+// phone. FULL holds every hex at its real size and lets the wrapper scroll, which
+// is what a thumb needs, at the cost of seeing about half the field at a time. On
+// any container as wide as the board the two are identical, so this costs a
+// desktop nothing.
+//
+// Fit and Full serve opposed needs, so the DEFAULT follows the stage of the game
+// rather than being one global setting the player has to discover and re-toggle.
+// THE PRE-GAME IS ONE CONTINUOUS VIEW: the draft and the colours screen both fit,
+// because drafting and choosing a bearer against the whole visible field is the
+// mechanic, and because a board that changes size as you cross a phase boundary
+// is the same jolt as a board that disappears. Play holds full size because the
+// tokens are small to see and to hit at phone widths: in Fit mode at a 360px
+// container a Company B diamond spans about 20px and a Company A disc about 16px.
+//
+// That is a COMFORT argument and nothing stronger, which is a correction. This
+// comment previously said a missed tap "lands on the hex beneath, which is a
+// DIFFERENT command", and cited WCAG 2.5.8's 24px minimum as if the change were
+// a conformance fix. Both halves were wrong, and the refutation was two hundred
+// lines below in this same file: every occupied hex already carries an invisible
+// `pointer-events="all"` polygon bound to the unit's own wbHexUnit handler, put
+// there for exactly this reason, so a near miss selects the same unit rather than
+// running a different command. And the target that criterion measures is that
+// polygon, roughly 34x39px at 360px -- comfortably over 24px even fitted. The
+// error survived being copied into a test comment; adversarial review caught it.
+//
+// So Full-in-play is a default the designer may revisit, not a requirement.
+//
+// wbUi.boardFull stays authoritative once the player touches the control, so the
+// default is a starting point and never an override.
+function wbBoardFull() {
+  if (wbUi.boardFull != null) return !!wbUi.boardFull;
+  const S = warband_state;
+  // No game, no board to size. Stated rather than left to fall out of the
+  // expression below, because both of the copies this replaced answered `false`
+  // here -- `warband_state && ...` yields null, which is falsy -- and folding
+  // the guard into the phase test would have silently answered `true` instead.
+  // Unobservable today, since wbMapSvg reads S.board on its first line and
+  // wbBoardZoom is only reachable from a button on a drawn board. Kept exact
+  // anyway: an inherited behaviour change nobody chose is the kind this
+  // repository keeps finding in repairs.
+  if (!S) return false;
+  return !(S.phase === 'draft' || S.phase === 'banner');
+}
+
 function wbMapSvg(opts = {}) {
   const S = warband_state;
   const hexes = [...S.board.values()];
@@ -5203,30 +5936,29 @@ function wbMapSvg(opts = {}) {
   const movingField = S.rally ? 'picked' : 'unit';
   let mover = live && wbSelValid(S, movingField) ? wbSelUnit(S, movingField) : null;
   if (mover && mover.owner !== wbActive()) mover = null;
+  // A move that cannot be paid for is a move the rules REFUSE -- wbApply answers
+  // it with "not enough activation" -- so the board must not offer it. It was
+  // offering it: a playtester selected a Heavy with one activation left, saw
+  // fourteen gold hexes, and reasonably concluded she could move. The readiness
+  // ring on that same unit said it could not act, and wbAttackTargets was already
+  // returning nothing for the same reason, so the board was contradicting itself
+  // in two of its five languages at once and the louder one was wrong.
+  //
+  // This is not the interface judging a move unworthwhile, which it must never
+  // do. Affordability is legality here, and the encoding already existed
+  // everywhere except this line.
+  //
+  // NOT during a rally: an ally moving on the captain's word pays nothing, which
+  // is the whole point of Rally, and wbMoveRallyMove charges nothing. Gating that
+  // on the ally's own pool would refuse a move the rules allow, which is the same
+  // defect pointing the other way.
+  if (mover && !S.rally && wbCost(mover) > (S.pools ? S.pools[mover.owner] : 0)) mover = null;
   const reach = mover ? new Set(WB.reachable(S.G, mover).map((x) => WB.key(x.q, x.r))) : null;
   const shooter = (live && !S.rally && wbSelValid(S, 'unit')) ? wbSelUnit(S, 'unit') : null;
   const hits = new Set(wbAttackTargets(shooter).map((t) => t.uid));
+  const depUnit = live && wbSelValid(S, 'deploy') ? wbSelUnit(S, 'deploy') : null;
   const rUnit = WB_SIZE * 0.42, rRing = WB_SIZE * 0.60;
-  // Two sizes, and the player picks. FIT scales the whole board into whatever
-  // width it is given -- the whole battlefield at once, which is what the draft is
-  // for, at the cost of small hexes on a phone. FULL holds every hex at its real
-  // size and lets the wrapper scroll, which is what a thumb needs, at the cost of
-  // seeing about half the field at a time. On any container at least ${wpx}px wide
-  // the two are identical, so this costs a desktop nothing.
-  // Fit and Full serve opposed needs, so the DEFAULT follows the phase rather
-  // than being one global setting the player has to discover and re-toggle.
-  //
-  // The draft is drafting against the whole visible field, so it needs Fit --
-  // that is the mechanic. Play needs targets a thumb can hit: measured, a unit
-  // token in Fit mode is about 20px across at 360px and 22px at 390px, against
-  // WCAG 2.5.8's 24px minimum, and missing it lands on the hex beneath, which is
-  // a DIFFERENT command. Not a small target: a wrong one.
-  //
-  // wbUi.boardFull stays authoritative once the player touches the control, so
-  // the default is a starting point and never an override.
-  const full = wbUi.boardFull == null
-    ? (warband_state && warband_state.phase !== 'draft')
-    : !!wbUi.boardFull;
+  const full = wbBoardFull();
   let out = `<div class="wb-board" style="max-width:100%">
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">
       <button class="ng-btn wb-board-zoom" onclick="wbBoardZoom()" style="font-size:.68em;opacity:.85">${
@@ -5241,8 +5973,19 @@ function wbMapSvg(opts = {}) {
     const hOcc = S.G ? WB.occupantOf(S.G, h) : null;
     const canMove = !!(reach && reach.has(k));
     const canHit = !!(hOcc && hOcc.alive && hits.has(hOcc.uid));
-    const dep = live && wbSelValid(S, 'deploy') && h.occupant == null && z.allows_deployment
-      && (wbActive() === 0 ? WB.col(h.q, h.r) <= 1 : WB.col(h.q, h.r) >= WB.W - 2);
+    // Same rule for the deployment zone. wbSelect already refuses to stage a unit
+    // the player cannot afford, so this is currently unreachable -- which is
+    // exactly the case DESIGN-LOG 5 says to resolve rather than leave: it is
+    // correct, not merely lucky, and now it is checked rather than assumed.
+    // The edge belongs to the unit's OWNER, not to whoever happens to be acting.
+    // wbLoad preserves this client's selection across a snapshot on purpose, so
+    // after passing, Company A could still hold a staged Levy while Company B is
+    // active -- and the zone was chosen from wbActive(), painting fourteen hexes
+    // in B's edge for a unit wbMoveDeploy answers with "not your unit".
+    const dep = live && depUnit != null && depUnit.owner === wbActive()
+      && depUnit.cost <= (S.dp ? S.dp[depUnit.owner] : 0)
+      && h.occupant == null && z.allows_deployment
+      && (depUnit.owner === 0 ? WB.col(h.q, h.r) <= 1 : WB.col(h.q, h.r) >= WB.W - 2);
     // Classes are the machine-readable half of the two languages, and they are
     // what the tests assert against: a board that highlights nothing renders
     // identically to one that highlights everything if you only look at colours.
@@ -5259,7 +6002,9 @@ function wbMapSvg(opts = {}) {
       stroke="${canHit ? WB_COL.hit : lit ? WB_COL.move : '#4a443a'}"
       stroke-width="${canHit ? 3 : lit ? 3 : 1}"
       ${canHit ? 'stroke-dasharray="6 4"' : ''} ${click}>
-      <title>${wbEsc(z.name)} — ${wbEsc(z.description)}${hOcc && hOcc.alive ? ` | ${wbEsc(hOcc.name)}, ${wbNum(hOcc.hp)} hp` : ''}</title></polygon>`;
+      <title>${wbEsc(z.name)}${wbGroundOwner(S, h)} — ${wbEsc(z.description)}${
+        h.objective ? ' | SCORING HEX: whoever holds more of these at the end of a turn scores.' : ''
+      }${hOcc && hOcc.alive ? ` | ${wbEsc(hOcc.name)}, ${wbNum(hOcc.hp)} hp` : ''}</title></polygon>`;
     if (h.objective) {
       // Two problems, both from the same line. The controller was carried by
       // colour alone, and the red ring scored barely above 1:1 against several
@@ -5269,6 +6014,14 @@ function wbMapSvg(opts = {}) {
       // whatever its own colour; the readable red rather than the fill red; and
       // a dash pattern that differs by controller, so who holds it survives
       // being printed in grey.
+      // A playtester looked at the dashed rings and asked "oh, is that what the
+      // circles are?" -- the ring said "something is special here" and nothing
+      // more, and what it means was reachable only by clicking it. DESIGN-LOG 3.6
+      // had this open before anyone played it. So the hex now carries a mark that
+      // reads as scoring, and the legend under the board names it.
+      out += `<text x="${c.x}" y="${(c.y - WB_SIZE * 0.5).toFixed(1)}" text-anchor="middle"
+        font-size="11" font-weight="bold" pointer-events="none"
+        fill="${WB_COL.text}">★ vp</text>`;
       const or_ = (WB_SIZE * .74).toFixed(1);
       const ostroke = h.controller === 0 ? WB_COL.p0
         : h.controller === 1 ? WB_COL.p1Text : '#b3a992';
@@ -5291,11 +6044,47 @@ function wbMapSvg(opts = {}) {
       const u = hOcc, col = u.owner === 0 ? WB_COL.p0 : WB_COL.p1;
       const cap = wbRallyCaptain(S);
       const isSel = S.sel != null && (S.sel.unit === u.uid || S.sel.picked === u.uid);
-      const rallyable = cap && u.owner === cap.owner
+      // Who will move on the captain's word. A rally is the only action that
+      // opens and then WAITS, and until this ring carried real weight the board
+      // said nothing at all when one opened: the player had activated an ability
+      // and the only sign of it was a line of text. So these are drawn the moment
+      // the rally opens, they thin out as each ally moves, and they are gone when
+      // it closes.
+      //
+      // The last clause is not decoration. wbMoveRallyMove refuses a destination
+      // outside WB.reachable, so an ally with nowhere to go cannot be rallied at
+      // all — ringing it would invite a click that lights no hexes, which is an
+      // affordance that lies. This is deliberately the SAME condition
+      // wbLegalMoves uses to emit a rally_move, and the two are held equal by
+      // test/warband-rally.test.js.
+      //
+      // `live` is the gate every other affordance on this board obeys and this
+      // ring did not. Round 14: a pending rally rendered in preview mode — the
+      // draft, colours and end screens — kept its three rings, and so did a
+      // decided position. A board that refuses gameplay clicks may not light a
+      // hex; that is the rule the preview branch exists to keep, and this
+      // predicate simply did not ask. The thin unclassed ring it replaced had the
+      // same omission, which is how it survived being rewritten.
+      //
+      // ONE GATE, NOT TWO. The repair first read `live && !decided`, mirroring
+      // wbLegalMoves' terminal check — and mutating `!decided` away broke no
+      // test, because a decided match always reaches the end screen, which draws
+      // in preview. So the second clause was unreachable, and unreachable
+      // validation that no test can exercise is a claim rather than a guard. The
+      // decided case is covered here by `live` and asserted directly in
+      // test/warband-rally.test.js; if the end screen ever stops drawing in
+      // preview mode, that assertion is what will say so.
+      const rallyable = live && cap && u.owner === cap.owner
         && u.uid !== cap.uid && !S.rally.moved.includes(u.uid)
-        && WB.hexDist(WB.hexOf(S.G, cap), WB.hexOf(S.G, u)) <= cap.rallyRange;
-      if (rallyable) out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none" pointer-events="none"
-        stroke="${WB_COL.p0}" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+        && WB.hexDist(WB.hexOf(S.G, cap), WB.hexOf(S.G, u)) <= cap.rallyRange
+        && WB.reachable(S.G, u).length > 0;
+      // Halo first, for the same reason the attack ring has one: the stroke has
+      // to stay legible on twelve terrain fills, and darkening underneath does
+      // that without lightening the hue into the move gold's territory.
+      if (rallyable) out += `<circle cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
+        pointer-events="none" stroke="${WB_COL.ink}" stroke-width="5" stroke-opacity=".8"/>`
+        + `<circle class="wb-rally" cx="${c.x}" cy="${(c.y - 5).toFixed(1)}" r="${rRing.toFixed(1)}" fill="none"
+        pointer-events="none" stroke="${WB_COL.rally}" stroke-width="3" stroke-dasharray="2 5"/>`;
       // A dark halo under the attack ring, so the orange is legible on ground it
       // would otherwise disappear into -- it scored 2.32:1 against Officer's
       // Cairn, below WCAG 1.4.11's 3:1 for a graphic that means something. The
@@ -5404,7 +6193,28 @@ function wbMapSvg(opts = {}) {
     </g>`;
     wbUi._noticeDrawn = true;
   }
-  return out + '</svg></div></div>';
+  // The board speaks five languages and, until a playtester asked what the dashed
+  // circles were, named none of them. Every one is already on the screen; this
+  // only says which is which, in the same colours and shapes it uses.
+  //
+  // The action languages are omitted on a preview board, where nothing can be
+  // moved or struck and naming them would be a fourth kind of lie.
+  const legend = [
+    `<span style="color:${WB_COL.text}">★ vp = scoring hex; hold more than your opponent at the end of a turn</span>`,
+    `<span style="color:${WB_COL.p0}">● ${wbEsc(S.names[0] || 'A')}</span>`,
+    `<span style="color:${WB_COL.p1Text}">◆ ${wbEsc(S.names[1] || 'B')}</span>`,
+  ];
+  if (!opts.preview) {
+    legend.push(`<span style="color:${WB_COL.move}">gold edge = where it may go</span>`);
+    legend.push(`<span style="color:${WB_COL.hit}">orange ring = what it may strike</span>`);
+    legend.push(`<span style="color:${WB_COL.ready}">green ring = has not acted</span>`);
+    // The board draws TWO readiness rings and the legend named one, so a player
+    // seeing the faded blue one still had nothing to read.
+    legend.push(`<span style="color:${WB_COL.partial}">blue ring = has acted, can act again</span>`);
+  }
+  return out + '</svg></div>'
+    + `<div class="wb-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:.66em">
+        ${legend.join('')}</div></div>`;
 }
 
 // The selected unit's OWN controls, in their own box. Rally used to live in the
@@ -5422,7 +6232,18 @@ function wbActionPanel(S, pl, u) {
   // cost with the ACTING player's pool -- two different companies' arithmetic in
   // one sentence.
   const acting = u.owner === pl;
-  const hexes = acting && u.deployed ? WB.reachable(S.G, u).length : 0;
+  // The same gate the board applies, and DISTINCT hexes. reachable() pushes a hex
+  // again whenever it is reached more cheaply on a later pass, so its length
+  // counts duplicates -- the panel was reporting "12 hexes in gold" beside a board
+  // showing none, and its number was inflated even when the board agreed.
+  // `!S.rally` for the same reason the board has it: while a Rally is open the
+  // dispatcher refuses every ordinary move with "n still to move on the
+  // captain's word", and the board draws none. This panel went on counting them
+  // -- reachable for a guest, whose selection survives the snapshot that opens
+  // the Rally -- so it advertised sixteen gold hexes beside a board showing zero.
+  const canMoveNow = acting && u.deployed && !S.rally && wbCost(u) <= S.pools[u.owner];
+  const hexes = canMoveNow
+    ? new Set(WB.reachable(S.G, u).map((h) => WB.key(h.q, h.r))).size : 0;
   const targets = acting ? wbAttackTargets(u) : [];
   const abil = wbUnitAbilities(u);
   const arch = Object.prototype.hasOwnProperty.call(WB.ARCH, u.name) ? WB.ARCH[u.name] : null;
@@ -5498,15 +6319,40 @@ function wbRender() {
     const band = 3 * a < t ? ['Skirmish', WB_COL.dim]
       : 3 * a < 2 * t ? ['Attrition', WB_COL.p0]
       : ['Last Stand', WB_COL.p1Text];
+    // Both companies' resources, side by side, because otherwise the player counts
+    // them. Asked for directly: "instead of making me count, is there a way to see
+    // the summaries for both companies somewhere off to the side? Like how many
+    // actions and deployments each has left?"
+    //
+    // The strip already carried each company's name, its share of its break point
+    // and a bar. What it did not carry is the two POOLS, which were printed for
+    // the acting player only -- so half the information needed to read the
+    // position was on screen and half was arithmetic.
+    //
+    // `standing` is deployed and alive, which is the number the board shows and
+    // the one that decides whether an opponent still has an answer.
+    const standing = S.armies && S.armies[p]
+      ? S.armies[p].filter((u) => u.alive && u.deployed).length : 0;
+    const reserve = S.armies && S.armies[p]
+      ? S.armies[p].filter((u) => u.alive && !u.deployed).length : 0;
     return `<div style="flex:1">
-      <div style="font-size:.75em;color:${p === 0 ? WB_COL.p0 : WB_COL.p1Text};font-weight:bold">${wbEsc(S.names[p])}</div>
+      <div style="font-size:.75em;color:${p === 0 ? WB_COL.p0 : WB_COL.p1Text};font-weight:bold">
+        ${p === 0 ? '●' : '◆'} ${wbEsc(S.names[p])}</div>
       <div style="font-size:.68em;color:${WB_COL.dim}">${band[0]} · ${S.against[p]} / ${S.breakAt[p]} conceded</div>
       <div style="height:7px;background:#26241f;border-radius:3px;margin-top:3px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${band[1]}"></div></div></div>`;
+        <div style="height:100%;width:${pct}%;background:${band[1]}"></div></div>
+      <div class="wb-pools" style="font-size:.68em;color:${WB_COL.dim};margin-top:3px">
+        <b style="color:${WB_COL.text}">${wbNum(S.pools[p])}</b> activation ·
+        <b style="color:${WB_COL.text}">${wbNum(S.dp[p])}</b> deployment ·
+        <b style="color:${WB_COL.text}">${wbNum(standing)}</b> on the field${
+          reserve ? ` · ${wbNum(reserve)} in reserve` : ''}</div></div>`;
   };
+  // null when this snapshot cannot say -- an old-format or malformed poolStart.
+  // The clause goes away rather than being filled with a plausible number; see
+  // wbSpentThisTurn for why a wrong figure here is worse than no figure.
   const spent = wbSpentThisTurn(S, pl);
   wbDraw(`
-    <div style="padding:12px;color:${WB_COL.text}">
+    <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
       <div style="display:flex;gap:16px;margin-bottom:10px">${track(0)}${track(1)}</div>
       ${wbTurnBanner()}
       <div style="font-size:.85em;margin-bottom:4px">
@@ -5515,8 +6361,9 @@ function wbRender() {
         ${S.rally ? `· <b style="color:${WB_COL.p0}">Rally</b> — ${picked ? `move <b>${wbEsc(picked.name)}</b>` : 'choose a man'} · ${S.rally.left} left` : ''}
       </div>
       <div style="font-size:.75em;color:#9a9282;margin-bottom:8px;line-height:1.6">
-        <b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s activation: ${S.pools[pl]} left</b>
-        of ${S.pools[pl] + spent} this turn · ${spent} spent.
+        <b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s activation: ${S.pools[pl]} left</b>${spent == null
+          ? ' this turn.'
+          : ` of ${S.pools[pl] + spent} this turn · ${spent} spent.`}
         One action costs ${Object.keys(WB.ACT_COST).map((c) => `${wbEsc(c)} ${wbNum(WB.ACT_COST[c])}`).join(' · ')}
         activation, and each further action by the SAME unit this turn costs another multiple of that.
         <br><b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s deployment: ${S.dp[pl]} left</b> — spent only on
@@ -5527,8 +6374,8 @@ function wbRender() {
         and cannot enter marsh.
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
-      ${wbMapSvg()}
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+      ${wbBoardSlot()}
+      <div class="wb-bench" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         ${bench.map((u) => `<div onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer;border:1px solid ${u.cost <= S.dp[pl] ? WB_COL.p0 : '#3a3630'};
           border-radius:5px;padding:4px 8px;font-size:.72em;background:#221f1c;opacity:${u.cost <= S.dp[pl] ? 1 : .4}">
           ${wbEsc(u.name)} <span style="color:${WB_COL.dim}">${wbNum(u.cost)} dp</span></div>`).join('') || '<span style="font-size:.72em;color:${WB_COL.dimmer}">all committed</span>'}
@@ -5631,7 +6478,7 @@ function wbEnd() {
       ? `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[1 - loser])}</b> holds the field. ${wbEsc(S.names[loser])} breaks.`
       : `<b style="color:${loser === 1 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[1 - loser])}</b> holds the field at the end of ${S.turn} turns, further from breaking.`;
   wbDraw(`
-    <div style="padding:16px;color:${WB_COL.text}">
+    <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
       <div style="font-size:1.1em;color:${WB_COL.p0};font-weight:bold">The field</div>
       <div class="wb-end-verdict" style="margin:8px 0;font-size:.9em">${msg}</div>
       ${wbPhaseLine('The match is over and nothing further can be played on this board. '
@@ -5642,7 +6489,7 @@ function wbEnd() {
            map on game conclusion." Drawn in PREVIEW mode, so every hex inspects
            rather than plays -- there is nothing left to play -- and so neither the
            readiness rings nor the anchored notice are drawn on a finished match. */
-        wbMapSvg({ preview: true })}
+        wbBoardSlot({ preview: true })}
       <div class="wb-end-tally" style="font-size:.78em;color:#9a9282">
         ${S.turn} turns.
         ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
@@ -5667,6 +6514,27 @@ if (typeof window !== 'undefined') Object.assign(window, {
   wbNotice: () => wbUi.notice,
   startWarbandMultiplayer, wbCommit, wbWhoActs, wbCanAct,
   wbMpSelf: () => wbMp,
+  // wbSetupSeatKind is an inline onchange handler and MUST be here; the rest is
+  // the bot's surface for tests and for any future caller that arms one without
+  // the setup form.
+  wbSetupSeatKind, wbLegalMoves, wbBotStep, wbBotNudge, wbBotChoose,
+  // Exported so a test can ask what a pass would cost WITHOUT going back through
+  // wbLegalMoves. The first version of the forfeit test called the enumerator
+  // twice and called that a check: the same omitted offer made the bot pass and
+  // then told the assertion the pass forfeited nothing. Round 13 produced
+  // thirteen real lost deployments through that circle.
+  wbPassForfeits, wbDeployableHexes,
+  wbBotSelf: () => wbBot,
+  wbSetBot: (seats, delay) => {
+    wbBotStop();
+    wbBot = seats && seats.length
+      ? { seats: seats.slice(), delay: delay == null ? 550 : delay, timer: null, refusals: 0 }
+      : null;
+    // Arming a bot whose seat is already the one to act must start it, or the
+    // game sits waiting for a click that nobody is going to make. warbandStart
+    // nudges for the same reason.
+    wbBotNudge();
+  },
   wbState: () => warband_state,   // read-only accessor for tests and debugging
 });
 
