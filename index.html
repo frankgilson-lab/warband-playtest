@@ -45,7 +45,7 @@
 <div class="wrap">
   <header>
     <h1>Warband</h1>
-    <p class="sub">A playtest build. Two players, one screen, about twenty minutes.</p>
+    <p class="sub">A playtest build. About twenty minutes, and you can play it on your own.</p>
   </header>
 
   <div class="lede">
@@ -58,8 +58,12 @@
   </div>
 
   <div class="note">
-    <b>Hotseat.</b> Two people share one screen and pass it back and forth. Nothing to install, no
-    account, no sign-in — it all runs in this page. Set the two names, press deal, and go.
+    <b>You can play this on your own.</b> The second seat is a sparring bot by default: it
+    drafts its own warband, chooses its own colours and fights for itself. Set the names, press
+    deal, and go. Nothing to install, no account, no sign-in &mdash; it all runs in this page.
+    <br><br>
+    <b>Two of you?</b> Change <i>Second seat</i> to <b>Human</b> and share one screen, passing
+    it back and forth.
   </div>
 
   <div class="game" id="warband-play-section"></div>
@@ -78,14 +82,20 @@
     from a player than from a simulation.</li>
     <li><b>Did Last Stand ever change your plan?</b> Did you fight for a hex because of what dying
     there would leave behind — or did the terrain changes just wash over you?</li>
+    <li><b>Which opponent did you play?</b> The bot and a second human answer different
+    questions, so tell me which. The bot charges at whatever is nearest and defends itself
+    badly &mdash; if you beat it, the interesting part is <i>how</i>, not that you did.</li>
     <li><b>Anything you had to be told rather than could see.</b> Every one of those is a bug in the
     interface, not in you.</li>
   </ul>
 
   <h2>Known rough edges</h2>
   <ul>
-    <li><b>Hotseat only.</b> Networked play exists in the code but is switched off at the server end.</li>
-    <li><b>No AI opponent yet</b> — you need a second human.</li>
+    <li><b>The sparring bot is deliberately weak.</b> It charges the nearest enemy and takes
+    whatever it can reach. It is there so you do not need a second person, not because it is a
+    good opponent &mdash; so beating it says more about the bot than about the game.</li>
+    <li><b>Two humans means one screen.</b> Networked play exists in the code but is switched
+    off at the server end.</li>
     <li>It's a prototype. Expect unpolished corners; tell me about the ones that got in your way.</li>
   </ul>
 
@@ -2474,11 +2484,17 @@ async function warbandShowSetup() {
         <label style="font-size:.75em;color:${WB_COL.dim}">Player 1
           <input id="wb-p0" class="ng-input" value="Company A" style="font-size:.85em;width:120px"></label>
         <label style="font-size:.75em;color:${WB_COL.dim}">Player 2
-          <input id="wb-p1" class="ng-input" value="Company B" style="font-size:.85em;width:120px"></label>
+          <input id="wb-p1" class="ng-input" value="${WB_BOT_NAME}" style="font-size:.85em;width:120px"></label>
+        ${/* THE SPARRING BOT IS THE DEFAULT, and that is a decision about who can play
+             rather than about which mode is better. Hotseat needs a second person in the
+             room; this needs nobody. The page this ships on told visitors "you need a
+             second human" for four days after the bot existed, and the cost of that is
+             not a confusing screen -- it is a match nobody played. A visitor who wants
+             two humans changes one dropdown and is told so directly. */''}
         <label style="font-size:.75em;color:${WB_COL.dim}">Second seat
           <select id="wb-p1-kind" class="ng-input" onchange="wbSetupSeatKind()" style="font-size:.85em;width:130px">
-            <option value="human" selected>Human</option>
-            <option value="bot">Sparring bot</option>
+            <option value="bot" selected>Sparring bot</option>
+            <option value="human">Human</option>
           </select></label>
         <label style="font-size:.75em;color:${WB_COL.dim}">Terrain
           <select id="wb-density" class="ng-input" style="font-size:.85em;width:120px">
@@ -2491,9 +2507,11 @@ async function warbandShowSetup() {
         <button class="ng-btn" onclick="warbandStart()" style="font-size:.9em">Muster →</button>
       </div>
       <div style="font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
-        Hotseat: both players use one screen. The map is visible <em>before</em> the draft — that is the point.
+        The map is visible <em>before</em> the draft — that is the point. Playing with someone
+        else? Set the second seat to <strong>Human</strong> and share one screen, passing it
+        back and forth.
       </div>
-      <div id="wb-bot-note" style="display:none;font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
+      <div id="wb-bot-note" style="font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
         The sparring bot drafts, assigns its colours and fights on its own. It is a
         <em>sparring partner rather than an opponent</em>: it charges the nearest enemy and takes
         whatever it can reach, so beating it says more about the bot than about the game. It plays
@@ -2506,6 +2524,7 @@ async function warbandShowSetup() {
 // banner, the log and the end screen without any of them learning about bots. A
 // name the player has edited themselves is left alone.
 const WB_BOT_NAME = 'Sparring bot';
+const WB_HUMAN_NAME = 'Company B';
 function wbSetupSeatKind() {
   const sel = document.getElementById('wb-p1-kind');
   const name = document.getElementById('wb-p1');
@@ -2513,8 +2532,11 @@ function wbSetupSeatKind() {
   if (!sel || !name) return;
   const bot = sel.value === 'bot';
   if (note) note.style.display = bot ? 'block' : 'none';
-  if (bot && name.value === 'Company B') name.value = WB_BOT_NAME;
-  else if (!bot && name.value === WB_BOT_NAME) name.value = 'Company B';
+  // Only ever swaps one default for the other. A name the visitor typed themselves is
+  // left alone in both directions -- which is why this compares against the two
+  // literals rather than overwriting whatever is there.
+  if (bot && name.value === WB_HUMAN_NAME) name.value = WB_BOT_NAME;
+  else if (!bot && name.value === WB_BOT_NAME) name.value = WB_HUMAN_NAME;
 }
 
 // ── setup → draft ─────────────────────────────────────────────────────────────
