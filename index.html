@@ -1,4 +1,4 @@
-<meta name="wb-build" content="6c5037b 2026-09-08">
+<meta name="wb-build" content="5dc0bab 2026-09-10">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -1185,22 +1185,52 @@ function actionCost(G, u, spent) {
   return cost;
 }
 
-function damageOf(G, attacker, defender, RULES) {
+// `story`, when supplied, is filled with the DECOMPOSITION of this blow: the base
+// attack, every bonus that applied with an id for it, the cap and any lift, and the
+// cover taken off. It exists so the table game can tell a player why a Levy hit for
+// seven when a Levy has three attack — the first playtest report was exactly that
+// question, and the log had no answer (PLAYTEST-LOG.md, 2026-09-10).
+//
+// ONE IMPLEMENTATION, not two. The obvious way to explain a blow is a second
+// function that recomputes the parts, and that is the failure this repository keeps
+// having — a explanation that drifts from the number it explains is worse than no
+// explanation, because it is believed. So the story is collected BY the rule as it
+// runs, and `damageParts` below is a thin wrapper that turns the collection on.
+//
+// It also costs nothing when absent: every write is guarded, so the sweeps allocate
+// no array and build no strings. `damageOf` is called tens of millions of times in
+// a sweep and must not get slower to serve a log line.
+//
+// The ids are stable identifiers, NOT display text. What a player reads is the
+// engine's business; see wbBlowStory. Rules name what happened, the interface names
+// it in English.
+function damageOf(G, attacker, defender, RULES, story) {
   const board = G.board;
   const aH = hexOf(G, attacker), dH = hexOf(G, defender);
   const aZ = ZONES[aH.terrain], dZ = ZONES[dH.terrain];
   const ranged = attacker.range > 1;
   let dmg = attacker.atk;
-  if (ranged && aZ.ranged_bonus) dmg += aZ.ranged_bonus;
+  if (story) story.base = attacker.atk;
+  if (ranged && aZ.ranged_bonus) {
+    dmg += aZ.ranged_bonus;
+    if (story) story.adds.push({ id: 'ranged_ground', amount: aZ.ranged_bonus, zone: aH.terrain });
+  }
   for (const nb of neighbors(board, aH)) {
-    if (nb.terrain === 'officers_cairn') { dmg += 1; break; }   // contested ground: either side
+    if (nb.terrain === 'officers_cairn') {
+      dmg += 1;                                                 // contested ground: either side
+      if (story) story.adds.push({ id: 'officers_cairn', amount: 1 });
+      break;
+    }
   }
   // A commander's presence: allied units near a unit carrying an aura hit harder.
   // Scoped to the attacker's own side, and never self-buffing, so the aura has to
   // be positioned among the men to do anything.
   if (RULES && RULES.auraActive) {
     const src = auraSource(G, attacker, RULES);
-    if (src) dmg += src.auraDmg;
+    if (src) {
+      dmg += src.auraDmg;
+      if (story) story.adds.push({ id: 'aura', amount: src.auraDmg, from: src.name });
+    }
   }
   // Strength in numbers: a Light unit fights better with its own kind beside it
   if (RULES && RULES.swarmBonus && attacker.cls === 'light') {
@@ -1209,7 +1239,9 @@ function damageOf(G, attacker, defender, RULES) {
       const f = occupantOf(G, nb);
       if (f && f.alive && f.owner === attacker.owner && f.cls === 'light') mates++;
     }
-    dmg += RULES.swarmBonus * Math.min(mates, RULES.swarmCap);
+    const add = RULES.swarmBonus * Math.min(mates, RULES.swarmCap);
+    dmg += add;
+    if (story && add) story.adds.push({ id: 'swarm', amount: add, mates: Math.min(mates, RULES.swarmCap) });
   }
   // OUTNUMBERED: being engaged from several sides at once lifts BOTH the blow and the cap.
   // Lifting only the attack would be truncated by the cap; lifting only the cap would help
@@ -1238,11 +1270,31 @@ function damageOf(G, attacker, defender, RULES) {
     const extra = Math.min(Math.max(0, n - 1), RULES.outnumberMax);
     dmg += RULES.outnumber * extra;
     capBonus = RULES.outnumber * extra;
+    if (story && extra) story.adds.push({ id: 'overwhelm', amount: RULES.outnumber * extra, others: extra });
   }
   const capped = Math.min(dmg, defender.cap + capBonus);
   let reduce = 0;
   if (dZ.grants_cover && !attacker.bypass) reduce += coverOf(defender);   // melee AND ranged
-  return Math.max(CFG.combat.minimum_damage, capped - reduce);
+  const out = Math.max(CFG.combat.minimum_damage, capped - reduce);
+  if (story) {
+    story.raw = dmg;                       // before the cap
+    story.cap = defender.cap;              // the defender's own ceiling
+    story.capBonus = capBonus;             // how far Overwhelm lifted it
+    story.capBit = capped < dmg;           // did the ceiling actually bind?
+    story.cover = reduce;
+    story.floored = (capped - reduce) < CFG.combat.minimum_damage;
+    story.total = out;
+  }
+  return out;
+}
+
+// The same blow, with its working shown. A wrapper rather than a reimplementation:
+// it turns on the collection inside damageOf, so the parts always add up to the
+// number because they ARE the number's own arithmetic.
+function damageParts(G, attacker, defender, RULES) {
+  const story = { base: 0, adds: [], raw: 0, cap: Infinity, capBonus: 0, capBit: false, cover: 0, floored: false, total: 0 };
+  damageOf(G, attacker, defender, RULES, story);
+  return story;
 }
 const effRange = (G, u) => {
   const z = ZONES[hexOf(G, u).terrain];
@@ -2316,7 +2368,7 @@ const WarbandCore = {
   // The single share comparison every driver must use; see shareCmp.
   shareCmp, SHARE_EXACT_MAX,
   // exposed so the interactive engine can reuse the exact rules the sim validated
-  makeBoard, makeUnit, draft, dealPack, objectiveScore, serializeG, hydrateG, sweeps, reachable, damageOf, effRange, redirect, losClear,
+  makeBoard, makeUnit, draft, dealPack, objectiveScore, serializeG, hydrateG, sweeps, reachable, damageOf, damageParts, effRange, redirect, losClear,
   rallyPicks,
   actionCost,
   hexOf, occupantOf, place,
@@ -3647,14 +3699,66 @@ if (typeof document !== 'undefined' && document.addEventListener) {
   document.addEventListener('keydown', wbKeyDown);
 }
 
+// What a blow was made of, in a player's words. The FIRST PLAYTEST REPORT was
+// exactly this gap: a Levy hit a Warlord for 7, a Levy has 3 attack, and the log
+// said only "Levy hits Warlord for 7". The player's next move was to go and look
+// up the stats — which is the interface handing him its own job, and the standard
+// this project sets is that anything you had to be told rather than could see is a
+// bug in the interface rather than in you. (PLAYTEST-LOG.md, 2026-09-10.)
+//
+// The arithmetic comes from core.damageParts, which is the damage rule collecting
+// its own working as it runs, so this cannot print a sum that disagrees with the
+// blow. An explanation that drifts from the number it explains is worse than none,
+// because it is believed.
+//
+// SILENT WHEN THERE IS NOTHING TO SAY. A blow that is just the attack value needs
+// no gloss, and "Levy hits Levy for 3 (attack 3)" is noise that teaches a player to
+// stop reading the parenthesis. Only the terms that actually did something appear.
+//
+// Ids are the rule's; the English is this file's. `extra` carries a reduction the
+// rule does not know about — the Sweep penalty is applied by the caller — so that a
+// carried blow explains itself without the parts failing to add up.
+const WB_BLOW_LABEL = {
+  overwhelm: 'Overwhelm',
+  officers_cairn: "Officer's Cairn",
+  aura: 'command',
+  swarm: 'numbers',
+};
+
+function wbBlowStory(story, extra) {
+  if (!story) return '';
+  const bits = [];
+  for (const a of story.adds) {
+    const label = a.id === 'ranged_ground'
+      ? ((WB.ZONES[a.zone] && WB.ZONES[a.zone].name) || 'the ground')
+      : (WB_BLOW_LABEL[a.id] || a.id);
+    bits.push(`+${wbNum(a.amount)} ${label}`);
+  }
+  // The cap only earns a mention when it actually bound the blow. Naming it
+  // otherwise invites the reading that it did.
+  if (story.capBit) {
+    bits.push(story.capBonus
+      ? `damage cap ${wbNum(story.cap)} lifted to ${wbNum(story.cap + story.capBonus)}`
+      : `damage cap ${wbNum(story.cap)}`);
+  }
+  if (story.cover) bits.push(`−${wbNum(story.cover)} cover`);
+  if (extra) bits.push(`−${wbNum(extra)} Sweep`);
+  if (!bits.length) return '';
+  return ` — ${wbNum(story.base)} attack, ${bits.join(', ')}`;
+}
+
 function wbAttack(S, u, target, cost) {
   const pl = u.owner;
   const uH = WB.hexOf(S.G, u), tH = WB.hexOf(S.G, target);
   const dmg = WB.damageOf(S.G, u, target, wbRules());
   const victim = WB.redirect(S.G, target, dmg);
-  const real = victim === target ? dmg : WB.damageOf(S.G, u, victim, wbRules());
+  // ONE computation of the landed blow, and the log reads its parts rather than
+  // recomputing them: `real` IS `story.total`.
+  const story = WB.damageParts(S.G, u, victim, wbRules());
+  const real = story.total;
   victim.hp -= real;
-  wbLog(S, u.owner, `${u.name} hits ${victim.name} for ${real}${victim === target ? '' : ' (Guard)'}`);
+  wbLog(S, u.owner, `${u.name} hits ${victim.name} for ${real}`
+    + (victim === target ? '' : ' (Guard)') + wbBlowStory(story));
   if (victim.hp <= 0) wbKill(S, victim);
   // Sweep: a Medium unit's blow carries into the press around its target
   if (WB.sweeps(u, wbRules()) && target.at != null) {
@@ -3662,8 +3766,12 @@ function wbAttack(S, u, target, cost) {
       const o = WB.occupantOf(S.G, nb);
       if (!o || !o.alive || o.owner === pl || o === victim) continue;
       if (u.range > 1 && !WB.losClear(S.board, uH, WB.hexOf(S.G, o))) continue;
-      const d2 = Math.max(1, WB.damageOf(S.G, u, o, wbRules()) - (WB.CFG.sweep.penalty || 0));
-      o.hp -= d2; wbLog(S, u.owner, `  sweep carries into ${o.name} for ${d2}`);
+      const carry = WB.damageParts(S.G, u, o, wbRules());
+      const penalty = WB.CFG.sweep.penalty || 0;
+      const d2 = Math.max(1, carry.total - penalty);
+      o.hp -= d2;
+      wbLog(S, u.owner, `  sweep carries into ${o.name} for ${d2}`
+        + wbBlowStory(carry, d2 < carry.total ? penalty : 0));
       if (o.hp <= 0) wbKill(S, o);
     }
   }
@@ -6719,6 +6827,8 @@ if (typeof window !== 'undefined') Object.assign(window, {
   // wbReportCopy is an inline onclick handler and MUST be here; the other two are
   // exported so tests can ask what the report says without scraping a screen.
   wbReportCopy, wbReportQuestion, wbReportText,
+  // Exported so a test can read a blow's gloss without scraping a rendered log.
+  wbBlowStory,
   // Exported so a test can ask what a pass would cost WITHOUT going back through
   // wbLegalMoves. The first version of the forfeit test called the enumerator
   // twice and called that a check: the same omitted offer made the bot pass and
