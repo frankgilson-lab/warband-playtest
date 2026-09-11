@@ -1,4 +1,4 @@
-<meta name="wb-build" content="1de622e 2026-09-11">
+<meta name="wb-build" content="703dde7 2026-09-11">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -3725,7 +3725,27 @@ const WB_BLOW_LABEL = {
   swarm: 'numbers',
 };
 
-function wbBlowStory(story, extra) {
+// `shown` is the number the log is about to print. The gloss RECONCILES to it:
+// if the terms do not add up to it, the difference is named rather than left for
+// the reader to spot.
+//
+// That is not defensive padding, it is a defect this shipped with. The damage
+// rule ends `Math.max(CFG.combat.minimum_damage, capped - reduce)`, and the floor
+// was collected as `story.floored` and then never rendered — so a Sutler (2
+// attack) striking a Light unit in cover printed
+//
+//   Sutler hits Levy for 1 — 2 attack, −2 cover
+//
+// where the terms add to zero. An explanation that disagrees with its own number
+// is worse than none because it is believed, which this file says twice, and it
+// was doing exactly that. Found in review of the portal sync, not by these tests:
+// the existing check reconciled the PARTS against the pre-cap figure, never the
+// rendered clause against the printed blow.
+//
+// Reconciling against `shown` rather than testing `story.floored` covers the
+// Sweep carry too, where the caller applies its own `Math.max(1, ...)` that the
+// rule knows nothing about. One mechanism, both floors.
+function wbBlowStory(story, extra, shown) {
   if (!story) return '';
   const bits = [];
   for (const a of story.adds) {
@@ -3743,6 +3763,12 @@ function wbBlowStory(story, extra) {
   }
   if (story.cover) bits.push(`−${wbNum(story.cover)} cover`);
   if (extra) bits.push(`−${wbNum(extra)} Sweep`);
+  // What the clause claims, against what the log will print.
+  const landed = shown == null ? story.total : shown;
+  const claimed = story.base + story.adds.reduce((t, a) => t + a.amount, 0)
+    - (story.capBit ? (story.raw - Math.min(story.raw, story.cap + story.capBonus)) : 0)
+    - story.cover - (extra || 0);
+  if (claimed !== landed) bits.push(`minimum ${wbNum(landed)}`);
   if (!bits.length) return '';
   return ` — ${wbNum(story.base)} attack, ${bits.join(', ')}`;
 }
@@ -3758,7 +3784,7 @@ function wbAttack(S, u, target, cost) {
   const real = story.total;
   victim.hp -= real;
   wbLog(S, u.owner, `${u.name} hits ${victim.name} for ${real}`
-    + (victim === target ? '' : ' (Guard)') + wbBlowStory(story));
+    + (victim === target ? '' : ' (Guard)') + wbBlowStory(story, 0, real));
   if (victim.hp <= 0) wbKill(S, victim);
   // Sweep: a Medium unit's blow carries into the press around its target
   if (WB.sweeps(u, wbRules()) && target.at != null) {
@@ -3771,7 +3797,7 @@ function wbAttack(S, u, target, cost) {
       const d2 = Math.max(1, carry.total - penalty);
       o.hp -= d2;
       wbLog(S, u.owner, `  sweep carries into ${o.name} for ${d2}`
-        + wbBlowStory(carry, d2 < carry.total ? penalty : 0));
+        + wbBlowStory(carry, penalty, d2));
       if (o.hp <= 0) wbKill(S, o);
     }
   }
@@ -5970,6 +5996,22 @@ function wbSelValid(S, field) {
 // Stroke weight is a deliberate REDUNDANT channel, heavier for heavier: a pentagon
 // misread as a square at 35 pixels is still recoverable from its outline. The same
 // argument the highlight palette makes — differ in more than one property.
+//
+// WHICH MEANS THE AREA CLAIM IS ABOUT THE POLYGON, NOT ABOUT THE PAINT, and an
+// earlier version of this comment overstated it as "class never leaks into
+// apparent size". SVG centres a stroke on its path, so half of it lies outside:
+// the painted extent is the polygon plus roughly perimeter times half the stroke,
+// which comes to 1085 / 1102 / 1142 square pixels for a solid Light, Medium and
+// Heavy — a spread of 5.3%, and 1136 / 1145 / 1187 for the hollow company whose
+// strokes are all 0.75 heavier, a spread of 4.5%. Measured off the rendered
+// board, not from the formula. Raised in review of the portal sync.
+//
+// That residue is left in deliberately rather than compensated away. It runs the
+// same direction as the signal — heavier units paint slightly heavier — and
+// cancelling it would mean unequal polygons, which is a worse invariant to give
+// up. What matters is that the claim now says which of the two it is, and
+// test/warband-class-shapes.test.js pins the painted spread so it cannot grow
+// unnoticed.
 // The company mark used in TEXT — the log, the hex panel, the turn banner.
 // It exists because Company B's identity must not rest on hue alone, and it was
 // a disc and a diamond back when the tokens were. Now the tokens are solid versus
