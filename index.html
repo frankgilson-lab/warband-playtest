@@ -1,4 +1,4 @@
-<meta name="wb-build" content="5dc0bab 2026-09-10">
+<meta name="wb-build" content="1de622e 2026-09-11">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -3315,7 +3315,7 @@ function wbHexPanel(k) {
       <b style="color:${WB_COL.p0};font-size:.95em">${wbEsc(z.name)}</b>${
         h.terrainOwner != null
           ? `<span style="font-size:.7em;color:${h.terrainOwner === 0 ? WB_COL.p0 : WB_COL.p1Text}">
-              ${h.terrainOwner === 0 ? '●' : '◆'} left by ${wbEsc(S.names[h.terrainOwner] || `P${h.terrainOwner + 1}`)}</span>`
+              ${wbMark(h.terrainOwner)} left by ${wbEsc(S.names[h.terrainOwner] || `P${h.terrainOwner + 1}`)}</span>`
           : ''}
       <span style="font-size:.7em;color:${WB_COL.dim}">hex ${wbEsc(k)}</span>
     </div>
@@ -5601,7 +5601,7 @@ function wbLogLine(l) {
   const o = l && typeof l === 'object' ? l.o : null;
   const t = l && typeof l === 'object' ? l.t : l;
   const col = o === 0 ? WB_COL.p0 : o === 1 ? WB_COL.p1Text : WB_COL.dim;
-  const mark = o === 0 ? '● ' : o === 1 ? '◆ ' : '';
+  const mark = wbMark(o) ? `${wbMark(o)} ` : '';
   return `<div style="color:${col}">${mark}${wbEsc(t)}</div>`;
 }
 
@@ -5945,23 +5945,71 @@ function wbSelValid(S, field) {
 // The diamond's half-diagonal is scaled so its area matches the disc's -- the
 // tap target must not shrink for one company, which would be a different
 // accessibility problem traded for this one.
-function wbToken(cx, cy, r, owner, fill, stroke, sw, inner) {
+// ── the token: SHAPE IS CLASS, FILL IS COMPANY ───────────────────────────────
+// Movement class was invisible on the board and it is the most load-bearing
+// attribute in the game: it sets terrain cost, cover reduction, what an action
+// costs, and eligibility for both Overwhelm and Sweep. A player watching three
+// Levies kill his Warlord could not see that the three were Light and the one was
+// not — which is half of why he could not see why it happened. (PLAYTEST-LOG.md,
+// 2026-09-10.)
+//
+// Shape used to carry the COMPANY: a disc for A, a diamond for B. Moving it to
+// class would have left company encoded by hue alone, which this palette
+// explicitly refuses — `p1Text` exists because Company B's red failed as type at
+// 2.40:1, and gold and red collapse toward one another under deuteranopia. So
+// company moves to FILLED versus HOLLOW, which is orthogonal to silhouette and
+// survives colour-blindness: A is solid in its own colour, B is ink with a heavy
+// coloured outline.
+//
+// Area-matched, all three, for the reason the old diamond was: a regular n-gon of
+// circumradius R has area (n/2)R^2 sin(2pi/n), so setting that equal to pi*r^2
+// gives R = r * sqrt(2pi / (n sin(2pi/n))). Class is encoded by SHAPE, and must
+// not leak into apparent size — a Heavy that merely looked bigger would be a
+// second, accidental channel saying something the rules do not.
+//
+// Stroke weight is a deliberate REDUNDANT channel, heavier for heavier: a pentagon
+// misread as a square at 35 pixels is still recoverable from its outline. The same
+// argument the highlight palette makes — differ in more than one property.
+// The company mark used in TEXT — the log, the hex panel, the turn banner.
+// It exists because Company B's identity must not rest on hue alone, and it was
+// a disc and a diamond back when the tokens were. Now the tokens are solid versus
+// outline, so the mark is too: a filled and a hollow circle say what the board
+// says, in a glyph every font has. One definition, three users — it was written
+// out longhand at each of them.
+const WB_MARK = ['●', '○'];
+const wbMark = (owner) => (owner === 0 || owner === 1 ? WB_MARK[owner] : '');
+
+const WB_CLASS_SIDES = { light: 3, medium: 4, heavy: 5 };
+const WB_CLASS_WEIGHT = { light: 1.5, medium: 2, heavy: 2.75 };
+// The square sits flat rather than on a point; the other two stand point-up. A
+// flat base reads as planted, which is the right feel for the middle weight, and
+// it keeps a Medium distinct from the diamond this replaced.
+const WB_CLASS_TURN = { light: 0, medium: Math.PI / 4, heavy: 0 };
+
+function wbClassPoints(cx, cy, r, cls) {
+  const n = WB_CLASS_SIDES[cls] || 4;
+  const turn = WB_CLASS_TURN[cls] || 0;
+  const R = r * Math.sqrt((2 * Math.PI) / (n * Math.sin((2 * Math.PI) / n)));
   const x = Number(cx), y = Number(cy);
-  if (owner !== 1) {
-    return `<circle cx="${x}" cy="${y}" r="${r.toFixed(1)}" fill="${fill}"`
-      + ` stroke="${stroke}" stroke-width="${sw}" ${inner}`;
+  const pts = [];
+  for (let k = 0; k < n; k++) {
+    const a = -Math.PI / 2 + turn + (k * 2 * Math.PI) / n;
+    pts.push(`${(x + R * Math.cos(a)).toFixed(1)},${(y + R * Math.sin(a)).toFixed(1)}`);
   }
-  // Half-diagonal chosen so the diamond's area matches the disc's: a diamond of
-  // half-diagonal d has area 2d^2, so d = r * sqrt(pi/2) ~= 1.2533r.
-  const d = r * 1.2533;
-  const pts = [
-    `${x},${(y - d).toFixed(1)}`,
-    `${(x + d).toFixed(1)},${y}`,
-    `${x},${(y + d).toFixed(1)}`,
-    `${(x - d).toFixed(1)},${y}`,
-  ].join(' ');
-  return `<polygon points="${pts}" fill="${fill}"`
-    + ` stroke="${stroke}" stroke-width="${sw}" ${inner}`;
+  return pts.join(' ');
+}
+
+// Company A is solid in its own colour; Company B is ink with a heavy coloured
+// outline. B's stroke is the only place its colour appears, so selection must NOT
+// take the stroke — the caller marks a selected unit with a white contour of the
+// same silhouette drawn behind this, which reinforces the class rather than
+// erasing the company.
+function wbToken(cx, cy, r, owner, cls, col, inner) {
+  const weight = (WB_CLASS_WEIGHT[cls] || 1.5) + (owner === 1 ? 0.75 : 0);
+  const fill = owner === 1 ? WB_COL.ink : col;
+  const stroke = owner === 1 ? col : WB_COL.ink;
+  return `<polygon class="wb-unit wb-cls-${wbAttrStr(cls || 'medium')}" points="${wbClassPoints(cx, cy, r, cls)}"`
+    + ` fill="${fill}" stroke="${stroke}" stroke-width="${weight}" ${inner}`;
 }
 
 // ── the board slot ───────────────────────────────────────────────────────────
@@ -6172,7 +6220,22 @@ function wbMapSvg(opts = {}) {
     out += `<text class="${full ? 'wb-lbl-full' : 'wb-lbl-fit'}" x="${c.x}" y="${(c.y + WB_SIZE - 9).toFixed(1)}"
       text-anchor="middle" font-size="10" fill="${WB_COL.label}" pointer-events="none">${wbEsc(z.name.slice(0, 10))}</text>`;
     if (hOcc && hOcc.alive) {
-      const u = hOcc, col = u.owner === 0 ? WB_COL.p0 : WB_COL.p1;
+      // p1Text, NOT p1. The palette's own rule is that p1 is a fill and p1Text is
+      // for type and thin strokes — and this variable changed role when the token
+      // did. Company B's colour is now its OUTLINE and its initial, both of which
+      // are strokes and type. Measuring the change is what caught it: p1 as an
+      // outline scores 1.04:1 against Officer's Cairn and 1.01:1 against
+      // Barricade, which is invisible. (This comment first said 1.29:1, which was
+      // simply wrong; round 15 recomputed it.)
+      //
+      // What that buys, stated precisely, because the commit that introduced this
+      // overstated it: the surface CARRYING Company B's colour improves from
+      // 1.01:1 at worst to 1.81:1 at worst. It does NOT reach the 3:1 this project
+      // wants for a meaningful graphic, and B's token BODY is ink, which is
+      // 1.01:1 against Burnt Ground — as dark on dark as the old body was. The
+      // company stays legible because of the fill/hollow difference and the name,
+      // not because the outline clears a threshold.
+      const u = hOcc, col = u.owner === 0 ? WB_COL.p0 : WB_COL.p1Text;
       const cap = wbRallyCaptain(S);
       const isSel = S.sel != null && (S.sel.unit === u.uid || S.sel.picked === u.uid);
       // Who will move on the captain's word. A rally is the only action that
@@ -6262,11 +6325,18 @@ function wbMapSvg(opts = {}) {
         style="cursor:pointer" onclick="wbHexUnit('${wbAttrStr(k)}',${wbAttrNum(u.uid)})"/>`;
       const tokenTitle = `<title>${wbEsc(S.names[u.owner])} — ${wbEsc(u.name)}, ${wbNum(u.hp)} hp, `
         + `${wbNum(u.vp)} vp to the enemy${canHit ? ' — click to attack' : ''}</title>`;
-      out += wbToken(c.x, (c.y - 5).toFixed(1), rUnit, u.owner, col,
-        isSel ? '#fff' : WB_COL.ink, isSel ? 3 : 1.5, `${tclick}>${tokenTitle}`)
-        + (u.owner === 1 ? '</polygon>' : '</circle>');
+      // Selection is a white contour of the unit's OWN silhouette, drawn behind
+      // the token. It used to recolour the token's stroke, which cannot work now
+      // that Company B's colour lives in that stroke and nowhere else.
+      if (isSel) out += `<polygon class="wb-sel" points="${wbClassPoints(c.x, (c.y - 5).toFixed(1), rUnit + 2.5, u.cls)}"
+        fill="none" stroke="#fff" stroke-width="2.5" pointer-events="none"/>`;
+      out += wbToken(c.x, (c.y - 5).toFixed(1), rUnit, u.owner, u.cls, col, `${tclick}>${tokenTitle}`)
+        + '</polygon>';
+      // The initial is the only thing telling a Levy from a Dragoon, so it keeps
+      // the centre. On a hollow token it takes the company's colour, because the
+      // ink it used to sit on is now the fill underneath it.
       out += `<text x="${c.x}" y="${(c.y - 1).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="bold"
-        fill="${WB_COL.ink}" pointer-events="none">${wbEsc(u.name[0] || '?')}${u.banner ? '⚑' : ''}</text>`;
+        fill="${u.owner === 1 ? col : WB_COL.ink}" pointer-events="none">${wbEsc(u.name[0] || '?')}${u.banner ? '⚑' : ''}</text>`;
       out += `<text x="${c.x}" y="${(c.y + 15).toFixed(1)}" text-anchor="middle" font-size="11"
         fill="${WB_COL.text}" pointer-events="none">${wbNum(u.hp)}</text>`;
       // What this unit's NEXT action costs, on the unit. The economy was
@@ -6330,10 +6400,26 @@ function wbMapSvg(opts = {}) {
   //
   // The action languages are omitted on a preview board, where nothing can be
   // moved or struck and naming them would be a fourth kind of lie.
+  // The legend draws the REAL silhouettes with the board's own generator rather
+  // than reaching for glyphs from a font. Two reasons, and the first is why the
+  // old pair had to go at all: they named a disc and a diamond, which is the
+  // convention this board no longer uses, so the legend was describing a previous
+  // version of the game. The second is that it now cannot drift — a legend built
+  // from wbClassPoints shows whatever the tokens show, including if the shapes
+  // change again.
+  const swatch = (cls, owner) => {
+    const col = owner === 1 ? WB_COL.p1Text : WB_COL.p0;
+    return `<svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align:-3px">`
+      + `<polygon points="${wbClassPoints(8, 8, 5.5, cls)}" fill="${owner === 1 ? WB_COL.ink : col}"`
+      + ` stroke="${owner === 1 ? col : WB_COL.ink}" stroke-width="${owner === 1 ? 2 : 1.2}"/></svg>`;
+  };
   const legend = [
     `<span style="color:${WB_COL.text}">★ vp = scoring hex; hold more than your opponent at the end of a turn</span>`,
-    `<span style="color:${WB_COL.p0}">● ${wbEsc(S.names[0] || 'A')}</span>`,
-    `<span style="color:${WB_COL.p1Text}">◆ ${wbEsc(S.names[1] || 'B')}</span>`,
+    `<span style="color:${WB_COL.p0}">${swatch('medium', 0)} ${wbEsc(S.names[0] || 'A')} — solid</span>`,
+    `<span style="color:${WB_COL.p1Text}">${swatch('medium', 1)} ${wbEsc(S.names[1] || 'B')} — outline</span>`,
+    `<span style="color:${WB_COL.dim}">${swatch('light', 0)} light ${swatch('medium', 0)} medium ${swatch('heavy', 0)} heavy`
+      + ` &mdash; shape is the unit's weight, which sets what ground costs it, how much cover it takes,`
+      + ` and what each action costs</span>`,
   ];
   if (!opts.preview) {
     legend.push(`<span style="color:${WB_COL.move}">gold edge = where it may go</span>`);
@@ -6468,7 +6554,7 @@ function wbRender() {
       ? S.armies[p].filter((u) => u.alive && !u.deployed).length : 0;
     return `<div style="flex:1">
       <div style="font-size:.75em;color:${p === 0 ? WB_COL.p0 : WB_COL.p1Text};font-weight:bold">
-        ${p === 0 ? '●' : '◆'} ${wbEsc(S.names[p])}</div>
+        ${wbMark(p)} ${wbEsc(S.names[p])}</div>
       <div style="font-size:.68em;color:${WB_COL.dim}">${band[0]} · ${S.against[p]} / ${S.breakAt[p]} conceded</div>
       <div style="height:7px;background:#26241f;border-radius:3px;margin-top:3px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${band[1]}"></div></div>
