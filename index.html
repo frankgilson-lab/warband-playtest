@@ -1,4 +1,4 @@
-<meta name="wb-build" content="703dde7 2026-09-11">
+<meta name="wb-build" content="b737995 2026-09-11">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -5987,31 +5987,40 @@ function wbSelValid(S, field) {
 // survives colour-blindness: A is solid in its own colour, B is ink with a heavy
 // coloured outline.
 //
-// Area-matched, all three, for the reason the old diamond was: a regular n-gon of
-// circumradius R has area (n/2)R^2 sin(2pi/n), so setting that equal to pi*r^2
-// gives R = r * sqrt(2pi / (n sin(2pi/n))). Class is encoded by SHAPE, and must
-// not leak into apparent size — a Heavy that merely looked bigger would be a
-// second, accidental channel saying something the rules do not.
+// Sized so the three POLYGONS have equal area, for the reason the old diamond was:
+// a regular n-gon of circumradius R has area (n/2)R^2 sin(2pi/n), so setting that
+// equal to pi*r^2 gives R = r * sqrt(2pi / (n sin(2pi/n))). Class is encoded by
+// SHAPE, and a Heavy that were simply drawn bigger would be a second, accidental
+// channel saying something the rules do not.
 //
 // Stroke weight is a deliberate REDUNDANT channel, heavier for heavier: a pentagon
 // misread as a square at 35 pixels is still recoverable from its outline. The same
 // argument the highlight palette makes — differ in more than one property.
 //
-// WHICH MEANS THE AREA CLAIM IS ABOUT THE POLYGON, NOT ABOUT THE PAINT, and an
-// earlier version of this comment overstated it as "class never leaks into
-// apparent size". SVG centres a stroke on its path, so half of it lies outside:
-// the painted extent is the polygon plus roughly perimeter times half the stroke,
-// which comes to 1085 / 1102 / 1142 square pixels for a solid Light, Medium and
-// Heavy — a spread of 5.3%, and 1136 / 1145 / 1187 for the hollow company whose
-// strokes are all 0.75 heavier, a spread of 4.5%. Measured off the rendered
-// board, not from the formula. Raised in review of the portal sync.
+// THOSE TWO PULL AGAINST EACH OTHER, so the passage has to say by how much. SVG
+// centres a stroke on its path, half of it falling outside the polygon, so PAINTED
+// extent is the polygon plus roughly perimeter times half the stroke — and a
+// channel that varies with class on purpose cannot leave painted extent equal.
+// Measured off the rendered board rather than from the formula: a solid Light,
+// Medium and Heavy paint 1085 / 1102 / 1142 square pixels, a spread of 5.3%, and
+// the hollow company, whose strokes are all 0.75 heavier, 1136 / 1145 / 1187, a
+// spread of 4.5%.
 //
-// That residue is left in deliberately rather than compensated away. It runs the
-// same direction as the signal — heavier units paint slightly heavier — and
-// cancelling it would mean unequal polygons, which is a worse invariant to give
-// up. What matters is that the claim now says which of the two it is, and
-// test/warband-class-shapes.test.js pins the painted spread so it cannot grow
+// So the invariant is TWO claims and not one. Polygon area is equal; painted area
+// varies with class intentionally and within a bound. Both are pinned in
+// test/warband-class-shapes.test.js, the second with the bound and with the
+// direction, since a spread that put Light heaviest would be this channel
+// contradicting the other one. The residue is not compensated away: it runs the
+// same direction as the signal, and cancelling it would mean unequal polygons,
+// which is the worse invariant to give up. What is not tolerated is its growing
 // unnoticed.
+//
+// (An earlier version of this comment asserted flatly that class "must not leak
+// into apparent size", which the stroke channel had already made false. The first
+// repair added the measurement and left that sentence standing above it, so the
+// passage then contradicted itself. Review of the portal sync caught both, one
+// after the other.)
+
 // The company mark used in TEXT — the log, the hex panel, the turn banner.
 // It exists because Company B's identity must not rest on hue alone, and it was
 // a disc and a diamond back when the tokens were. Now the tokens are solid versus
