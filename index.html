@@ -1,4 +1,4 @@
-<meta name="wb-build" content="331f130 2026-09-15">
+<meta name="wb-build" content="30d8822 2026-09-15">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -3912,39 +3912,76 @@ function wbBlowStory(story, extra, shown) {
   return ` — ${wbNum(story.base)} attack, ${bits.join(', ')}`;
 }
 
-function wbAttack(S, u, target, cost) {
-  const pl = u.owner;
-  const uH = WB.hexOf(S.G, u), tH = WB.hexOf(S.G, target);
-  const dmg = WB.damageOf(S.G, u, target, wbRules());
-  const victim = WB.redirect(S.G, target, dmg);
-  // Where the blow LANDED, recorded as it resolves: the victim, which a Guard can
-  // make someone other than the target, and each unit a Sweep carries into.
-  const hits = [wbHexKey(WB.hexOf(S.G, victim))];
-  // ONE computation of the landed blow, and the log reads its parts rather than
-  // recomputing them: `real` IS `story.total`.
-  const story = WB.damageParts(S.G, u, victim, wbRules());
+// ── one blow, resolved once ───────────────────────────────────────────────────
+// The number the forecast writes on a strike ring and the number the attack puts
+// in the log must never disagree, so there is ONE resolution with two callers:
+// this plans the blow, and wbAttack applies the plan it gets back. DESIGN-LOG §4,
+// and the reason is REVIEW-LEDGER round 16 -- the combat log shipped a gloss that
+// disagreed with its own blow, and a forecast that disagrees with the attack it
+// previews is the same defect where the player can act on it.
+//
+// Planned on a COPY of the board rather than by arithmetic that avoids mutating,
+// because the blow changes the board it is still resolving on. A dead Warlord
+// leaves an Officer's Cairn; a Sweep carry struck beside that cairn is worth one
+// more. Predicting that with a second formula is precisely the drift this shape
+// exists to prevent -- so the plan simply plays it out.
+function wbCloneG(G) {
+  return {
+    board: new Map([...G.board].map(([k, h]) => [k, { ...h }])),
+    units: new Map([...G.units].map(([k, u]) => [k, { ...u }])),
+  };
+}
+
+function wbBlowPlan(S, u, target) {
+  const R = wbRules();
+  const G = wbCloneG(S.G);
+  const au = G.units.get(u.uid), tg = G.units.get(target.uid);
+  const uH = WB.hexOf(G, au), tH = WB.hexOf(G, tg);
+  const dmg = WB.damageOf(G, au, tg, R);
+  const victim = WB.redirect(G, tg, dmg);
+  const story = WB.damageParts(G, au, victim, R);
   const real = story.total;
+  const blows = [{ kind: 'main', uid: victim.uid, dmg: real, story, penalty: 0,
+                   guard: victim.uid !== tg.uid, kill: victim.hp - real <= 0 }];
   victim.hp -= real;
-  wbLog(S, u.owner, `${u.name} hits ${victim.name} for ${real}`
-    + (victim === target ? '' : ' (Guard)') + wbBlowStory(story, 0, real));
-  if (victim.hp <= 0) wbKill(S, victim);
-  // Sweep: a Medium unit's blow carries into the press around its target
-  if (WB.sweeps(u, wbRules()) && target.at != null) {
-    for (const nb of WB.neighbors(S.board, WB.hexOf(S.G, target))) {
-      const o = WB.occupantOf(S.G, nb);
-      if (!o || !o.alive || o.owner === pl || o === victim) continue;
-      if (u.range > 1 && !WB.losClear(S.board, uH, WB.hexOf(S.G, o))) continue;
-      const carry = WB.damageParts(S.G, u, o, wbRules());
+  if (victim.hp <= 0) wbFellOn(G, victim);
+  // Sweep: a Medium unit's blow carries into the press around its target.
+  if (WB.sweeps(au, R) && tg.at != null) {
+    for (const nb of WB.neighbors(G.board, WB.hexOf(G, tg))) {
+      const o = WB.occupantOf(G, nb);
+      if (!o || !o.alive || o.owner === au.owner || o.uid === victim.uid) continue;
+      if (au.range > 1 && !WB.losClear(G.board, uH, WB.hexOf(G, o))) continue;
+      const carry = WB.damageParts(G, au, o, R);
       const penalty = WB.CFG.sweep.penalty || 0;
       const d2 = Math.max(1, carry.total - penalty);
+      blows.push({ kind: 'carry', uid: o.uid, dmg: d2, story: carry, penalty,
+                   guard: false, kill: o.hp - d2 <= 0 });
       o.hp -= d2;
-      hits.push(wbHexKey(nb));
-      wbLog(S, u.owner, `  sweep carries into ${o.name} for ${d2}`
-        + wbBlowStory(carry, penalty, d2));
-      if (o.hp <= 0) wbKill(S, o);
+      if (o.hp <= 0) wbFellOn(G, o);
     }
   }
-  wbTrace(S, pl, { k: 'attack', from: wbHexKey(uH), to: wbHexKey(tH), hits });
+  return { uid: u.uid, targetUid: target.uid, from: wbHexKey(uH), to: wbHexKey(tH), blows };
+}
+
+function wbAttack(S, u, target, cost) {
+  // The plan IS the blow: every number below came out of wbBlowPlan, which the
+  // forecast on the rings reads too. Nothing here recomputes damage.
+  const plan = wbBlowPlan(S, u, target);
+  const hits = [];
+  for (const b of plan.blows) {
+    const victim = S.G.units.get(b.uid);
+    victim.hp -= b.dmg;
+    // Recorded before the kill, which is safe: a fallen unit keeps `at`, because
+    // Sweep and the death terrain both read it afterwards.
+    hits.push(wbHexKey(WB.hexOf(S.G, victim)));
+    wbLog(S, u.owner, b.kind === 'main'
+      ? `${u.name} hits ${victim.name} for ${b.dmg}`
+        + (b.guard ? ' (Guard)' : '') + wbBlowStory(b.story, 0, b.dmg)
+      : `  sweep carries into ${victim.name} for ${b.dmg}`
+        + wbBlowStory(b.story, b.penalty, b.dmg));
+    if (victim.hp <= 0) wbKill(S, victim);
+  }
+  wbTrace(S, u.owner, { k: 'attack', from: plan.from, to: plan.to, hits });
   wbSpend(S, u, cost); S.sel = null;
 }
 
@@ -3961,15 +3998,25 @@ function wbRules() {
            sweepClass: 'medium' };
 }
 
-function wbKill(S, u) {
-  const h = WB.hexOf(S.G, u);
+// What a death does to the BOARD and nothing else: the unit stops standing there,
+// and the ground keeps a mark of it. Split out of wbKill because the FORECAST has
+// to be able to run a death on a copy of the board, where there is no score to
+// move and no log to write. A Warlord leaves an Officer's Cairn, and a blow
+// struck beside a cairn is worth one more -- so a kill changes what the Sweep
+// carry after it is worth, and a forecast that skipped the kill would be wrong.
+function wbFellOn(G, u) {
+  const h = WB.hexOf(G, u);
   u.alive = false;
-  if (h) {
-    if (h.occupant === u.uid) h.occupant = null;   // u.at is kept: Sweep reads it after the kill
-    h.terrain = u.banner ? 'fallen_banner' : u.deathTerrain;
-    h.terrainOwner = u.owner;
-    if (u.banner) S.fallenBanners[u.owner] += 1;
-  }
+  if (!h) return null;
+  if (h.occupant === u.uid) h.occupant = null;   // u.at is kept: Sweep reads it after the kill
+  h.terrain = u.banner ? 'fallen_banner' : u.deathTerrain;
+  h.terrainOwner = u.owner;
+  return h;
+}
+
+function wbKill(S, u) {
+  const h = wbFellOn(S.G, u);
+  if (h && u.banner) S.fallenBanners[u.owner] += 1;
   const gain = u.vp + (u.banner ? (WB.CFG.banner_bonus_vp || 0) : 0);
   S.against[u.owner] += gain; S.killPoints[1 - u.owner] += gain;
   // The fallen unit's own company, not the killer's: this is a loss on their side
@@ -6365,7 +6412,29 @@ function wbMapSvg(opts = {}) {
   if (mover && !S.rally && wbCost(mover) > (S.pools ? S.pools[mover.owner] : 0)) mover = null;
   const reach = mover ? new Set(WB.reachable(S.G, mover).map((x) => WB.key(x.q, x.r))) : null;
   const shooter = (live && !S.rally && wbSelValid(S, 'unit')) ? wbSelUnit(S, 'unit') : null;
-  const hits = new Set(wbAttackTargets(shooter).map((t) => t.uid));
+  const strikeable = wbAttackTargets(shooter);
+  const hits = new Set(strikeable.map((t) => t.uid));
+  // THE FORECAST. Selecting a unit already rings every enemy it may strike; this
+  // writes what each of those blows would actually do on the units that would
+  // actually take it. No hover and no confirm step: the gesture that draws the
+  // rings is one the player already makes. DESIGN-LOG §4.
+  //
+  // It states a consequence and never ranks one -- no "best" target is marked --
+  // which keeps it inside the rule that an affordance encodes what the rules
+  // permit rather than what the interface thinks is worth doing.
+  const forecast = new Map();
+  for (const t of strikeable) {
+    for (const b of wbBlowPlan(S, shooter, t).blows) {
+      // One unit can be reached by two different strikes on offer -- as a Sweep
+      // carry from one, and as a target in its own right of another. Its own
+      // direct blow is the one a player is asking about when they look at it, so
+      // that one wins; the arrow from the original target, when it ships, is what
+      // removes the ambiguity entirely.
+      const direct = b.uid === t.uid;
+      const prev = forecast.get(b.uid);
+      if (!prev || (direct && !prev.direct)) forecast.set(b.uid, { dmg: b.dmg, kill: b.kill, direct });
+    }
+  }
   const depUnit = live && wbSelValid(S, 'deploy') ? wbSelUnit(S, 'deploy') : null;
   const rUnit = WB_SIZE * 0.42, rRing = WB_SIZE * 0.60;
   const full = wbBoardFull();
@@ -6591,8 +6660,25 @@ function wbMapSvg(opts = {}) {
           fill="${afford ? WB_COL.text : WB_COL.dimmer}"
           ${afford ? '' : 'text-decoration="line-through"'}>${wbNum(nextCost)}</text>`;
       }
-      if (canHit) out += `<text x="${(c.x + rRing).toFixed(1)}" y="${(c.y - rRing + 4).toFixed(1)}" text-anchor="middle"
+      // What this blow would do, where it would land. The crossed swords stay for a
+      // ringed enemy that would take NOTHING -- the Guard case, where the number is
+      // on the Guard instead -- so an empty ring still says "you may strike this"
+      // rather than reading as "this does nothing".
+      const fc = forecast.get(u.uid);
+      if (fc) {
+        const bx = (c.x + rRing).toFixed(1), by = (c.y - rRing + 4).toFixed(1);
+        // A DAGGER, not a skull. U+2620 is not in the serif stack this board uses and
+        // gets substituted -- rendered headless it came out as an unreadable box, which
+        // is worse than no mark at all. The dagger is in every system font.
+        const txt = `${wbNum(fc.dmg)}${fc.kill ? '†' : ''}`;
+        out += `<text x="${bx}" y="${by}" text-anchor="middle" font-size="13" font-weight="bold"
+          stroke="${WB_COL.ink}" stroke-width="3.5" stroke-linejoin="round" pointer-events="none">${txt}</text>`
+          + `<text class="wb-forecast" data-uid="${u.uid}" x="${bx}" y="${by}" text-anchor="middle"
+          font-size="13" font-weight="bold" fill="${WB_COL.hit}" pointer-events="none">${txt}</text>`;
+      } else if (canHit) {
+        out += `<text x="${(c.x + rRing).toFixed(1)}" y="${(c.y - rRing + 4).toFixed(1)}" text-anchor="middle"
         font-size="13" fill="${WB_COL.hit}" pointer-events="none">⚔</text>`;
+      }
     }
   }
   // ── what the other side just did ───────────────────────────────────────
@@ -6668,6 +6754,7 @@ function wbMapSvg(opts = {}) {
   if (!opts.preview) {
     legend.push(`<span style="color:${WB_COL.move}">gold edge = where it may go</span>`);
     legend.push(`<span style="color:${WB_COL.hit}">orange ring = what it may strike</span>`);
+    legend.push(`<span style="color:${WB_COL.hit}">orange number = what that blow would do († it would fall)</span>`);
     legend.push(`<span style="color:${WB_COL.ready}">green ring = has not acted</span>`);
     // The board draws TWO readiness rings and the legend named one, so a player
     // seeing the faded blue one still had nothing to read.
