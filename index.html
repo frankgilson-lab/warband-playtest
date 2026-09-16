@@ -1,4 +1,4 @@
-<meta name="wb-build" content="30d8822 2026-09-15">
+<meta name="wb-build" content="89e665b 2026-09-15">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -2482,6 +2482,16 @@ const WB_COL = {
   // what you may strike, green and blue readiness, violet a rally -- because a
   // trace is a record of what happened, not an invitation to do anything.
   trace: '#f2ede3',
+  // What an enemy you tapped could strike from where it stands. A danger colour,
+  // and one no other language on this board speaks: gold is where you may go,
+  // orange what you may strike, green and blue readiness, violet a rally, near-
+  // white the trace. Never alone -- the wash is dotted and the units standing in
+  // it are badged, because colour is not a channel this board is allowed to use
+  // on its own.
+  // Measured, not chosen by eye: a saturated rose scored 2.21:1 against Officer's
+  // Cairn, under the 3:1 this project holds a meaningful graphic to. This one
+  // clears 3.60:1 against the worst ground on the board, and the test pins it.
+  threat: '#ffa8b4',
   label: '#e0d6bd',
 };
 // The hex radius. At 30 the terrain labels had to be truncated to seven
@@ -3501,11 +3511,16 @@ function wbTraceIn(raw, board) {
   return out.filter((x) => x.by === last);
 }
 
-// Whose view this is. A multiplayer client is its own seat. A solo game against
-// the bot is the human's, whichever seat is about to act. Hotseat, and bot against
-// bot, have no fixed viewer, so it is whoever acts next -- which is the person
-// looking at the screen just after the other side finished.
-function wbTraceViewer(S) {
+// Whose view this is -- the seat the board is drawn FOR. A multiplayer client is
+// its own seat. A solo game against the bot is the human's, whichever seat is
+// about to act. Hotseat, and bot against bot, have no fixed viewer, so it is
+// whoever acts next, which is the person looking at the screen just after the
+// other side finished.
+//
+// It was called wbTraceViewer when only the trace asked. The reach view asks the
+// same question -- which units are THEIRS -- and two answers to that would be two
+// definitions of whose board this is.
+function wbViewerSeat(S) {
   // NARROWED. `wbMp.seat` is `MP.mySeat`, which crosses the boundary from the
   // portal's multiplayer module into this file, and nothing here ever made it a
   // seat. A null or out-of-range value used to be returned as the viewer, and
@@ -6412,6 +6427,38 @@ function wbMapSvg(opts = {}) {
   if (mover && !S.rally && wbCost(mover) > (S.pools ? S.pools[mover.owner] : 0)) mover = null;
   const reach = mover ? new Set(WB.reachable(S.G, mover).map((x) => WB.key(x.q, x.r))) : null;
   const shooter = (live && !S.rally && wbSelValid(S, 'unit')) ? wbSelUnit(S, 'unit') : null;
+  // ── the reach view ───────────────────────────────────────────────────────
+  // Tapping an enemy with nothing of yours selected already opens its panel; this
+  // draws what that enemy could strike FROM WHERE IT STANDS, and badges any of
+  // your units standing in it. DESIGN-LOG §4.
+  //
+  // From where it stands, and NOT where it could move to first: measured over real
+  // matches, an enemy's move-then-strike reach covers a mean 70% of the board and
+  // all of it one time in ten, which is a picture that says "everywhere". What it
+  // can strike without moving covers 23%, and that is a question with an answer.
+  //
+  // Only with nothing of yours selected, because that is exactly when a tap on an
+  // enemy inspects it rather than attacking it -- the view follows the gesture the
+  // player already has, rather than adding one.
+  // Not guarded on `live`: `peeked` below already is, so nothing downstream of it
+  // exists on a preview board. A second guard that cannot change an outcome is a
+  // line no test can ever fail against, which is how dead conditions accumulate.
+  const viewerSeat = wbViewerSeat(S);
+  const peeked = (live && !S.sel && wbUi.inspect && wbUi.inspect.hex != null && S.board.get(wbUi.inspect.hex))
+    ? WB.occupantOf(S.G, S.board.get(wbUi.inspect.hex)) : null;
+  const threatFrom = (peeked && peeked.alive && peeked.deployed
+    && viewerSeat != null && peeked.owner !== viewerSeat) ? peeked : null;
+  const threat = new Set();
+  if (threatFrom) {
+    const eH = WB.hexOf(S.G, threatFrom);
+    const rng = WB.effRange(S.G, threatFrom);
+    for (const h of hexes) {
+      const d = WB.hexDist(eH, h);
+      if (d === 0 || d > rng) continue;                 // it cannot strike its own hex
+      if (threatFrom.range > 1 && !WB.losClear(S.board, eH, h)) continue;
+      threat.add(WB.key(h.q, h.r));
+    }
+  }
   const strikeable = wbAttackTargets(shooter);
   const hits = new Set(strikeable.map((t) => t.uid));
   // THE FORECAST. Selecting a unit already rings every enemy it may strike; this
@@ -6484,6 +6531,12 @@ function wbMapSvg(opts = {}) {
       <title>${wbEsc(z.name)}${wbGroundOwner(S, h)} — ${wbEsc(z.description)}${
         h.objective ? ' | SCORING HEX: whoever holds more of these at the end of a turn scores.' : ''
       }${hOcc && hOcc.alive ? ` | ${wbEsc(hOcc.name)}, ${wbNum(hOcc.hp)} hp` : ''}</title></polygon>`;
+    // A dotted wash rather than another ring: the rings all mean something about a
+    // unit, and this is about GROUND. It takes no pointer events, so the hex under
+    // it still answers a tap.
+    if (threat.has(k)) out += `<polygon class="wb-threat" data-hex="${wbAttrStr(k)}" points="${poly(c)}"
+      pointer-events="none" fill="${WB_COL.threat}" fill-opacity=".14"
+      stroke="${WB_COL.threat}" stroke-width="2" stroke-dasharray="2 4"/>`;
     if (h.objective) {
       // Two problems, both from the same line. The controller was carried by
       // colour alone, and the red ring scored barely above 1:1 against several
@@ -6660,6 +6713,16 @@ function wbMapSvg(opts = {}) {
           fill="${afford ? WB_COL.text : WB_COL.dimmer}"
           ${afford ? '' : 'text-decoration="line-through"'}>${wbNum(nextCost)}</text>`;
       }
+      // One of YOURS, standing where that enemy can reach. The wash says the ground
+      // is covered; this says someone is in it, because a token covers most of its
+      // own hex and the wash under it is the part you cannot see.
+      if (threat.has(k) && u.owner === viewerSeat) {
+        const tx = (c.x - rRing).toFixed(1), ty = (c.y + rRing - 2).toFixed(1);
+        out += `<text x="${tx}" y="${ty}" text-anchor="middle" font-size="14" font-weight="bold"
+          stroke="${WB_COL.ink}" stroke-width="3.5" stroke-linejoin="round" pointer-events="none">!</text>`
+          + `<text class="wb-threatened" data-uid="${u.uid}" x="${tx}" y="${ty}" text-anchor="middle"
+          font-size="14" font-weight="bold" fill="${WB_COL.threat}" pointer-events="none">!</text>`;
+      }
       // What this blow would do, where it would land. The crossed swords stay for a
       // ringed enemy that would take NOTHING -- the Guard case, where the number is
       // on the Guard instead -- so an empty ring still says "you may strike this"
@@ -6686,7 +6749,7 @@ function wbMapSvg(opts = {}) {
   // anchored notice, so a refusal is never hidden under an arrow. Not on a preview
   // board: the draft and the end screen are not a turn anybody is taking.
   if (live && Array.isArray(S.trace) && S.trace.length) {
-    const viewer = wbTraceViewer(S);
+    const viewer = wbViewerSeat(S);
     // An unknown viewer draws NOTHING, rather than everything. Filtering on
     // `by !== viewer` with no viewer passes every entry, which is the worst of
     // the three possible answers: it shows a player their own moves as though
@@ -6755,6 +6818,7 @@ function wbMapSvg(opts = {}) {
     legend.push(`<span style="color:${WB_COL.move}">gold edge = where it may go</span>`);
     legend.push(`<span style="color:${WB_COL.hit}">orange ring = what it may strike</span>`);
     legend.push(`<span style="color:${WB_COL.hit}">orange number = what that blow would do († it would fall)</span>`);
+    legend.push(`<span style="color:${WB_COL.threat}">dotted rose = what the enemy you tapped could strike (! = one of yours is in it)</span>`);
     legend.push(`<span style="color:${WB_COL.ready}">green ring = has not acted</span>`);
     // The board draws TWO readiness rings and the legend named one, so a player
     // seeing the faded blue one still had nothing to read.
