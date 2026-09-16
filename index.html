@@ -1,4 +1,4 @@
-<meta name="wb-build" content="89e665b 2026-09-15">
+<meta name="wb-build" content="4d03fe5 2026-09-16">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -2582,10 +2582,9 @@ async function warbandShowSetup() {
         back and forth.
       </div>
       <div id="wb-bot-note" style="font-size:.72em;color:${WB_COL.dimmer};max-width:640px;line-height:1.5">
-        The sparring bot drafts, assigns its colours and fights on its own. It is a
-        <em>sparring partner rather than an opponent</em>: it charges the nearest enemy and takes
-        whatever it can reach, so beating it says more about the bot than about the game. It plays
-        the same rules you do.
+        The sparring bot drafts, assigns its colours and fights on its own: it charges the
+        nearest enemy, takes whatever it can reach, and plays exactly the rules you do.
+        <em>Let us know what you think of the bot opponent.</em>
       </div>
     </div>`;
 }
@@ -7092,35 +7091,42 @@ function wbHumanSeats(S) {
 
 // The one question. `loser` is the company that lost, or null for a draw;
 // `routed` says whether it ended by breaking rather than on the clock.
+// ONE question, and since 2026-09-16 it asks about the BOARD rather than about the
+// match. Three visibility changes shipped in as many days -- the trace, the forecast,
+// the reach view -- and the only evidence that any of them is used is the designer
+// saying, unprompted, that he could see the arrows. Whether they changed a DECISION is
+// the half that matters and the half only a player can answer: no log, sweep or
+// measurement here can infer it.
+//
+// The endings' own questions -- whether a clock finish felt earned (§3.1, §4), whether
+// a leader could simply disengage (§3.2) -- are retired rather than deleted. They are
+// recorded in DESIGN-LOG and can come back once the board has been answered for. Asking
+// two questions would get one answered.
+const WB_BOARD_QUESTION = 'What did the board tell you, and what did it not? The white arrows show '
+  + 'what the other side just did; the number on an orange ring shows what your blow would do before '
+  + 'you strike; tapping one of their units shows the ground it can hit.';
+
 function wbReportQuestion(S, routed, loser) {
   const humans = wbHumanSeats(S);
   const solo = humans.length === 1;
   const you = solo ? humans[0] : null;
-
-  // The clock ending is the one the design most needs evidence on: whether ten
-  // turns is right (§3.1), and whether a match decided on share of break point
-  // rather than by a rout feels earned (§4).
+  // The opener still differs by ending, so the question is grounded in the match
+  // actually played and the report still says what kind of ending it was.
+  let opener;
   if (!routed) {
-    return loser === null
-      ? 'Neither company was closer to breaking, so it ended level. Did a draw feel like a fair '
-        + 'result here, or like the game failed to decide something?'
+    opener = loser === null
+      ? 'Neither company was closer to breaking, so it ended level.'
       : 'This one ran the full ' + wbNum(S.turn) + ' turns and was decided on points rather than by '
-        + 'anyone breaking. Did that ending feel earned, or arbitrary?';
+        + 'anyone breaking.';
+  } else if (solo && loser === 1 - you) {
+    opener = 'You broke the sparring bot on turn ' + wbNum(S.turn) + '.';
+  } else if (solo && loser === you) {
+    opener = 'The sparring bot broke you on turn ' + wbNum(S.turn) + '.';
+  } else {
+    opener = 'It ended on turn ' + wbNum(S.turn) + ' with '
+      + (loser === null ? 'neither company' : 'one company') + ' broken.';
   }
-
-  if (solo && loser === 1 - you) {
-    // They beat the bot. HOW is the useful part; that it happened is expected.
-    return 'You broke the sparring bot on turn ' + wbNum(S.turn) + '. How did you do it — and was '
-      + 'there a point where it stopped being able to threaten you?';
-  }
-  if (solo && loser === you) {
-    return 'The sparring bot broke you on turn ' + wbNum(S.turn) + '. Did you see it coming, and is '
-      + 'there a moment you would play differently?';
-  }
-  // Hotseat. §3.2 is about whether a player who is ahead can simply disengage.
-  return 'It ended on turn ' + wbNum(S.turn) + ' with ' + (loser === null ? 'neither company' : 'one company')
-    + ' broken. In the last two or three turns, was the result still in doubt — or had it been settled '
-    + 'a while before the game admitted it?';
+  return opener + ' ' + WB_BOARD_QUESTION;
 }
 
 // The facts the page already knows, as the head of the report. Deliberately
