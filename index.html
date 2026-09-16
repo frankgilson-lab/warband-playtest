@@ -1,4 +1,4 @@
-<meta name="wb-build" content="b737995 2026-09-11">
+<meta name="wb-build" content="331f130 2026-09-15">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -2475,6 +2475,13 @@ const WB_COL = {
   // matters; 8.04 was the palette-pair number and describing it as the rendered
   // one overstated a real result.
   rally: '#d492ea',
+  // The trace of the other side's last actions (DESIGN-LOG §4). Near-white, and
+  // never drawn alone: every arrow and hit mark sits on an ink halo, the rings'
+  // own device, so it reads on the darkest ground and the lightest. It had to be
+  // a colour no affordance already speaks -- gold is where you may go, orange
+  // what you may strike, green and blue readiness, violet a rally -- because a
+  // trace is a record of what happened, not an invitation to do anything.
+  trace: '#f2ede3',
   label: '#e0d6bd',
 };
 // The hex radius. At 30 the terrain labels had to be truncated to seven
@@ -2649,7 +2656,7 @@ function wbNewGame({ seed, density, names }) {
     armies: null, turn: 0, order: null, pools: [0, 0], poolStart: null, acted: null, dp: [0, 0],
     against: [0, 0], objPoints: [0, 0], killPoints: [0, 0], fallenBanners: [0, 0],
     totalVP: [0, 0], breakAt: [0, 0], sel: null, rally: null, passed: [false, false],
-    rev: 0, log: [], seizedEver: new Set(),
+    rev: 0, log: [], seizedEver: new Set(), trace: [],
   };
   warband_state.firstPackFirst = warband_state.first;
   wbNextPack(warband_state);
@@ -3441,6 +3448,136 @@ function wbPlayHint(S, pl) {
   return 'Click one of your units on the board, then click where to move it &mdash; or click an enemy to attack it. Pass when you are finished; when both companies have passed, the turn ends and objectives score.';
 }
 
+// ── the trace: what the other side just did ─────────────────────────────────
+// The combat log says what happened, in words. The board did not show it, and the
+// first playtest note -- "It simply moved, rather than attacked" -- was a
+// complaint about the board. So the other side's last actions are drawn on it as
+// arrows, always on, and cleared the moment you act. DESIGN-LOG §4, "Showing what
+// a blow will do, an enemy's reach, and the last move".
+//
+// It lives in the GAME STATE and travels in snapshots, not in this client's UI
+// object, because wbLoad replaces the state wholesale and keeps only `sel`. A
+// trace held locally would vanish for a multiplayer guest on every snapshot, and
+// that guest is exactly the player it exists for. So there is one record, written
+// by the appliers that move and strike, and every seat reads the same one.
+//
+// A trace is one actor's streak by construction. Recording an action by the
+// other seat starts a new streak; so does ANY action by that seat, including the
+// ones that draw nothing, through the check in wbApply.
+const WB_TRACE_KINDS = new Set(['move', 'flee', 'attack']);
+const WB_MAX_TRACE = 16;
+// An attack can mark its target and the target's six neighbours, and no more:
+// a Guard stands beside the target and Sweep carries only into that ring.
+const WB_MAX_TRACE_HITS = 7;
+
+const wbHexKey = (h) => WB.key(h.q, h.r);
+
+function wbTrace(S, by, entry) {
+  if (!Array.isArray(S.trace) || (S.trace.length && S.trace[0].by !== by)) S.trace = [];
+  S.trace.push({ ...entry, by });
+  if (S.trace.length > WB_MAX_TRACE) S.trace.shift();
+}
+
+// Everything off the wire is hostile. A trace entry is only ever DRAWN, so what it
+// needs is a kind this engine writes, a seat, and hex keys that exist on this
+// board; anything else is dropped rather than trusted. The list is capped, so a
+// peer cannot make every client draw a thousand arrows, and a list that mixes
+// seats is not one this engine wrote, so only the newest actor's entries survive.
+function wbTraceIn(raw, board) {
+  if (!Array.isArray(raw) || !board) return [];
+  const isKey = (k) => typeof k === 'string' && board.has(k);
+  const out = [];
+  for (const e of raw.slice(-WB_MAX_TRACE)) {
+    if (!e || typeof e !== 'object' || !WB_TRACE_KINDS.has(e.k)) continue;
+    const by = wbSeat(e.by);
+    if (by == null || !isKey(e.from) || !isKey(e.to)) continue;
+    const entry = { k: e.k, by, from: e.from, to: e.to };
+    if (e.k === 'attack') {
+      entry.hits = Array.isArray(e.hits) ? [...new Set(e.hits.filter(isKey))].slice(0, WB_MAX_TRACE_HITS) : [];
+    }
+    out.push(entry);
+  }
+  const last = out.length ? out[out.length - 1].by : null;
+  return out.filter((x) => x.by === last);
+}
+
+// Whose view this is. A multiplayer client is its own seat. A solo game against
+// the bot is the human's, whichever seat is about to act. Hotseat, and bot against
+// bot, have no fixed viewer, so it is whoever acts next -- which is the person
+// looking at the screen just after the other side finished.
+function wbTraceViewer(S) {
+  // NARROWED. `wbMp.seat` is `MP.mySeat`, which crosses the boundary from the
+  // portal's multiplayer module into this file, and nothing here ever made it a
+  // seat. A null or out-of-range value used to be returned as the viewer, and
+  // `by !== viewer` is then true for BOTH real seats -- so a client that could
+  // not say which seat it was got shown everything, including its own actions.
+  // Round 17, finding 1. Everything off that boundary is hostile, like the wire.
+  if (wbMp) return wbSeat(wbMp.seat);
+  const humans = wbHumanSeats(S);
+  return humans.length === 1 ? humans[0] : wbWhoActs(S);
+}
+
+function wbTraceSvg(S, trace, rUnit, rRing) {
+  const f1 = (n) => n.toFixed(1);
+  // Token centres, not hex centres: a token sits five pixels above the middle of
+  // its hex, and an arrow aimed at the hex centre stops short of the silhouette.
+  const at = (k) => {
+    const h = S.board.get(k);
+    if (!h) return null;
+    const p = wbPx(h);
+    return { x: p.x, y: p.y - 5 };
+  };
+  // `startBack` and `endBack` pull the arrow in from each centre so it runs
+  // between tokens rather than under them.
+  const arrow = (cls, fromK, toK, startBack, endBack, dashed) => {
+    const a = at(fromK), b = at(toK);
+    if (!a || !b) return '';
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy);
+    if (L < startBack + endBack + 12) return '';
+    const ux = dx / L, uy = dy / L;
+    const HL = 9, HW = 5.5;
+    const sx = a.x + ux * startBack, sy = a.y + uy * startBack;
+    const tx = b.x - ux * endBack, ty = b.y - uy * endBack;
+    const bx = tx - ux * HL, by = ty - uy * HL;
+    const head = `${f1(tx)},${f1(ty)} ${f1(bx - uy * HW)},${f1(by + ux * HW)} ${f1(bx + uy * HW)},${f1(by - ux * HW)}`;
+    const shaft = `x1="${f1(sx)}" y1="${f1(sy)}" x2="${f1(bx)}" y2="${f1(by)}"`;
+    return `<g class="${cls}" data-from="${wbEsc(fromK)}" data-to="${wbEsc(toK)}">`
+      + `<line ${shaft} stroke="${WB_COL.ink}" stroke-width="6.5" stroke-opacity=".85" stroke-linecap="round"/>`
+      + `<polygon points="${head}" fill="${WB_COL.ink}" stroke="${WB_COL.ink}" stroke-width="4" stroke-opacity=".85" stroke-linejoin="round"/>`
+      + `<line ${shaft} stroke="${WB_COL.trace}" stroke-width="2.5" stroke-linecap="round"${dashed ? ' stroke-dasharray="6 4"' : ''}/>`
+      + `<polygon points="${head}" fill="${WB_COL.trace}"/>`
+      + `</g>`;
+  };
+  let out = '<g class="wb-trace" pointer-events="none">';
+  const edge = rUnit + 4;
+  for (const e of trace) {
+    // A moved unit has left its first hex, so that end needs no clearance. A
+    // shove is dashed: the other side caused it but did not choose where it went.
+    if (e.k === 'attack') out += arrow('wb-trace-attack', e.from, e.to, edge, edge, false);
+    else out += arrow(e.k === 'flee' ? 'wb-trace-flee' : 'wb-trace-move', e.from, e.to, 4, edge, e.k === 'flee');
+  }
+  // Hit marks go on the units that actually lost hit points, which wbAttack
+  // records as it resolves -- the Guard that took a blow, every unit a Sweep
+  // carried into -- and never simply on the unit that was clicked.
+  const marked = new Set();
+  for (const e of trace) {
+    if (e.k !== 'attack') continue;
+    for (const k of e.hits || []) {
+      if (marked.has(k)) continue;
+      const c = at(k);
+      if (!c) continue;
+      marked.add(k);
+      const x = c.x - rRing * 0.72, y = c.y - rRing * 0.72, r = 4.5;
+      const d = `M${f1(x - r)},${f1(y - r)} L${f1(x + r)},${f1(y + r)} M${f1(x + r)},${f1(y - r)} L${f1(x - r)},${f1(y + r)}`;
+      out += `<g class="wb-trace-hit" data-hex="${wbEsc(k)}">`
+        + `<path d="${d}" stroke="${WB_COL.ink}" stroke-width="6" stroke-opacity=".85" stroke-linecap="round"/>`
+        + `<path d="${d}" stroke="${WB_COL.trace}" stroke-width="2.5" stroke-linecap="round"/>`
+        + `</g>`;
+    }
+  }
+  return out + '</g>';
+}
+
 // ── Skittish ─────────────────────────────────────────────────────────────────
 // A unit that has just moved shoves any adjacent skittish enemy one hex directly
 // away along the line from the mover. Neither player chooses the direction: it
@@ -3459,7 +3596,9 @@ function wbTriggerFlight(S, mover) {
       wbLog(S, f.owner, `${f.name} is cornered — nowhere to fall back`);
       continue;
     }
+    const fleeFrom = wbHexKey(fH);
     WB.place(S.G, f, dest);
+    wbTrace(S, mover.owner, { k: 'flee', from: fleeFrom, to: wbHexKey(dest) });
     if (dest.objective) dest.controller = f.owner;
     wbLog(S, f.owner, `${f.name} gives ground before ${mover.name}`);
   }
@@ -3778,6 +3917,9 @@ function wbAttack(S, u, target, cost) {
   const uH = WB.hexOf(S.G, u), tH = WB.hexOf(S.G, target);
   const dmg = WB.damageOf(S.G, u, target, wbRules());
   const victim = WB.redirect(S.G, target, dmg);
+  // Where the blow LANDED, recorded as it resolves: the victim, which a Guard can
+  // make someone other than the target, and each unit a Sweep carries into.
+  const hits = [wbHexKey(WB.hexOf(S.G, victim))];
   // ONE computation of the landed blow, and the log reads its parts rather than
   // recomputing them: `real` IS `story.total`.
   const story = WB.damageParts(S.G, u, victim, wbRules());
@@ -3796,11 +3938,13 @@ function wbAttack(S, u, target, cost) {
       const penalty = WB.CFG.sweep.penalty || 0;
       const d2 = Math.max(1, carry.total - penalty);
       o.hp -= d2;
+      hits.push(wbHexKey(nb));
       wbLog(S, u.owner, `  sweep carries into ${o.name} for ${d2}`
         + wbBlowStory(carry, penalty, d2));
       if (o.hp <= 0) wbKill(S, o);
     }
   }
+  wbTrace(S, pl, { k: 'attack', from: wbHexKey(uH), to: wbHexKey(tH), hits });
   wbSpend(S, u, cost); S.sel = null;
 }
 
@@ -3995,6 +4139,21 @@ function wbApply(move) {
   }
   const pl = S.phase === 'play' ? wbActive() : null;
   const done = wbDispatch(S, move);
+  // Any action by this seat ends the other seat's trace -- including the ones
+  // that draw nothing: a pass, a deployment, calling a rally. That is what
+  // "cleared when you act" means. Appliers that DO draw have already begun this
+  // seat's own streak, so this can only clear.
+  //
+  // ABOVE the early return below, not after it. The dispatch that breaks a
+  // company or runs out the clock is still an action the seat took, and it used
+  // to skip this line and leave the OTHER side's arrows in the final snapshot --
+  // invisible, because the end screen is a preview board, but serialized and
+  // wrong. Round 17, finding 3, whose own trigger was a finishing attack: that
+  // one is fine, because an attack records its own entry and resets the streak.
+  // A finishing PASS records nothing, and that is where it showed.
+  //
+  // `done.ok` guards it, so a refusal still never touches the game.
+  if (done.ok && Array.isArray(S.trace) && S.trace.length && S.trace[0].by !== pl) S.trace = [];
   if (!done.ok || S.phase !== 'play') return done;
 
   // config.json's engagement phase: "Play then alternates one action at a time."
@@ -4128,7 +4287,9 @@ function wbMoveUnit(S, m) {
   if (!WB.reachable(S.G, u).some((x) => x === h)) {
     return wbNo(`out of reach — ${u.name} moves ${u.move} and ${u.cls} feet pay ${u.cls === 'light' ? '1 for any ground' : u.cls === 'heavy' ? 'a hex\u2019s cost plus 1' : "each hex\u2019s own cost"}`);
   }
+  const moveFrom = wbHexKey(WB.hexOf(S.G, u));
   WB.place(S.G, u, h);
+  wbTrace(S, pl, { k: 'move', from: moveFrom, to: wbHexKey(h) });
   if (h.objective) {
     const was = h.controller; h.controller = pl;
     const gk = `${m.to}|${pl}`;
@@ -4205,7 +4366,9 @@ function wbMoveRallyMove(S, m) {
   if (!WB.reachable(S.G, f).some((x) => x === h)) {
     return wbNo(`out of reach — ${f.name} moves ${f.move} and cannot make that hex on the captain\u2019s word`);
   }
+  const rallyFrom = wbHexKey(WB.hexOf(S.G, f));
   WB.place(S.G, f, h);
+  wbTrace(S, f.owner, { k: 'move', from: rallyFrom, to: wbHexKey(h) });
   if (h.objective) h.controller = f.owner;
   wbLog(S, f.owner, `  ${f.name} moves on the captain's word`);
   wbTriggerFlight(S, f);
@@ -4703,6 +4866,17 @@ function wbCommit(move) {
     // authorising a switch offer today.
     wbUi.resyncAsked = false;
     wbUi.offer = null;
+    // "Cleared the moment you act" holds for a guest too, and a guest acts HERE:
+    // it changes no rules state locally, so it never reaches wbApply and never
+    // reached the clear there. The board redrew below with the other side's arrow
+    // still on it, until the host's snapshot arrived -- and indefinitely if the
+    // host never answered. Round 17, finding 2.
+    //
+    // On the send rather than on the answer, which is the same choice wbUi.anchor
+    // makes above and for the same reason: the send is the thing this client
+    // actually knows happened. If the host refuses the move, the next snapshot
+    // restores the truth, and the cost of being wrong is one redrawn arrow.
+    if (Array.isArray(S.trace) && S.trace.length && S.trace[0].by !== wbSeat(wbMp.seat)) S.trace = [];
     wbShow();
     return wbOk;
   }
@@ -5568,6 +5742,9 @@ function wbSerialize(S) {
     passed: arr(S.passed),
     seizedEver: S.seizedEver ? Array.from(S.seizedEver) : [],
     log: arr(S.log),
+    trace: (S.trace || []).map((x) => (x.k === 'attack'
+      ? { k: x.k, by: x.by, from: x.from, to: x.to, hits: (x.hits || []).slice() }
+      : { k: x.k, by: x.by, from: x.from, to: x.to })),
     G: S.G ? WB.serializeG(S.G, { seed: S.seed, density: S.density, objectiveCount: null }) : null,
   };
 }
@@ -5893,6 +6070,9 @@ function wbHydrate(pub) {
         ? { o: entry.o === 0 || entry.o === 1 ? entry.o : null, t: wbText(entry.t) }
         : { o: null, t: wbText(entry) }
     )) : [],
+    // What the other side just did. Only what this engine could have written
+    // survives -- see wbTraceIn -- checked against the board this snapshot built.
+    trace: wbTraceIn(pub.trace, G ? G.board : board),
     sel: null,
     armies: null,
   };
@@ -6415,6 +6595,19 @@ function wbMapSvg(opts = {}) {
         font-size="13" fill="${WB_COL.hit}" pointer-events="none">⚔</text>`;
     }
   }
+  // ── what the other side just did ───────────────────────────────────────
+  // Over the units, so an arrow is never hidden under a token, and under the
+  // anchored notice, so a refusal is never hidden under an arrow. Not on a preview
+  // board: the draft and the end screen are not a turn anybody is taking.
+  if (live && Array.isArray(S.trace) && S.trace.length) {
+    const viewer = wbTraceViewer(S);
+    // An unknown viewer draws NOTHING, rather than everything. Filtering on
+    // `by !== viewer` with no viewer passes every entry, which is the worst of
+    // the three possible answers: it shows a player their own moves as though
+    // the other side had made them.
+    const theirs = viewer == null ? [] : S.trace.filter((x) => x.by !== viewer);
+    if (theirs.length) out += wbTraceSvg(S, theirs, rUnit, rRing);
+  }
   // ── anchored feedback ──────────────────────────────────────────────────
   // Inside the SVG rather than over it. The board has two zoom modes -- one
   // scaled to the container, one full size inside a scrolling wrapper -- and an
@@ -6479,6 +6672,10 @@ function wbMapSvg(opts = {}) {
     // The board draws TWO readiness rings and the legend named one, so a player
     // seeing the faded blue one still had nothing to read.
     legend.push(`<span style="color:${WB_COL.partial}">blue ring = has acted, can act again</span>`);
+    // Every mark the trace draws is named, in the log's own words -- a shoved unit
+    // "gives ground" there -- so the board does not grow two more unexplained
+    // languages the way the rings once did.
+    legend.push(`<span style="color:${WB_COL.trace}">white arrow = what the other side just did · dashed = gave ground · ✕ = was hit</span>`);
   }
   return out + '</svg></div>'
     + `<div class="wb-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:.66em">
