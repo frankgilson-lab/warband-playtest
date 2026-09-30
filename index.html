@@ -1,4 +1,5 @@
-<meta name="wb-build" content="4d03fe5 2026-09-16">
+<meta name="wb-build" content="4a74146 2026-09-29">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
@@ -2692,7 +2693,7 @@ function wbNextPack(S) {
   S.pack = dealt.pack; S.packNo += 1; S.toPick = S.first;
 }
 
-function wbPick(name) { wbCommit({ type: 'draft', name }); }
+function wbPick(name) { wbCommit({ type: 'draft', name }, 'draft'); }
 
 // A unit card. `opts.owner` is the seat the card BELONGS TO, and decides the
 // colour of its name.
@@ -2815,6 +2816,11 @@ function wbRenderDraft() {
         <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1Text};font-size:.95em">${wbEsc(who)} drafting</b>
         <span style="font-size:.72em;color:#9a9282">— take one of the three; the other two burn</span>
       </div>
+      ${/* A refusal about drafting belongs against the cards, not at the top of
+           the page. Above them rather than below, because unlike the "what is
+           this?" answer this one must be read BEFORE the next click, and
+           because it replaces nothing the player is currently looking at. */''}
+      ${wbNoticeAt('draft')}
       <div style="display:flex;gap:10px;margin:0 0 12px;flex-wrap:wrap">
         ${S.pack.map((n) => wbUnitCard(n, { owner: picking, onclick: `wbPick('${wbAttrStr(n)}')`, dim: !WB.legal(S.rosters[picking], n) })).join('')}
       </div>
@@ -3206,8 +3212,8 @@ function wbUnitAbilities(u) {
 // to nothing else -- no move, no commit, no wire traffic -- which is what lets
 // inspection be live during the DRAFT, where the map is the whole design claim,
 // without the draft screen accepting gameplay clicks.
-function wbInspectHex(k) { wbUi.notice = null; wbUi.inspect = { hex: wbText(k) }; wbShow(); }
-function wbInspectArch(name) { wbUi.notice = null; wbUi.inspect = { arch: wbText(name) }; wbShow(); }
+function wbInspectHex(k) { wbUi.notice = null; wbUi.where = null; wbUi.inspect = { hex: wbText(k) }; wbShow(); }
+function wbInspectArch(name) { wbUi.notice = null; wbUi.where = null; wbUi.inspect = { arch: wbText(name) }; wbShow(); }
 function wbInspectClose() { wbUi.inspect = null; wbShow(); }
 
 // config.json's keyword glossary, by id. Twelve entries with real descriptions,
@@ -3396,6 +3402,37 @@ function wbInspectAt(kind) {
   return `<div class="wb-inspect" style="margin:0 0 12px">${body}</div>`;
 }
 
+// The notice, placed by a screen at the point the click happened, on exactly the
+// rule wbInspectAt already follows. The board has had this since the anchored
+// refusals: a refusal about a hex is drawn AT that hex, and wbNoticeLine then
+// knows the head owes no copy. The draft and the deployment list had no such
+// slot, so "Not your turn." appeared at the very top of the game area while the
+// player's eyes and finger were on a card much further down -- and on a phone,
+// often off-screen entirely. Reported from a two-device test on 2026-09-28:
+// during play the message lands where you clicked, and in draft and deploy it
+// does not.
+//
+// A screen that provides no slot keeps the old behaviour, so nothing loses its
+// message.
+function wbNoticeAt(where) {
+  if (!wbUi.notice || wbUi._noticeDrawn) return '';
+  // Only what this area's own clicks produced. An earlier version claimed ANY
+  // pending notice, so an answer to a control at the top of the screen -- the
+  // resync button's "No answer from the host" -- was dragged down below the map,
+  // off-screen on a phone. That is the same fault the slot exists to remove,
+  // moved to a different message, and it is why wbInspectAt takes a kind too.
+  if (wbUi.where !== where) return '';
+  wbUi._noticeDrawn = true;
+  return wbNoticeBox();
+}
+
+// One markup, two callers: the head's copy and a screen's own slot differ only
+// in the margin above them, and two literals would drift.
+function wbNoticeBox(cls = 'wb-notice-here') {
+  return `<div class="wb-notice ${cls}" style="font-size:.75em;margin:0 0 8px;padding:5px 8px;
+      border-radius:4px;background:rgba(190,120,80,.14);border:1px solid #97552a">${wbEsc(wbUi.notice)}</div>`;
+}
+
 function wbInspectPanel() {
   if (wbUi._inspectDrawn) return '';
   const body = wbInspectBody();
@@ -3483,8 +3520,25 @@ const WB_MAX_TRACE_HITS = 7;
 
 const wbHexKey = (h) => WB.key(h.q, h.r);
 
+// A trace shows ONE seat's last actions, so the moment a different seat acts the
+// old streak is over. That rule was written out three times -- here, in wbApply
+// and in wbCommit's guest branch -- and the three drifted: the guest copy was
+// the one that grew the refusal bug in round 18, and the reviewer's note that
+// the duplication would let the next one drift is why this exists.
+//
+// The three were NOT identical, which is the part worth being careful about.
+// This one also re-initialised a trace that was not an array; the other two did
+// not. Unifying on the defensive version hardens the other two rather than
+// changing what they do in any reachable case -- `S.trace` is an array in every
+// state this engine builds or hydrates -- and it is the version that cannot
+// throw on the next line.
+function wbTraceEndFor(S, seat) {
+  if (!Array.isArray(S.trace)) { S.trace = []; return; }
+  if (S.trace.length && S.trace[0].by !== seat) S.trace = [];
+}
+
 function wbTrace(S, by, entry) {
-  if (!Array.isArray(S.trace) || (S.trace.length && S.trace[0].by !== by)) S.trace = [];
+  wbTraceEndFor(S, by);
   S.trace.push({ ...entry, by });
   if (S.trace.length > WB_MAX_TRACE) S.trace.shift();
 }
@@ -3504,7 +3558,21 @@ function wbTraceIn(raw, board) {
     if (by == null || !isKey(e.from) || !isKey(e.to)) continue;
     const entry = { k: e.k, by, from: e.from, to: e.to };
     if (e.k === 'attack') {
-      entry.hits = Array.isArray(e.hits) ? [...new Set(e.hits.filter(isKey))].slice(0, WB_MAX_TRACE_HITS) : [];
+      // Two shapes, because a snapshot can come from a client on an older build:
+      // a bare hex key, which carries no uid and is drawn as it always was, or
+      // { k, uid }. Deduplicated by hex either way -- one mark per hex.
+      const seen = new Set();
+      entry.hits = [];
+      if (Array.isArray(e.hits)) {
+        for (const h of e.hits) {
+          const k = typeof h === 'string' ? h : (h && typeof h === 'object' ? h.k : null);
+          if (!isKey(k) || seen.has(k)) continue;
+          const uid = (h && typeof h === 'object' && Number.isFinite(h.uid)) ? h.uid : null;
+          seen.add(k);
+          entry.hits.push({ k, uid });
+          if (entry.hits.length >= WB_MAX_TRACE_HITS) break;
+        }
+      }
     }
     out.push(entry);
   }
@@ -3578,10 +3646,21 @@ function wbTraceSvg(S, trace, rUnit, rRing) {
   const marked = new Set();
   for (const e of trace) {
     if (e.k !== 'attack') continue;
-    for (const k of e.hits || []) {
+    for (const h of e.hits || []) {
+      const k = typeof h === 'string' ? h : h.k;
+      const uid = typeof h === 'string' ? null : h.uid;
       if (marked.has(k)) continue;
       const c = at(k);
       if (!c) continue;
+      // Draw it when the hex still holds the unit the blow landed on, and when
+      // the hex is empty -- the victim died or moved off, and marking where the
+      // blow fell is still true. Skip it when somebody ELSE is standing there,
+      // which is the case that used to put the mark on the wrong unit. A hit
+      // with no uid is off an older build and is drawn as it always was.
+      if (uid != null && S.G) {
+        const occ = WB.occupantOf(S.G, S.board.get(k));
+        if (occ && occ.uid !== uid) continue;
+      }
       marked.add(k);
       const x = c.x - rRing * 0.72, y = c.y - rRing * 0.72, r = 4.5;
       const d = `M${f1(x - r)},${f1(y - r)} L${f1(x + r)},${f1(y + r)} M${f1(x + r)},${f1(y - r)} L${f1(x - r)},${f1(y + r)}`;
@@ -3671,13 +3750,19 @@ function wbHexUnit(k, uid) {
 function wbSelect(uid) {
   const S = warband_state, pl = wbActive();
   wbUi.notice = null;
+  // A unit click: a bench card during deployment, or a token on the board. The
+  // board anchors its own refusals at the hex and draws first, so tagging both
+  // here is safe -- wbNoticeAt stands down once the board has drawn.
+  wbUi.where = 'bench';
   const any = S && S.G ? S.G.units.get(uid) : null;
   wbAnchor(any && any.at != null ? any.at : null);
   // Not this seat's turn. Looking is still allowed -- it is not a move -- so the
   // click inspects and says why nothing else happened.
   if (!wbCanAct(S)) {
     if (any) wbUi.inspect = any.deployed && any.at != null ? { hex: any.at } : { arch: any.name };
-    wbUi.notice = 'Not your turn — you can look at anything, but only the acting company may move.';
+    wbUi.notice = wbBotHolds(wbWhoActs(S))
+      ? 'The sparring bot is thinking — you can look at anything while it does.'
+      : 'Not your turn — you can look at anything, but only the acting company may move.';
     wbShow();
     return;
   }
@@ -3989,7 +4074,11 @@ function wbAttack(S, u, target, cost) {
     victim.hp -= b.dmg;
     // Recorded before the kill, which is safe: a fallen unit keeps `at`, because
     // Sweep and the death terrain both read it afterwards.
-    hits.push(wbHexKey(WB.hexOf(S.G, victim)));
+    // The uid travels with the hex. A mark pinned to a hex alone lands on
+    // whoever occupies that hex when the board is next drawn, so in a multi-
+    // action streak a unit that killed something and then stepped onto its hex
+    // wore the ✕ for the blow it had just delivered.
+    hits.push({ k: wbHexKey(WB.hexOf(S.G, victim)), uid: victim.uid });
     wbLog(S, u.owner, b.kind === 'main'
       ? `${u.name} hits ${victim.name} for ${b.dmg}`
         + (b.guard ? ' (Guard)' : '') + wbBlowStory(b.story, 0, b.dmg)
@@ -4216,7 +4305,7 @@ function wbApply(move) {
   // A finishing PASS records nothing, and that is where it showed.
   //
   // `done.ok` guards it, so a refusal still never touches the game.
-  if (done.ok && Array.isArray(S.trace) && S.trace.length && S.trace[0].by !== pl) S.trace = [];
+  if (done.ok) wbTraceEndFor(S, pl);
   if (!done.ok || S.phase !== 'play') return done;
 
   // config.json's engagement phase: "Play then alternates one action at a time."
@@ -4736,7 +4825,13 @@ function wbBotStep() {
 
   const move = wbBotChoose(S);
   if (!move) return null;
-  const r = wbCommit(move);
+  // Marks this one commit as the bot's own, so wbCanAct lets it through the
+  // guard that now keeps a human out of the bot's seat. try/finally because a
+  // throw inside the appliers would otherwise leave the seat open to the human
+  // for the rest of the match.
+  wbBot.acting = true;
+  let r;
+  try { r = wbCommit(move); } finally { if (wbBot) wbBot.acting = false; }
 
   // A refusal means wbLegalMoves and the appliers disagree, which is a bug in one
   // of them and not something to spin on. Three in a row and the bot stands down
@@ -4803,6 +4898,18 @@ function wbWhoActs(S) {
 
 // Hotseat has no gate at all: both players share one screen and take turns at it.
 function wbCanAct(S) {
+  // A seat the BOT holds is never a human's to act for, and solo play used to
+  // say otherwise: with no multiplayer session this returned true for every
+  // seat, so during the bot's ~550ms think window a player could select the
+  // bot's units and move them, and the screen invited it -- a live Pass button,
+  // the bot's bench, and a hint addressed to the player. Reported by
+  // brianhschneider from a UX audit of the live portal build.
+  //
+  // `wbBot.acting` is how the bot still gets to act through this: wbBotStep
+  // commits through wbCommit like every other caller, so without the flag this
+  // guard would stop the bot playing at all. It is set for the length of one
+  // synchronous commit and no longer.
+  if (!(wbBot && wbBot.acting) && wbBotHolds(wbWhoActs(S))) return false;
   if (!wbMp) return true;
   return wbWhoActs(S) === wbMp.seat;
 }
@@ -4821,6 +4928,36 @@ function wbCanAct(S) {
 // The reject ration was never cleared anywhere, so one room could spend the next
 // room's budget. Ending a session REPLACES this object, which is what makes a
 // fifth field impossible to forget.
+// One outstanding send has come back with nothing: refused by the host, or never
+// sent at all. Puts back what that send cleared optimistically, and closes the
+// slot once the burst has no sends left outstanding.
+//
+// The TRACE goes back on every one of these. Even when the burst's earlier move
+// was accepted, the snapshot for it carries a trace of its own and overwrites
+// this within the same delivery, so the worst case is one frame of wrong arrows.
+//
+// The SELECTION goes back only when this was the last outstanding send, and that
+// asymmetry is the whole point: wbLoad deliberately keeps `sel` across snapshots,
+// so a selection restored too eagerly is corrected by nothing and lingers -- and
+// a lingering selection is what stopped the reach view drawing on this seat in
+// round 18. Waiting for the count to reach zero covers both bursts. Every move
+// refused: the count reaches zero and the selection comes back, because nothing
+// consumed it. One accepted out of order: its snapshot closes the slot through
+// the revision guard before the count ever gets there, so it does not.
+//
+// Residual, stated rather than hidden: a send that is never answered at all
+// leaves the slot open, and only a snapshot closes it. That is the same bet the
+// revision guard already makes, and an unanswered send means a dead transport.
+function wbHeldUnwind(S) {
+  if (!S || !wbUi.held) return;
+  if (wbUi.held.rev !== S.rev) { wbUi.held = null; return; }
+  S.trace = wbUi.held.trace;
+  wbUi.held.sends -= 1;
+  if (wbUi.held.sends > 0) return;
+  S.sel = wbUi.held.sel;
+  wbUi.held = null;
+}
+
 function wbFreshSession() {
   return {
     notice: null,      // shown once: a message about your click, not a fact about the match
@@ -4835,6 +4972,24 @@ function wbFreshSession() {
     boardFull: null,   // null = follow the phase; see wbMapSvg
     confirmPass: false,// this player's Pass is armed and waiting on an answer, and is NOT game state
     rejectDrawn: 0,    // when a refusal off the wire was last allowed to redraw
+    // A seat reported gone, and the timer that will concede for it if it stays
+    // gone: { seat, timer }. Cleared the moment that seat is heard from again.
+    leftPending: null,
+    // Set when a match finished with nobody able to say how -- the host gone for
+    // good, and a guest with no authority to declare a winner. The phase is
+    // 'over' as well, so the board is not live; this says there is no verdict.
+    noResult: null,
+    // Which screen area a pending notice belongs to -- 'draft', 'bench', or null
+    // for the head. The board has had this since the anchored refusals, as
+    // wbUi.at; this is the same idea for the two areas that are not the board.
+    where: null,
+    // What a guest cleared optimistically when it sent a move, kept so that a
+    // refusal can put it back. A guest clears on the SEND because the send is
+    // the only thing it knows happened, but the host answers a refusal with
+    // wbMpRefuse and no snapshot, so nothing else would ever restore it.
+    // { rev, trace, sel } or null; the rev is what stops a stale copy being
+    // restored over a snapshot that has since arrived.
+    held: null,
     syncAnswered: 0,   // when the last sync-triggered push went out
     syncOwed: null,    // timer handle for a sync that arrived inside the window
     // The match this player has committed themselves to by acting in it, held as
@@ -4878,6 +5033,7 @@ let wbUi = wbFreshSession();
 function wbSessionEnd() {
   if (typeof clearTimeout === 'function') {
     for (const t of [wbUi.syncOwed, wbUi.askOwed, wbUi.drawOwed]) if (t != null) clearTimeout(t);
+    if (wbUi.leftPending && wbUi.leftPending.timer != null) clearTimeout(wbUi.leftPending.timer);
   }
   // The bot is a fact about this session, like the room, so it ends with it.
   // warbandStart re-establishes one AFTER wbNewGame, which is why clearing it
@@ -4889,9 +5045,16 @@ function wbSessionEnd() {
 
 // Every UI entry point commits through here, which is what makes one set of
 // click handlers serve a local game, a host and a guest.
-function wbCommit(move) {
+// `where` names the screen area whose click this is, so a refusal lands beside
+// the control that caused it. Passed in rather than set by the caller after the
+// fact: wbCommit renders before it returns, so a tag applied afterwards arrived
+// one frame too late and the first refusal always printed at the head. Found by
+// review, and it had made the draft and bench slots dead in normal play while
+// their tests -- which set the tag by hand -- went on passing.
+function wbCommit(move, where) {
   const S = warband_state;
   wbUi.notice = null;
+  wbUi.where = where || null;
   // The board is about to change, so whatever was being READ has been answered.
   // Cleared here rather than in each click handler for the same reason the notice
   // is: there are six entry points and a seventh is coming.
@@ -4905,7 +5068,41 @@ function wbCommit(move) {
   if (wbMp && wbMp.mode === 'guest') {
     // A guest changes nothing locally. It asks, and redraws when the host answers,
     // so the two clients cannot disagree about what happened.
+    //
+    // What this send is about to clear optimistically, held BEFORE the send so a
+    // refusal can put it back. Before, and not after, because a transport that
+    // delivers the host's answer synchronously -- which the test harness does on
+    // purpose -- would otherwise run wbMpRejected while there was still nothing
+    // to restore. Ordering the two this way makes the repair independent of when
+    // the answer lands.
+    // Only the FIRST send in a burst records the slot. A player can click twice
+    // before either answer arrives -- the local state has not changed, so
+    // wbCanAct still says yes -- and the second send would otherwise overwrite
+    // the copy with state the first send had already cleared. A refusal for
+    // either move then restored an empty trace and emptied the slot, so the
+    // other refusal had nothing left to put back. Holding the pre-burst copy
+    // instead means any refusal in the burst restores the board the player
+    // actually had, which is the only state worth going back to. The slot is
+    // dropped by the rev guard in wbMpRejected once a snapshot has moved things
+    // on.
+    // `sends` counts how many moves this burst has on the wire with no answer
+    // yet, and wbHeldUnwind decrements it as the answers come back. An earlier
+    // version incremented it and never decremented, which made the comment false
+    // and lost the selection for good on a burst where EVERY move was refused --
+    // double-clicking a hex out of reach, which is the documented way to read
+    // ground. The count now governs the slot's whole lifetime.
+    if (!wbUi.held) wbUi.held = { rev: S.rev, trace: S.trace, sel: S.sel, sends: 0 };
+    wbUi.held.sends += 1;
+    wbTraceEndFor(S, wbSeat(wbMp.seat));
+    S.sel = null;
     if (!wbMpSend(move)) {
+      // It never left the machine, so none of the optimism above was earned --
+      // and this path has to follow the same rule as a refusal. Restoring the
+      // selection unconditionally here let the round-18 symptom back in through
+      // the side door: send A, which the host will accept, then lose the
+      // transport on the next click, and the selection A had already spent came
+      // back and lingered once A's snapshot landed.
+      wbHeldUnwind(S);
       // Reporting success for a move that never left the machine is worse than
       // any disconnect: the player believes they acted.
       wbUi.notice = 'Not connected — that move was not sent.';
@@ -4937,9 +5134,29 @@ function wbCommit(move) {
     //
     // On the send rather than on the answer, which is the same choice wbUi.anchor
     // makes above and for the same reason: the send is the thing this client
-    // actually knows happened. If the host refuses the move, the next snapshot
-    // restores the truth, and the cost of being wrong is one redrawn arrow.
-    if (Array.isArray(S.trace) && S.trace.length && S.trace[0].by !== wbSeat(wbMp.seat)) S.trace = [];
+    // actually knows happened.
+    //
+    // An earlier version of this comment said "if the host refuses the move, the
+    // next snapshot restores the truth", and that was false. A refusal is answered
+    // by wbMpRefuse, which returns WITHOUT wbMpPush, so no snapshot follows one at
+    // all -- and the next snapshot that does arrive carries this guest's own
+    // streak, so the opponent's arrows were gone for the rest of the turn. The
+    // documented way to read a hex out of reach is to click it, which is refused,
+    // so this fired on an ordinary gesture rather than an edge case.
+    //
+    // So the optimism is kept and made revocable, the same shape wbUi.anchor uses:
+    // hold what is about to be cleared, clear it, and let wbMpRejected put it
+    // back. Both clears happen ABOVE, before wbMpSend, and that ordering is
+    // load-bearing rather than tidy: a transport that delivers the host's answer
+    // synchronously runs wbMpRejected inside the send, so a clear placed after it
+    // would wipe the board again immediately after the refusal had restored it.
+    //
+    // The selection is cleared for a second reason. A host's appliers all end
+    // with `S.sel = null`; a guest's never run, and wbLoad deliberately keeps
+    // `sel` across snapshots, so a guest that had ever selected anything kept the
+    // selection for the rest of the match. The reach view is gated on `!S.sel` --
+    // deliberately, because a tap with one of yours selected is an attack -- so
+    // that feature never worked on the guest seat at all.
     wbShow();
     return wbOk;
   }
@@ -4971,6 +5188,122 @@ function wbMpPush() {
   MP.pushState(wbSerialize(warband_state), {});
 }
 
+// A seat that was reported gone is back, so the concession waiting on it is
+// called off. Reached from exactly one place, the transport's `player_back`.
+//
+// Moves and snapshots were tried as evidence first and are both wrong. A guest
+// returning during the HOST's turn has nothing to send, so a host watching for
+// a move would concede a player already back; and a snapshot only follows a
+// move, so a guest watching for one would concede a host who was merely
+// thinking. Presence is the only thing that knows, and the transport is the
+// only thing that sees presence.
+// How many times one departure may be called off before the claims stop being
+// believed. `player_back` is unauthenticated, so without a ceiling an opponent
+// could alternate forged returns against the transport's real reports and keep
+// an empty chair on the board for ever -- which is the "match sits for ever on a
+// seat nobody occupies" that conceding was introduced to end. Three is a
+// judgement: a genuinely flaky phone reconnects a couple of times, and nothing
+// legitimate does it repeatedly without the player then acting, which resets it.
+const WB_LEFT_MAX_BACKS = 3;
+
+function wbLeftCancel(seat) {
+  const pend = wbUi.leftPending;
+  if (!pend) return false;
+  // A NAMED seat, always. `wbSeat` maps anything out of range to null, and an
+  // earlier version treated null as "cancel whatever is pending" -- so one
+  // forged or malformed message could call off a real departure. There is no
+  // such thing as a return by an unnamed player.
+  if (seat !== pend.seat) return false;
+  if (pend.backs >= WB_LEFT_MAX_BACKS) return false;   // claimed once too often
+  if (pend.timer != null && typeof clearTimeout === 'function') clearTimeout(pend.timer);
+  wbUi.leftPending = null;
+  wbUi.leftBacks = (wbUi.leftBacks || 0) + 1;
+  const S = warband_state;
+  if (S && S.phase !== 'over') wbLog(S, pend.seat, `${S.names[pend.seat] || `P${pend.seat + 1}`} is back.`);
+  return true;
+}
+
+// The concession itself, once the window has closed. Split out so the timer and
+// an immediate call share one path: there is exactly one place that decides a
+// match is over because somebody left.
+// A departure that is not coming back, from whichever road: `final: true`, a
+// closed room, or a grace that ran out. One function, because the rule about WHO
+// may declare a result is the same on all three and was worth stating once.
+function wbLeftEnd(seat) {
+  if (wbUi.leftPending && (seat == null || wbUi.leftPending.seat === seat)) {
+    const t = wbUi.leftPending.timer;
+    if (t != null && typeof clearTimeout === 'function') clearTimeout(t);
+    wbUi.leftPending = null;
+  }
+  wbLeftConcede(seat, true);
+}
+
+function wbLeftConcede(seat, final) {
+  wbUi.leftPending = null;
+  const S = warband_state;
+  if (!S || S.phase === 'over' || !wbMp) return;
+  // ONLY THE HOST DECIDES A MATCH IS OVER. A guest that concedes on its own
+  // screen ends the match there and nowhere else -- it pushes nothing, has no
+  // authority to, and the host plays on. That is a split brain with no way back,
+  // and it was the shape of the old code as much as the new: both sides reached
+  // wbConcede and the guest simply kept the result to itself.
+  //
+  // What a guest does instead is say so honestly and offer the door. It does not
+  // invent a winner, because it does not know there is one: with a rejoin path
+  // the host may yet come back, and a fabricated result would be wrong in a way
+  // no later snapshot could correct.
+  if (wbMp.mode !== 'host') { wbMpLostSeat(S, seat); return; }
+  wbLog(S, seat, final
+    ? `${S.names[seat] || `P${seat + 1}`} has left the field, and concedes.`
+    : `${S.names[seat] || `P${seat + 1}`} did not return, and concedes.`);
+  wbConcede(S, seat);
+  // Kept local, it is a game the other client never sees end.
+  wbMpPush();
+  wbShow();
+}
+
+// A guest whose host has been gone past the window. No result, because a guest
+// is not entitled to declare one, and none of the end-of-match representation --
+// that is what would have made the two clients disagree. The same honest
+// dead-end wbMpEmptyRoom gives a guest whose opponent left before the draft,
+// said for a match that had already started.
+function wbMpLostSeat(S, seat) {
+  const who = (S && S.names && S.names[seat]) || `P${wbNum(seat) + 1}`;
+  // The match is FINISHED, and the phase has to say so. An earlier version only
+  // painted a screen and left the phase where it was, so the game state still
+  // described a live board -- and the next wbShow() from any cause drew one.
+  // brianhschneider's mp-rejoin-active test caught exactly that, and its
+  // assertion message is the whole point: "the board still looks live".
+  //
+  // Finished is not the same as decided, which is the other half. wbEnd names a
+  // winner from the scores, and on this path there is no winner to name: the
+  // host is gone and a guest may not declare one. So the phase ends the match
+  // and wbUi.noResult says there is no verdict, which is what the end screen
+  // then reads.
+  if (S) S.phase = 'over';
+  // AFTER wbMpLeave, which ends the session and hands wbUi a fresh one -- set
+  // before it, the marker was thrown away and the end screen named a winner
+  // from the scores, which is the exact thing this path exists to avoid.
+  wbMpLeave();
+  wbUi.noResult = { name: who };
+  wbShow();
+}
+
+// The end screen for a match that finished without anyone being able to say how.
+function wbNoResultScreen() {
+  const who = wbUi.noResult && wbUi.noResult.name ? wbUi.noResult.name : 'The other company';
+  return `
+    <div style="padding:16px;color:${WB_COL.text}">
+      <div style="font-size:1.1em;color:${WB_COL.p0};font-weight:bold">The field</div>
+      <div style="margin:8px 0;font-size:.9em">
+        ${wbEsc(who)} has been out of contact too long, and this screen cannot say how the
+        match ended &mdash; only the host can decide that, and it is the host that is gone.
+        <b>Nothing here is a result.</b>
+      </div>
+      <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.85em;margin-top:12px">Muster again</button>
+    </div>`;
+}
+
 // Why the host would not take that move, sent back to the seat that sent it. The
 // host already learns its own refusals from wbCommit; a guest learned nothing at
 // all, and since wbCommit has cleared its notice and redrawn by then, a move the
@@ -4997,6 +5330,33 @@ function wbMpRefuse(seat, why) {
   MP.sendMove('reject', { toSeat: seat, why: typeof why === 'string' ? why.slice(0, 120) : null });
 }
 
+// How long to hold a chair after the TRANSPORT has already given up on it.
+//
+// This is ADDITIVE, and an earlier version of this comment was wrong to call it
+// "matched to the portal's". The portal runs its own presence grace and only
+// emits `player_left` once that has expired, so the wall-clock a player gets is
+// the portal's window plus this one. Naming it matched implied the two were the
+// same 15 seconds; they are consecutive.
+//
+// The number is a judgement about phones, not a measurement, and it sits on top
+// of the transport's own 30s depart grace (`_MP_DEPART_GRACE_MS`), so the wall
+// clock a player gets is about ninety seconds.
+//
+// Sixty rather than twenty because of what the transport now tells us. A seat
+// that reloads or has its tab restored rejoins by itself and never reaches us as
+// a departure at all -- that case is handled upstream. What is left for this
+// timer is the case the reviewer asked to be tested: a phone LOCKED for a
+// minute, which the transport reports at thirty seconds as "gone, but may come
+// back". Conceding at fifty seconds would lose a match to a pocket.
+//
+// The cost is that an opponent who really has walked away holds the board for a
+// minute and a half. This is the one number here that wants real play rather
+// than argument, and nothing depends on its value.
+//
+// Warband used to concede the instant it was told a seat had left, and a
+// two-device test on 2026-09-28 lost two matches to it, on turn 1 and turn 4,
+// each with the absent company at exactly its break threshold.
+const WB_LEFT_GRACE_MS = 60000;
 const WB_REJECT_MS = 250;
 // The other end of that. Nothing here touches warband_state, and nothing may:
 // the host is the only authority over the game, and this message is not from an
@@ -5011,6 +5371,13 @@ function wbMpRejected(payload) {
   // through wbEsc, and it never reaches S.log -- which is serialized to every
   // client and into the session row, and so is no place for text off the wire.
   wbUi.notice = why ? `${why[0].toUpperCase()}${why.slice(1)}.` : 'That move was refused.';
+  // The move did not happen, so neither did the clears that assumed it would.
+  // Guarded on the revision: if a snapshot has arrived since the send, the board
+  // has moved on and the held copy describes a position that no longer exists.
+  // Restored BEFORE the redraw rationing below, because the rationing is about
+  // how often the screen is rebuilt and this is about what is true.
+  const S = warband_state;
+  wbHeldUnwind(S);
   // Bounded for the same reason sync is, and for a smaller one. This arrives
   // unauthenticated and unbounded, and every one of them rebuilds the whole
   // screen and hands it to innerHTML. Nothing is amplified and nothing else can
@@ -5137,6 +5504,7 @@ function wbAskArm() {
     wbUi.askOwed = null;
     if (!wbUi.resyncAsked) return;                // answered while the clock ran
     wbUi.notice = 'No answer from the host. Nothing on this screen has changed.';
+    wbUi.where = null;   // its button is in the turn banner, so its answer belongs there
     wbShow();
   }, WB_ASK_MS);
 }
@@ -5261,11 +5629,13 @@ function wbMpEmptyRoom() {
     </div>`;
 }
 
-// A player who leaves concedes, and the match ends there. Not a grace timer: the
-// portal refuses every join once a room's status leaves `lobby`, so there is no
-// reconnect to wait for and a timer would be waiting for something that cannot
-// happen. What it replaces is worse than a timer anyway -- the match used to sit
-// forever on a seat nobody occupied.
+// A player who leaves concedes. THERE IS NOW A GRACE TIMER, and this comment
+// used to say there could never be one: "the portal refuses every join once a
+// room's status leaves `lobby`, so there is no reconnect to wait for". That was
+// true when it was written and is not any more -- a seated player can rejoin
+// their own seat in an active room, the portal auto-rejoins after a reload, and
+// `player_back` reports it. See wbLeftConcede, which is the only caller that
+// ends a match because somebody left, and which fires only on the host.
 //
 // It resolves through the same end-of-match representation a rout uses rather
 // than a flag of its own, so wbEnd names the winner, wbWhoActs goes quiet, wbApply
@@ -5318,6 +5688,12 @@ function wbMpBind() {
   const on = (type, fn) => { const off = MP.on(type, fn); if (typeof off === 'function') wbMpOff.push(off); };
 
   on('move', (payload) => {
+    // A move is NOT evidence of a return -- a guest coming back during the
+    // host's turn has none to send, which is why player_back exists. It is
+    // evidence that the seat is playing, though, so it resets the ceiling on how
+    // many returns will be believed. Nothing else about a move touches the
+    // departure machinery.
+    if (payload && wbSeat(payload.fromSeat) != null) wbUi.leftBacks = 0;
     if (!payload || typeof payload !== 'object') return;
     // Handled before the host gate, because it is the one thing on this channel
     // travelling the other way: everything below is a client asking the host.
@@ -5514,6 +5890,34 @@ function wbMpBind() {
     wbAskAnswered();
   });
 
+  // The transport says a seat that was gone is back: a socket blink, a page
+  // reload, or a tab the phone discarded and restored. This is the ONLY thing
+  // that calls off a pending concession.
+  //
+  // Moves and snapshots were tried first and are both wrong, which the reviewer
+  // of hunger-games-tcg#128 caught. A guest who returns during the HOST's turn
+  // has nothing to send, so the host would concede a player already back; and a
+  // snapshot only follows a move, so a guest facing a host who is simply
+  // thinking would concede one who never left.
+  on('player_back', (payload) => {
+    if (!wbMp) return;
+    const seat = wbSeat(payload && payload.seat);
+    if (seat == null) return;
+    if (wbLeftCancel(seat)) wbShow();
+  });
+
+  // The room itself is over: the host left mid-match, or its page reloaded,
+  // which ends the room. It arrives after a final `player_left` for the host, so
+  // a client that only understood departures would already have stopped -- this
+  // is here so the reason can be the honest one rather than inferred.
+  on('room_closed', () => {
+    if (!wbMp) return;
+    const S = warband_state;
+    if (!S) { wbMpEmptyRoom(); return; }
+    if (S.phase === 'over') return;
+    wbLeftEnd(wbMp.mode === 'host' ? wbSeat(1 - wbMp.seat) : 0);
+  });
+
   on('player_left', (payload) => {
     const seat = payload && payload.seat;
     // The payload's `name` is attacker-chosen text on an UNAUTHENTICATED channel
@@ -5539,16 +5943,51 @@ function wbMpBind() {
     if (!warband_state) { wbMpEmptyRoom(); return; }
     const S = warband_state;
     if (S.phase === 'over') return;   // already resolved; there is nothing left to concede
-    wbLog(S, seat, `${S.names[seat] || `P${seat + 1}`} has left the field, and concedes.`);
-    wbConcede(S, seat);
-    // The host is the authority and this is the last thing it will decide about
-    // this match, so the resolution has to go out: kept local, it is a game the
-    // other client never sees end. A guest has no authority and, when it is the
-    // HOST that left, nobody left to hear it -- so it ends its own view of the
-    // match by the same rule instead of waiting for a snapshot that is never
-    // coming. Both sides reach that through wbConcede rather than a second state
-    // machine, which is why they agree about who won.
-    if (wbMp.mode === 'host') wbMpPush();
+    // `final` distinguishes the two departures the transport now reports, and it
+    // is the difference between waiting and not. True means a deliberate Leave,
+    // or a host whose room is over: nobody is coming back and a grace would only
+    // make both players wait for nothing. False means the seat has been out of
+    // presence past the transport's own thirty seconds and may yet return, which
+    // is what this timer is for. Compared against `true` rather than trusted for
+    // truthiness, because the channel is unauthenticated and `final: "no"` is a
+    // string somebody could send.
+    if (payload.final === true) { wbLeftEnd(seat); return; }
+    if (wbUi.leftPending && wbUi.leftPending.seat === seat) return;   // already counting
+    // NOT a concession yet. A player who drops off a phone network for a few
+    // seconds has not left the field, and treating one message as final lost two
+    // real matches to a Wi-Fi blink. The window is the game's own, because the
+    // explicit leave a failing client sends on its way down reaches here with no
+    // grace behind it at all.
+    wbLog(S, seat, `${S.names[seat] || `P${seat + 1}`} has lost contact.`);
+    // A GUEST waits longer than the host, and the margin is the point. Both
+    // clocks run independently, so if a guest's fired first it would leave the
+    // room before the host's authoritative snapshot arrived -- the host finished,
+    // the guest holding a dead end, and no way to reconcile. Giving the host's
+    // decision a clear head start means the normal case ends with the guest
+    // being TOLD the result rather than guessing at one.
+    const ms = wbMp.mode === 'host' ? WB_LEFT_GRACE_MS : WB_LEFT_GRACE_MS * 2;
+    // The token is what a queued callback checks before it acts. clearTimeout
+    // cannot retract a callback already on the event queue, so a cancel, a new
+    // match or a room change could otherwise be followed by a stale concession
+    // firing against whatever state had replaced it.
+    const token = {};
+    const session = wbUi;
+    const timer = (typeof setTimeout === 'function')
+      ? setTimeout(() => {
+        if (wbUi !== session) return;                       // that room is over
+        const pend = wbUi.leftPending;
+        // Cancelled, or superseded by a later departure. NOTE: this line has no
+        // failing test and cannot get one here -- vitest's fake timers retract a
+        // cleared callback, which real ones cannot once it is on the event
+        // queue, so the race it guards is unreachable from the harness. The
+        // session check above IS tested, by starting a new match under a pending
+        // departure. Kept as defence for the case the harness cannot stage.
+        if (!pend || pend.token !== token) return;
+        wbLeftConcede(seat);
+      }, ms) : null;
+    wbUi.leftPending = { seat, timer, token, backs: wbUi.leftBacks || 0 };
+    // No push here. Nothing about the match has changed yet, and a snapshot
+    // saying so would only tell the other client something it cannot act on.
     wbShow();
   });
 }
@@ -5656,8 +6095,7 @@ function wbNoticeLine() {
   // reintroduce the thing this change exists to remove: a copy of the message
   // far from the map, pushing the map down as it appears.
   if (wbUi._noticeDrawn) return '';
-  return `<div class="wb-notice" style="font-size:.75em;margin:0 0 8px;padding:5px 8px;border-radius:4px;
-      background:rgba(190,120,80,.14);border:1px solid #97552a">${wbEsc(wbUi.notice)}</div>`;
+  return wbNoticeBox('wb-notice-head');
 }
 
 // Whose turn it is, said loudly, in BOTH modes.
@@ -5730,6 +6168,9 @@ function wbShow() {
   if (!S) { if (wbMp && wbMp.mode === 'guest') wbWaiting(); return; }
   if (S.phase === 'draft') return wbRenderDraft();
   if (S.phase === 'banner') return wbRenderBanner();
+  // Before wbEnd, because wbEnd's job is to name a winner and this is the case
+  // where there is none to name.
+  if (wbUi.noResult) { wbSection().innerHTML = wbNoResultScreen(); return; }
   if (S.phase === 'over') return wbEnd();
   wbRender();     // wbRender falls through to wbEnd() once someone has broken
 }
@@ -5737,6 +6178,13 @@ function wbShow() {
 // Replace the live game with one from a snapshot. The guest side of multiplayer
 // is this call plus wbShow().
 function wbLoad(pub) {
+  // A snapshot is the host's answer, so whatever a guest was holding against a
+  // refusal is settled: the truth has arrived and the held copy describes a
+  // board that no longer exists. Cleared here rather than in the `state`
+  // handler so that every path which accepts a snapshot closes the slot, and so
+  // that a burst whose first move was ACCEPTED does not leave a stale copy that
+  // blocks the next burst from opening one.
+  wbUi.held = null;
   // `sel` is this client's highlight and never travels, so a snapshot would
   // otherwise clear the selection every time the opponent did anything. It is
   // dropped only when what it pointed at is gone.
@@ -5806,7 +6254,8 @@ function wbSerialize(S) {
     seizedEver: S.seizedEver ? Array.from(S.seizedEver) : [],
     log: arr(S.log),
     trace: (S.trace || []).map((x) => (x.k === 'attack'
-      ? { k: x.k, by: x.by, from: x.from, to: x.to, hits: (x.hits || []).slice() }
+      ? { k: x.k, by: x.by, from: x.from, to: x.to,
+          hits: (x.hits || []).map((h) => (typeof h === 'string' ? { k: h, uid: null } : { k: h.k, uid: h.uid ?? null })) }
       : { k: x.k, by: x.by, from: x.from, to: x.to })),
     G: S.G ? WB.serializeG(S.G, { seed: S.seed, density: S.density, objectiveCount: null }) : null,
   };
@@ -6478,9 +6927,20 @@ function wbMapSvg(opts = {}) {
       // direct blow is the one a player is asking about when they look at it, so
       // that one wins; the arrow from the original target, when it ships, is what
       // removes the ambiguity entirely.
+      //
+      // When NEITHER is direct -- the same unit carried into from two different
+      // targets -- the tie used to go to whichever target `G.units` happened to
+      // visit first, so a dagger could appear or vanish with map order. Broken
+      // deliberately instead: lethal over not, then the heavier blow, then the
+      // lower target uid, which is arbitrary but is the same every render.
       const direct = b.uid === t.uid;
       const prev = forecast.get(b.uid);
-      if (!prev || (direct && !prev.direct)) forecast.set(b.uid, { dmg: b.dmg, kill: b.kill, direct });
+      const beats = !prev
+        || (direct !== prev.direct ? direct
+          : b.kill !== prev.kill ? b.kill
+            : b.dmg !== prev.dmg ? b.dmg > prev.dmg
+              : t.uid < prev.via);
+      if (beats) forecast.set(b.uid, { dmg: b.dmg, kill: b.kill, direct, via: t.uid });
     }
   }
   const depUnit = live && wbSelValid(S, 'deploy') ? wbSelUnit(S, 'deploy') : null;
@@ -6992,6 +7452,12 @@ function wbRender() {
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
       ${wbBoardSlot()}
+      ${/* The bench is the other place a click lands that is not a hex, so it
+           needs the same slot the board has. A refusal about deploying used to
+           print at the top of the game area, above the whole map, while the card
+           that caused it sat below the board. wbNoticeAt renders nothing if the
+           board already drew this notice at its hex, so the two never double up. */''}
+      ${wbNoticeAt('bench')}
       <div class="wb-bench" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         ${bench.map((u) => `<div onclick="wbSelect(${wbAttrNum(u.uid)})" style="cursor:pointer;border:1px solid ${u.cost <= S.dp[pl] ? WB_COL.p0 : '#3a3630'};
           border-radius:5px;padding:4px 8px;font-size:.72em;background:#221f1c;opacity:${u.cost <= S.dp[pl] ? 1 : .4}">
@@ -7075,11 +7541,28 @@ function wbShareCmp(a0, b0, a1, b1) {
 // else — the portal serves engine.js unmodified — so this must degrade rather
 // than throw.
 function wbBuildStamp() {
+  let stamp = null;
   try {
     const meta = document.querySelector && document.querySelector('meta[name="wb-build"]');
     const v = meta && meta.getAttribute('content');
-    return v ? String(v).slice(0, 60) : 'unknown build';
-  } catch (_) { return 'unknown build'; }
+    if (v) stamp = String(v).slice(0, 60);
+  } catch (_) { /* no document, or none of this exists: fall through */ }
+  // Where it ran, when it cannot say which build. The portal serves engine.js
+  // unmodified and so can never carry the meta tag, which meant every report
+  // filed from it read "unknown build" -- and PLAYTEST-LOG.md's first
+  // requirement is a build identifier, on the argument that an entry without one
+  // cannot be compared to any other entry. The host does not identify a commit,
+  // but it does say portal against standalone against a laptop, which is most of
+  // what the reader of an entry actually needs.
+  let where = null;
+  try {
+    const h = typeof location !== 'undefined' && location && location.host;
+    if (h) where = String(h).slice(0, 60);
+  } catch (_) { /* as above */ }
+  if (stamp && where) return `${stamp} (${where})`;
+  if (stamp) return stamp;
+  if (where) return `unstamped, served from ${where}`;
+  return 'unknown build';
 }
 
 // Which seats a person was sitting in. A bot game is seat 0 human; hotseat is
@@ -7133,11 +7616,30 @@ function wbReportQuestion(S, routed, loser) {
 
 // The facts the page already knows, as the head of the report. Deliberately
 // plain text: it is going into a mail client or a chat window.
+// Which chair the person filing this report was sitting in, as a phrase, or null
+// when it cannot be said. Only multiplayer knows: a hotseat player holds both
+// seats and a bot game's human is always seat 0.
+function wbReportSeat(S) {
+  if (!wbMp) return null;
+  const seat = wbSeat(wbMp.seat);
+  if (seat == null) return null;
+  const who = S && S.names && S.names[seat] ? ` as ${S.names[seat]}` : '';
+  // P1/P2, not 0/1. The interface has never shown a player a zero-based seat,
+  // and a report is read by people who have only ever seen the other one.
+  return `${wbMp.mode === 'host' ? 'hosting' : 'a guest'}${who}, P${wbNum(seat) + 1}`;
+}
+
 function wbReportFacts(S, routed, loser) {
   const humans = wbHumanSeats(S);
+  // "hotseat" was hardcoded for any two-human game, so every ONLINE match filed
+  // itself as hotseat -- and both devices in a two-device test produced reports
+  // that were identical and said nothing about which end they came from. The two
+  // answer different questions, which is the whole reason this line exists.
+  const seat = wbReportSeat(S);
   const opponent = humans.length === 1 ? 'the sparring bot'
-    : humans.length === 2 ? 'another person, hotseat'
-    : 'bot against bot';
+    : humans.length !== 2 ? 'bot against bot'
+      : seat ? `another person, online (${seat})`
+        : 'another person, hotseat';
   const ground = { 0.15: 'open field', 0.45: 'mixed', 0.75: 'broken ground' }[S.density] || String(S.density);
   const share = (p) => `${wbNum(S.against[p])}/${wbNum(S.breakAt[p])}`;
   const verdict = loser === null ? 'level — neither company closer to breaking'
