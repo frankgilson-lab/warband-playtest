@@ -1,4 +1,4 @@
-<meta name="wb-build" content="c5f8c1c 2026-10-10">
+<meta name="wb-build" content="0bff2b7 2026-10-10">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -8944,17 +8944,32 @@ const wbMatchKey = (S) => ((S && S.matchId != null) ? wbText(S.matchId) : null);
 
 function wbSaveReport() {
   if (typeof document === 'undefined' || !document.getElementById) return;
-  let found = false;
+  const found = [];
   for (const [id, key] of [['wb-rep-a', 'a'], ['wb-rep-b', 'b']]) {
     const el = document.getElementById(id);
     // Only when the field is really on screen. A redraw of any OTHER screen finds
     // no textarea, and overwriting the stored draft with nothing there would lose
     // exactly what this exists to keep.
-    if (el && typeof el.value === 'string') { wbUi.report[key] = wbText(el.value); found = true; }
+    if (el && typeof el.value === 'string') found.push([key, wbText(el.value)]);
+  }
+  if (!found.length) return;
+  // OWNERSHIP IS OVER THE WHOLE BUNDLE, and this used to reassign only half of it.
+  // It set matchId and overwrote a and b from the screen, and never touched `out` --
+  // so a generated report from match A was re-tagged to match B by the first redraw
+  // that found B's own empty textareas, and the restore then had matching ids and put
+  // A's report on B's end screen. The draft was refused correctly and the GENERATED
+  // one walked in behind it. Raised in review.
+  //
+  // A tag change therefore starts a fresh bundle rather than editing the old one. The
+  // values below are written after it, so a and b always agree with the screen they
+  // came off and `out` is only ever the report generated for THIS match.
+  if (wbUi.report.matchId !== wbUi.shownMatch) {
+    wbUi.report = { matchId: wbUi.shownMatch, a: '', b: '', out: '' };
   }
   // TAGGED WITH THE MATCH THAT WAS ON SCREEN, not the one in warband_state. Those
   // differ for exactly one caller and it is the one that matters: see shownMatch.
-  if (found) wbUi.report.matchId = wbUi.shownMatch;
+  wbUi.report.matchId = wbUi.shownMatch;
+  for (const [key, text] of found) wbUi.report[key] = text;
 }
 
 function wbRestoreReport() {
@@ -8999,17 +9014,24 @@ function wbReportCopy() {
   // Recorded before the DOM is touched, so a redraw between now and the player
   // pasting cannot take the text back off the screen.
   wbUi.report.out = text;
-  // AND NOT TAGGED AGAIN HERE. This line read
+  // AND TAGGED, which I removed once as dead code and was wrong about. Raised in
+  // review.
   //
-  //   wbUi.report.matchId = wbUi.shownMatch;
+  // The argument for removing it was that wbSaveReport tags whenever it FINDS the
+  // fields, so the render that drew this button must already have tagged them. It
+  // does not: wbSaveReport runs BEFORE innerHTML is replaced, so on the FIRST render
+  // of an end screen it is looking at the previous screen, which has no report on it
+  // -- and the fields it would tag do not exist yet. Measured: report.matchId is null
+  // immediately after an end screen first appears.
   //
-  // on the argument that Copy can be pressed with both fields empty, leaving the
-  // generated text owned by no match. Mutation showed no test could see it removed,
-  // and the reason is that it cannot happen: wbSaveReport tags whenever it FINDS the
-  // fields, not whenever they hold anything, and this button exists only on a screen
-  // that always draws them. So the tag is already set by the render that put the
-  // button on screen. An unreachable guard no test can exercise is a claim rather
-  // than a guard, so it is gone and the reasoning is here instead.
+  // That was harmless while a tag change merely overwrote a and b, because the next
+  // redraw tagged the bundle correctly and the restore worked. It stopped being
+  // harmless when a tag change started dropping `out` to stop a generated report
+  // crossing matches: Copy as the first action after a match ends would then lose its
+  // own report to the next redraw. So the two repairs make each other necessary, and
+  // the mutation that found no test for this line was reporting a missing lifecycle
+  // case rather than dead code.
+  wbUi.report.matchId = wbUi.shownMatch;
   const out = document.getElementById('wb-rep-out');
   if (out) { out.value = text; out.style.display = 'block'; try { out.select(); } catch (_) {} }
   const say = document.getElementById('wb-rep-said');
