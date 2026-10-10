@@ -1,4 +1,4 @@
-<meta name="wb-build" content="75f8c8e 2026-10-09">
+<meta name="wb-build" content="da98c1d 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -3388,7 +3388,10 @@ function wbHexPanel(S, view, k) {
   const z = f.zone;
   const facts = [];
   if (z.impassable) facts.push('Impassable: nothing may enter');
-  else if (z.blocks_movement) facts.push('Blocks movement: nothing may enter, but it can be fought across');
+  // SAME CORRECTION AS THE REFUSAL, and this is where the wrong phrase started: the
+  // refusal copied it from here. Leaving it would be repairing the sentence a player
+  // sees when refused and keeping the false one on the panel that explains the ground.
+  else if (z.blocks_movement) facts.push('Blocks movement: nothing may enter — it does not prevent ranged attacks');
   else facts.push(`Costs ${wbNum(z.movement_cost == null ? 1 : z.movement_cost)} movement to enter (Light units always pay 1, Heavy units pay one more)`);
   if (z.grants_cover) facts.push("Gives cover: incoming damage is reduced by the defender's class value");
   if (z.blocks_los) facts.push('Blocks line of sight for shooting across it');
@@ -4552,7 +4555,14 @@ function wbMoveDeploy(S, m) {
 // So a reason is only ever offered for a hex canEnter has already refused.
 function wbWhyNoEntry(u, z) {
   if (z.impassable) return `${z.name} is impassable — nothing may enter`;
-  if (z.blocks_movement) return `${z.name} prevents entry — it can be fought across, not stood on`;
+  // "IT DOES NOT PREVENT RANGED ATTACKS", and not the "it can be fought across" this
+  // first said -- which the designer read as melee across, and melee across a
+  // barricade is impossible. Nothing may STAND on one, so fighting across it means a
+  // unit on each side, two hexes apart. Levy, Sutler, Vanguard and Man-at-Arms are
+  // all range 1 and cannot reach that far, so the old sentence was false for four of
+  // the seven archetypes. What is true is narrower: blocks_los is false, so shooting
+  // passes over it.
+  if (z.blocks_movement) return `${z.name} prevents entry — it does not prevent ranged attacks`;
   if (u.cls === 'heavy' && z.id === 'marsh') return `${z.name} will not take a Heavy unit`;
   return null;
 }
