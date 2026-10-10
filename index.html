@@ -1,4 +1,4 @@
-<meta name="wb-build" content="fc44cc6 2026-10-09">
+<meta name="wb-build" content="1477f9f 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -5137,6 +5137,21 @@ function wbFreshSession() {
     // draft, where there is nothing to act with. Stored as a key or a name and
     // resolved fresh on every render, so it can never show a stale board.
     inspect: null,
+    // WHAT THE PLAYER HAS TYPED INTO THE END-SCREEN REPORT. A data-loss bug found
+    // in review: the two textareas carried no value from state and wbReportText
+    // read them off the document when Copy was pressed. Every wbShow() replaces
+    // the whole section, so they were recreated EMPTY -- and reading a hex on the
+    // finished board goes wbInspectHex -> wbShow. Type a report, click a hex to
+    // check one more thing before sending it, and the report was gone. On the one
+    // screen whose entire purpose is collecting the feedback this project is
+    // starved of.
+    //
+    // IN THE SESSION AND NOT THE MATCH, like the cursor and the inspector. It must
+    // never reach wbSerialize: the page promises that nothing leaves it, and a
+    // half-written opinion of somebody's game is the last thing that should travel
+    // over a wire to the other seat. Cleared with the rest of this object by
+    // wbSessionEnd, so Abandon and a fresh muster do not inherit an old draft.
+    report: { a: '', b: '', out: '' },
     // FIT or FULL board. A fact about this screen, not about the match, and it
     // belongs to the session for the same reason the selection does not travel.
     boardFull: null,   // null = follow the phase; see wbMapSvg
@@ -6291,7 +6306,11 @@ function wbDraw(html) {
   const screen = head ? `<div style="padding:12px 14px 0">${head}</div>${html}` : html;
   if (wbDrawProbe) { wbDrawProbe.drawn = true; return; }
   const had = wbBoardHasFocus();
+  // WHAT THE REPLACEMENT WOULD THROW AWAY. The report goes first because it is the
+  // only thing on any screen that a player cannot reproduce by looking again.
+  wbSaveReport();
   wbSection().innerHTML = screen;
+  wbRestoreReport();
   if (!had || typeof document === 'undefined' || !document.querySelector) return;
   const el = document.querySelector('#' + WB_FIELD_ID);
   if (el && typeof el.focus === 'function') el.focus({ preventScroll: true });
@@ -8893,6 +8912,50 @@ function wbReportText(S, routed, loser) {
 // button that silently does nothing is worse than no button. So the assembled
 // report is always revealed in a selectable box, and the copy is the convenience
 // rather than the mechanism.
+// ── the report survives the redraw that would destroy it ─────────────────────
+//
+// READ BEFORE, PUT BACK AFTER, and both as PROPERTIES. That is the whole design
+// of this repair rather than a detail of it.
+//
+// The first attempt rendered the draft into the textarea's CONTENT, escaped, and
+// warband-report stopped it: "never parses the player's own words as markup"
+// exists because this is the one place a playtester's free text reaches the page,
+// and its premise is that the text goes into a `value` and never into innerHTML.
+// Escaping would most likely have been safe. It would also have traded a property
+// that is simple to state and check for one that depends on wbEsc staying right
+// forever. Assigning `.value` cannot parse anything, so the premise survives the
+// repair untouched -- and the rendered markup does not change at all, which is why
+// no characterization fixture moves.
+//
+// No inline handler either, for the same reason: saving on redraw rather than on
+// every keystroke needs nothing added to the markup, and wbDraw is the only place
+// the section is replaced, so it is the only place that can lose anything.
+function wbSaveReport() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  for (const [id, key] of [['wb-rep-a', 'a'], ['wb-rep-b', 'b']]) {
+    const el = document.getElementById(id);
+    // Only when the field is really on screen. A redraw of any OTHER screen finds
+    // no textarea, and overwriting the stored draft with nothing there would lose
+    // exactly what this exists to keep.
+    if (el && typeof el.value === 'string') wbUi.report[key] = wbText(el.value);
+  }
+}
+
+function wbRestoreReport() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  for (const [id, text] of [['wb-rep-a', wbUi.report.a], ['wb-rep-b', wbUi.report.b]]) {
+    const el = document.getElementById(id);
+    if (el && text) el.value = text;
+  }
+  // The generated report was lost the same way: pressed Copy, read a hex, and the
+  // text they were about to paste was gone. It stays shown once it exists.
+  const out = document.getElementById('wb-rep-out');
+  if (out && wbUi.report.out) {
+    out.value = wbUi.report.out;
+    if (out.style) out.style.display = 'block';
+  }
+}
+
 function wbReportCopy() {
   const S = warband_state;
   if (!S) return;
@@ -8903,6 +8966,9 @@ function wbReportCopy() {
     : (cmp === 0 ? null : (cmp > 0 ? 0 : 1));
   const text = wbReportText(S, routed, loser);
 
+  // Recorded before the DOM is touched, so a redraw between now and the player
+  // pasting cannot take the text back off the screen.
+  wbUi.report.out = text;
   const out = document.getElementById('wb-rep-out');
   if (out) { out.value = text; out.style.display = 'block'; try { out.select(); } catch (_) {} }
   const say = document.getElementById('wb-rep-said');
@@ -9022,13 +9088,23 @@ function wbEnd() {
            sits above the log and below the tally because that is where a player's eye
            already is when the verdict lands -- a playtest decision this must not undo.
            So the answer goes after it and before the log, which leaves every control
-           on this screen fixed and moves only the scrollback. */''}
+           on this screen fixed and moves only the scrollback.
+
+           MUSTER AGAIN AND THE RESYNC BUTTON COME UP WITH IT. They were the last
+           things on the screen, below both the answer and the log, so reading a hex
+           moved them too -- the same defect the play screen was just repaired for,
+           surviving on the one screen where the only remaining action is to press
+           them. Raised in review of that repair. The order is now
+
+             board, tally, report, Muster and Resync, the hex answer, the log
+
+           and every control on this screen is above everything that varies. */''}
+      <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.85em;margin-top:12px">Muster again</button>
+      ${wbMp && wbMp.mode === 'guest' ? WB_RESYNC_BTN : ''}
       ${wbInspectAt('hex', 'margin:10px 0 0')}
       <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.map(wbLogLine).join('')}
       </div>
-      <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.85em;margin-top:12px">Muster again</button>
-      ${wbMp && wbMp.mode === 'guest' ? WB_RESYNC_BTN : ''}
     </div>`);
 }
 
