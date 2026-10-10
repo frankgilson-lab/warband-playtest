@@ -1,4 +1,4 @@
-<meta name="wb-build" content="077dca4 2026-10-09">
+<meta name="wb-build" content="44cd007 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -7842,6 +7842,9 @@ function wbMapSvg(opts = {}) {
          availability has to be truthful, and a control that cannot change
          anything is not available. */
       @container wb-board (min-width:${wpx}px){.wb-board-zoom-row{display:none}}</style>`;
+  // THE CURSOR IS ACCUMULATED, NOT EMITTED. One hex at most carries it, and it
+  // is drawn after the whole loop; see the block that fills it for why.
+  let cursor = '';
   for (const h of hexes) {
     const c = wbPx(h), k = WB.key(h.q, h.r);
     // FROM THE SEAM, not rediscovered. This loop used to ask WB.ZONES and
@@ -7896,19 +7899,31 @@ function wbMapSvg(opts = {}) {
     // the ground. Drawn whatever the mode and whatever the rules permit, because
     // the cursor is where the player is LOOKING -- it says nothing about what
     // they may do, and an affordance that encodes legality is a different mark.
+    //
+    // HELD BACK AND DRAWN AFTER THE WHOLE LOOP. This is the SECOND repair to this
+    // ring's paint order and it supersedes the first. The first inset the ring,
+    // because the hexes drawn after it painted over the outer half of its east and
+    // south edges. That was true and it was half the problem: SVG paints in
+    // document order, and everything this loop emits after the ring ON ITS OWN HEX
+    // covered it as well -- the threat wash, the objective halo and ring, the
+    // terrain label, and any unit standing there. A playtest found exactly that
+    // stack: "the cursor ring shows up on all the bare terrain, harder to see on
+    // the victory point hexes (as the VP ring is on top). An enemy unit in a
+    // victory point hex makes it even harder to see the cursor ring."
+    //
+    // So the markup goes into `cursor` and is emitted below, over every hex and
+    // every token. Nothing on this board outranks the cursor except the anchored
+    // refusal, which is speech.
     if (wbUi.boardFocus === k) {
-      // INSET, and that is a repair rather than a style choice. The ring used the
-      // exact hex outline and is drawn inside the per-hex loop, so the hexes
-      // drawn after it painted over the outer half of its east and south edges --
-      // the cursor was literally half a ring. The comment claiming it sat "inside
-      // the hex outline" was describing an intention. Found in review, by looking
-      // at it.
+      // STILL INSET, and now that is a style choice again rather than a repair:
+      // drawing last is what keeps the ring whole. The inset stays because a ring
+      // inside the hex outline reads as "here" instead of as another highlight on
+      // the edge, which is the distinction the cursor exists to make.
       //
-      // BOTH HALVES OF THE CONFLICT ARE WANTED HERE: the inset geometry from the
-      // pointer-click repair, and aria-hidden so the cursor is not a second
-      // accessible object for a hex that already has one.
+      // aria-hidden so the cursor is not a second accessible object for a hex that
+      // already has one.
       const fp = polyR(c, WB_SIZE * 0.85);
-      out += `<polygon class="wb-focus" data-hex="${wbAttrStr(k)}" points="${fp}"
+      cursor += `<polygon class="wb-focus" data-hex="${wbAttrStr(k)}" points="${fp}"
         aria-hidden="true" pointer-events="none" fill="none" stroke="${WB_COL.ink}" stroke-width="5"/>`
         + `<polygon class="wb-focus" data-hex="${wbAttrStr(k)}" points="${fp}"
         aria-hidden="true" pointer-events="none" fill="none" stroke="${WB_COL.focus}" stroke-width="2.5"
@@ -8208,6 +8223,14 @@ function wbMapSvg(opts = {}) {
     const theirs = viewer == null ? [] : S.trace.filter((x) => x.by !== viewer);
     if (theirs.length) out += wbTraceSvg(S, theirs, rUnit, rRing);
   }
+  // ── the keyboard cursor ────────────────────────────────────────────────
+  // LAST OF THE BOARD'S OWN MARKS, for the reason given where it is built: on a
+  // scoring hex with an enemy standing on it, four later layers used to paint over
+  // it. Over the trace arrows too -- an arrow says what the other side did, the
+  // cursor says where you are, and a cursor behind the history is one you cannot
+  // drive by. But UNDER the anchored notice that follows, because a refusal is a
+  // sentence addressed to the player and may not be crossed by a dotted ring.
+  out += cursor;
   // ── anchored feedback ──────────────────────────────────────────────────
   // Inside the SVG rather than over it. The board has two zoom modes -- one
   // scaled to the container, one full size inside a scrolling wrapper -- and an
