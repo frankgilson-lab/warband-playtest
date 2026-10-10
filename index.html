@@ -1,4 +1,4 @@
-<meta name="wb-build" content="44cd007 2026-10-09">
+<meta name="wb-build" content="3ab8409 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -7789,14 +7789,38 @@ function wbMapSvg(opts = {}) {
     && viewerSeat != null && peeked.owner !== viewerSeat) ? peeked : null;
   const threat = threatFrom ? wbThreatHexes(S, threatFrom) : new Set();
   const rUnit = WB_SIZE * 0.42, rRing = WB_SIZE * 0.60;
-  // THE CURSOR IS DRAWN ALWAYS AND SHOWN ONLY FOR KEYBOARD FOCUS, which is the
-  // `#wb-field:not(:focus-visible) .wb-focus{display:none}` rule in the <style>
-  // below. `:focus-visible` and not `:focus`: a click focuses the composite too,
-  // and a cyan ring appearing on a hex the mouse user never chose is noise about
-  // a mode they are not in. Raised in review. Tabbing away must not leave a hex looking focused, and the
-  // alternative -- tracking focus in wbUi and redrawing on blur -- would mean a
-  // full board render on every Tab, with a stale marker for however long that
-  // took. CSS already knows which element has focus, so it is asked.
+  // THE CURSOR IS DRAWN ALWAYS AND SHOWN FOR ANY FOCUS, which is the
+  // `#wb-field:not(:focus) .wb-focus{display:none}` rule in the <style> below.
+  //
+  // `:focus` AND NOT `:focus-visible`, WHICH REVERSES WHAT THIS COMMENT USED TO
+  // SAY. It read: "a click focuses the composite too, and a cyan ring appearing on
+  // a hex the mouse user never chose is noise about a mode they are not in." The
+  // premise is false, and wbBoardActivate says so six hundred lines down: a click
+  // SETS wbUi.boardFocus, deliberately, so that "both hands agree where the player
+  // is" -- one position, whichever hand moved it. The hex a mouse user clicked is
+  // precisely a hex they chose. So the rule was hiding the result of a decision
+  // made elsewhere in this same file, and the two could not both be right.
+  //
+  // A playtest is what settled it: "clicking at one point did move the cursor
+  // selection to that hex BUT the cursor ring was not visible until I moved it
+  // with the keyboard, hard to reproduce." Not intermittent -- conditional, and on
+  // a thing no page controls. `:focus-visible` does not match a plain mouse click,
+  // but browsers make it sticky once the keyboard has been used in the page, so the
+  // ring appeared or did not depending on what the player had pressed minutes
+  // earlier. A rule whose behaviour depends on input history is not one a player
+  // can learn.
+  //
+  // THE COST IS REAL AND ACCEPTED, on the designer's call. A mouse-only player now
+  // gets a cyan ring on every hex they click, on top of the selection outline when
+  // they clicked their own unit. Two marks where they asked for one. The judgement
+  // is that a ring on the hex you just clicked is a true statement about where you
+  // are, and an affordance that appears only sometimes is worse than one that
+  // always appears.
+  //
+  // Still CSS rather than state. Tabbing away must not leave a hex looking focused,
+  // and the alternative -- tracking focus in wbUi and redrawing on blur -- would
+  // mean a full board render on every Tab, with a stale marker for however long
+  // that took. CSS already knows which element has focus, so it is asked.
   //
   // The rule is one line in the rendered markup on purpose: this explanation
   // used to sit inside the <style> block and shipped in every single render.
@@ -7811,7 +7835,7 @@ function wbMapSvg(opts = {}) {
       viewBox="0 0 ${wpx} ${hpx}" width="${wpx}" height="${hpx}"
       style="${full ? '' : 'max-width:100%;height:auto;'}background:${WB_COL.ink};border:1px solid ${WB_COL.line};border-radius:6px">
     <desc id="${WB_NO_DESC_ID}"></desc>
-    <style>#${WB_FIELD_ID}:not(:focus-visible) .wb-focus{display:none}
+    <style>#${WB_FIELD_ID}:not(:focus) .wb-focus{display:none}
       @media (max-width:560px){.wb-lbl-fit{display:none}}
       /* THE TOGGLE IS OFFERED ONLY WHERE IT CAN ACT. Fit and Full differ by one
          thing: whether the svg carries max-width:100%. Above the board's own
