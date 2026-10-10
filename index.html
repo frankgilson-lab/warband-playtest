@@ -1,4 +1,4 @@
-<meta name="wb-build" content="3ab8409 2026-10-09">
+<meta name="wb-build" content="75f8c8e 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -3457,7 +3457,11 @@ function wbInspectBody() {
 // "nothing happened" the change existed to remove, moved to a different question.
 // A reviewer caught it. Two questions asked in two places need two places to be
 // answered, and a slot that answers everything is a slot that is wrong somewhere.
-function wbInspectAt(kind) {
+// `style` because this now answers in two directions. Above the cards a panel
+// wants its margin below; under the board it wants it above, and a hardcoded
+// `0 0 12px` put a 12px gap between the panel and the bench while leaving the
+// board sitting flush on top of it.
+function wbInspectAt(kind, style = 'margin:0 0 12px') {
   const i = wbUi.inspect;
   if (!i || !warband_state) return '';
   const isHex = i.hex != null;
@@ -3465,7 +3469,7 @@ function wbInspectAt(kind) {
   const body = wbInspectBody();
   if (!body) return '';
   wbUi._inspectDrawn = true;
-  return `<div class="wb-inspect" style="margin:0 0 12px">${body}</div>`;
+  return `<div class="wb-inspect" style="${style}">${body}</div>`;
 }
 
 // The notice, placed by a screen at the point the click happened, on exactly the
@@ -4145,9 +4149,42 @@ function wbAttack(S, u, target, cost) {
     // action streak a unit that killed something and then stepped onto its hex
     // wore the ✕ for the blow it had just delivered.
     hits.push({ k: wbHexKey(WB.hexOf(S.G, victim)), uid: victim.uid });
+    // WHO WAS BEING SHIELDED, because "(Guard)" alone reads as the opposite of
+    // what it means. It marks a blow REDIRECTED ONTO the named unit, and a
+    // playtester read three of them as their Warlord being protected:
+    //
+    //   Levy hits Warlord for 3 (Guard)   x3, then
+    //   Levy hits Warlord for 3
+    //   Warlord falls
+    //
+    // and reported "my completely healthy warlord died to an attack for 3 from an
+    // enemy Levy". He was not healthy. He has G, he was adjacent to the men being
+    // struck, and WB.redirect hands a LETHAL blow to a neighbour with Guard who can
+    // survive it -- so those three lines are nine damage he took for other men,
+    // 11 hp down to 2. At 2 he could no longer guard (`g.hp > dmg` fails), which is
+    // why the fourth line carries no tag and why it killed him. The log described
+    // every one of those as something happening TO him with a reassuring
+    // parenthesis after it.
+    //
+    // `target` is the unit the attacker aimed at and `victim` is the one who took
+    // it; they differ exactly when b.guard is set, which is how b.guard is defined
+    // in wbBlowPlan. So the name is read from the plan rather than re-derived.
+    //
+    // BEFORE THE GLOSS, NOT AFTER IT. The gloss is a comma-separated grammar that
+    // warband-blow-story parses term by term and reconciles against the printed
+    // blow. Appended after it, this clause would land inside the last term -- and
+    // whether that was caught depended on which term happened to be last, which is
+    // the worst of the three possible answers. The cover, cap and minimum patterns
+    // are anchored with $ and would have thrown. The bonus pattern is /^\+(\d+) /,
+    // anchored only at the start, so "+4 Overwhelm - shielding Dragoon (Guard)"
+    // matches it, the 4 is counted, the arithmetic still adds up and nothing says a
+    // word. In front of the gloss the clause is outside that grammar entirely; the
+    // parser was taught to step over it, and a mutation that moves it back is now
+    // caught rather than depending on the blow.
     wbLog(S, u.owner, b.kind === 'main'
       ? `${u.name} hits ${victim.name} for ${b.dmg}`
-        + (b.guard ? ' (Guard)' : '') + wbBlowStory(b.story, 0, b.dmg)
+        + (b.guard ? ` — shielding ${target.name} (Guard)` : '')
+        + wbBlowStory(b.story, 0, b.dmg)
       : `  sweep carries into ${victim.name} for ${b.dmg}`
         + wbBlowStory(b.story, b.penalty, b.dmg));
     if (victim.hp <= 0) wbKill(S, victim);
@@ -4493,6 +4530,48 @@ function wbMoveDeploy(S, m) {
   return wbOk;
 }
 
+// WHY A HEX REFUSES A UNIT, or null when it does not.
+//
+// A playtest found this: "trying to move there is confusing because you get the
+// generic 'out of reach - Levy moves 3 and light feet pay 1 for any ground'
+// instead of 'out of reach - Barricade prevents entry'." Both refusals were
+// produced by the same line, because the only question asked was whether the
+// destination appeared in WB.reachable -- and a hex nothing may enter is absent
+// from that list for a reason that has nothing to do with how far it is. So the
+// interface recited movement arithmetic at a player whose movement was fine.
+//
+// This is the affordance rule pointed at a refusal: a refusal has to be truthful
+// about WHICH rule stopped the action, or the player debugs the wrong thing. The
+// designer debugged the wrong thing.
+//
+// DERIVED FROM WB.canEnter AND ORDERED TO MATCH IT, clause for clause, because
+// two independent readings of one rule is how this repository has produced
+// defects before. canEnter is `!impassable && !blocks_movement && !(heavy &&
+// marsh)`; the three branches below are those three clauses in that order, and
+// the caller asks canEnter itself rather than trusting this function to agree.
+// So a reason is only ever offered for a hex canEnter has already refused.
+function wbWhyNoEntry(u, z) {
+  if (z.impassable) return `${z.name} is impassable — nothing may enter`;
+  if (z.blocks_movement) return `${z.name} prevents entry — it can be fought across, not stood on`;
+  if (u.cls === 'heavy' && z.id === 'marsh') return `${z.name} will not take a Heavy unit`;
+  return null;
+}
+
+// The sentence a blocked destination earns, or the distance one it does not.
+// Shared by the ordinary move and the captain's word, which refused the same hex
+// with two different wordings and the same wrong reason.
+function wbNoEntryOrReach(S, u, h, far) {
+  const z = WB.ZONES[h.terrain];
+  if (!WB.canEnter(u, z)) {
+    const why = wbWhyNoEntry(u, z);
+    // canEnter said no and this cannot say why: that is a new clause in canEnter
+    // with no sentence here, and the honest answer is to name the ground and stop
+    // rather than fall through to arithmetic that is still not the reason.
+    return wbNo(why || `${z.name} will not take ${u.name}`);
+  }
+  return wbNo(far);
+}
+
 function wbMoveUnit(S, m) {
   const pl = wbActive(S);
   const u = wbActingUnit(S, m.uid);
@@ -4503,7 +4582,8 @@ function wbMoveUnit(S, m) {
   if (!h) return wbNo('no such hex');
   if (h.occupant != null) return wbNo('that hex is occupied');
   if (!WB.reachable(S.G, u).some((x) => x === h)) {
-    return wbNo(`out of reach — ${u.name} moves ${u.move} and ${u.cls} feet pay ${u.cls === 'light' ? '1 for any ground' : u.cls === 'heavy' ? 'a hex\u2019s cost plus 1' : "each hex\u2019s own cost"}`);
+    return wbNoEntryOrReach(S, u, h,
+      `out of reach — ${u.name} moves ${u.move} and ${u.cls} feet pay ${u.cls === 'light' ? '1 for any ground' : u.cls === 'heavy' ? 'a hex\u2019s cost plus 1' : "each hex\u2019s own cost"}`);
   }
   const moveFrom = wbHexKey(WB.hexOf(S.G, u));
   WB.place(S.G, u, h);
@@ -4582,7 +4662,8 @@ function wbMoveRallyMove(S, m) {
   if (!h) return wbNo('no such hex');
   if (h.occupant != null) return wbNo('that hex is occupied');
   if (!WB.reachable(S.G, f).some((x) => x === h)) {
-    return wbNo(`out of reach — ${f.name} moves ${f.move} and cannot make that hex on the captain\u2019s word`);
+    return wbNoEntryOrReach(S, f, h,
+      `out of reach — ${f.name} moves ${f.move} and cannot make that hex on the captain\u2019s word`);
   }
   const rallyFrom = wbHexKey(WB.hexOf(S.G, f));
   WB.place(S.G, f, h);
@@ -8512,6 +8593,32 @@ function wbRender() {
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
       ${wbBoardSlot()}
+      ${/* THE ANSWER GOES UNDER THE BOARD, and this is a bug fix rather than a
+           preference. It was in the head above the board, and the head is rebuilt
+           on every render -- so moving the cursor one hex changed the panel's
+           HEIGHT and the whole board jumped. The designer found it and named the
+           cause exactly: "when moving around your selection cursor (by any means,
+           keyboard or mouse click), the map moves up and down when you transition
+           from terrain type to terrain type or if a unit is in the new hex...why?
+           well, because the text box at the top of the board window gets longer or
+           shorter! That should not happen."
+
+           Three things vary: the terrain description wraps to between one and four
+           lines, the rule list runs from two facts to six, and an occupied hex adds
+           a name, a vp line and a keyword block. Every cursor move across a terrain
+           boundary or onto a unit therefore moved the map under the hand driving it.
+
+           Below the board the panel grows downward and the board's top edge is
+           fixed. Nothing above the board varies now: the notice is drawn at its own
+           hex inside the svg, the offer line is about the room rather than the
+           cursor, and the phase line reads the selection and the rally, neither of
+           which a cursor touches. So wbDraw's head is EMPTY during ordinary play
+           and it emits no wrapper at all.
+
+           This is the slot mechanism the draft screen already uses, for the same
+           reason in a different direction -- the answer belongs where the question
+           was asked. The question here is a hex, and the hexes are above. */''}
+      ${wbInspectAt('hex', 'margin:10px 0 0')}
       ${/* The bench is the other place a click lands that is not a hex, so it
            needs the same slot the board has. A refusal about deploying used to
            print at the top of the game area, above the whole map, while the card
@@ -8523,6 +8630,13 @@ function wbRender() {
           border-radius:5px;padding:4px 8px;font-size:.72em;background:#221f1c;opacity:${u.cost <= S.dp[pl] ? 1 : .4}">
           ${wbEsc(u.name)} <span style="color:${WB_COL.dim}">${wbNum(u.cost)} dp</span></div>`).join('') || '<span style="font-size:.72em;color:${WB_COL.dimmer}">all committed</span>'}
       </div>
+      ${/* AND THE OTHER QUESTION, which the board cannot answer. A bench card
+           inspects an ARCHETYPE, not a hex, and wbInspectAt draws nothing for the
+           kind it was not asked about -- so without this slot an arch answer still
+           went to the head above the board and still moved the map, from a
+           different click. Fixing only the hex case would have left the same defect
+           reachable by the cards. */''}
+      ${wbInspectAt('arch')}
       ${panelUnit ? wbActionPanel(S, pl, panelUnit) : ''}
       <div class="wb-match-controls" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span style="font-size:.68em;color:${WB_COL.dimmer}">The match:</span>
@@ -8824,6 +8938,14 @@ function wbEnd() {
            rather than plays -- there is nothing left to play -- and so neither the
            readiness rings nor the anchored notice are drawn on a finished match. */
         wbBoardSlot({ preview: true })}
+      ${/* THE SAME SLOT, because the same defect is reachable here. This screen
+           invites it in so many words -- "click any hex to read it" -- and the board
+           it keeps on screen takes a keyboard cursor too. Without this line the
+           answer goes to the head above the board and the finished map jumps exactly
+           as the live one did. Found by the characterization suite: eight of its nine
+           fixtures moved when the play screen was repaired and finished-preview did
+           not, which is the end screen saying it had been left behind. */''}
+      ${wbInspectAt('hex', 'margin:10px 0 0')}
       <div class="wb-end-tally" style="font-size:.78em;color:#9a9282">
         ${S.turn} turns.
         ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
