@@ -1,4 +1,4 @@
-<meta name="wb-build" content="da98c1d 2026-10-09">
+<meta name="wb-build" content="fc44cc6 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -8627,8 +8627,24 @@ function wbRender() {
 
            This is the slot mechanism the draft screen already uses, for the same
            reason in a different direction -- the answer belongs where the question
-           was asked. The question here is a hex, and the hexes are above. */''}
-      ${wbInspectAt('hex', 'margin:10px 0 0')}
+           was asked. The question here is a hex, and the hexes are above.
+
+           AND BELOW THE CONTROLS, which is the second half of the same repair and
+           came out of the next playtest of it: "only problem is that pass/abandon
+           is...below the hex description and selected unit description, and should be
+           above both. if unit deploy choice is below that (I suspect so?) that needs
+           to be above those too."
+
+           So this screen now keeps ONE rule: anything you act with holds still,
+           anything that explains goes last. The hex answer is the only thing here
+           that changes as the CURSOR moves, so it is last of all and there is
+           nothing below it to push. The archetype answer changes on a bench click
+           and sits just above it. Every button on the screen is above both.
+
+           That costs the archetype answer some of its closeness to the cards that
+           ask for it, which is the property the draft screen was repaired for. Two
+           rows of controls is the whole distance, and a button that moves under a
+           thumb is worse than an answer two rows further down. */''}
       ${/* The bench is the other place a click lands that is not a hex, so it
            needs the same slot the board has. A refusal about deploying used to
            print at the top of the game area, above the whole map, while the card
@@ -8642,12 +8658,10 @@ function wbRender() {
       </div>
       ${/* AND THE OTHER QUESTION, which the board cannot answer. A bench card
            inspects an ARCHETYPE, not a hex, and wbInspectAt draws nothing for the
-           kind it was not asked about -- so without this slot an arch answer still
-           went to the head above the board and still moved the map, from a
-           different click. Fixing only the hex case would have left the same defect
-           reachable by the cards. */''}
-      ${wbInspectAt('arch')}
-      ${panelUnit ? wbActionPanel(S, pl, panelUnit) : ''}
+           kind it was not asked about -- so without a slot an arch answer goes to
+           the head above the board and moves the map, from a different click.
+           Fixing only the hex case would leave the same defect reachable by the
+           cards. Its slot is below the controls now; see the note above the board. */''}
       <div class="wb-match-controls" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <span style="font-size:.68em;color:${WB_COL.dimmer}">The match:</span>
         ${S.rally ? `<button class="ng-btn" onclick="wbRallyDone()" style="font-size:.8em">Done rallying</button>` : ''}
@@ -8655,6 +8669,23 @@ function wbRender() {
         <button class="ng-btn" onclick="warbandShowSetup()" style="font-size:.8em;opacity:.6">Abandon</button>
       </div>
       ${forfeit ? wbPassPanel(forfeit) : ''}
+      ${/* THE SELECTED UNIT, below Pass and Abandon on the designer's instruction.
+           It carries buttons of its own, so it is a control rather than an
+           explanation -- but it changes with the SELECTION and a selection changes
+           only when the player clicks a unit, so nothing moves under a hand here
+           either. */''}
+      ${panelUnit ? wbActionPanel(S, pl, panelUnit) : ''}
+      ${/* THE TWO ANSWERS, LAST. Only ONE of them can ever render: wbUi.inspect holds
+           either a hex or an archetype and wbInspectAt draws nothing for the kind it
+           was not asked about, so their order relative to each other is not observable
+           in any single screen and no test can pin it. Two slots rather than one
+           because the kinds are placed separately on the draft screen; here they are
+           adjacent and the property that matters is that both are below every button.
+
+           (This comment first claimed "the more changeable of them last of all", which
+           is a claim about an ordering nothing can see.) */''}
+      ${wbInspectAt('arch', 'margin:10px 0 0')}
+      ${wbInspectAt('hex', 'margin:10px 0 0')}
       <div style="margin-top:10px;max-height:110px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.slice(-9).reverse().map(wbLogLine).join('')}
       </div>
@@ -8948,14 +8979,6 @@ function wbEnd() {
            rather than plays -- there is nothing left to play -- and so neither the
            readiness rings nor the anchored notice are drawn on a finished match. */
         wbBoardSlot({ preview: true })}
-      ${/* THE SAME SLOT, because the same defect is reachable here. This screen
-           invites it in so many words -- "click any hex to read it" -- and the board
-           it keeps on screen takes a keyboard cursor too. Without this line the
-           answer goes to the head above the board and the finished map jumps exactly
-           as the live one did. Found by the characterization suite: eight of its nine
-           fixtures moved when the play screen was repaired and finished-preview did
-           not, which is the end screen saying it had been left behind. */''}
-      ${wbInspectAt('hex', 'margin:10px 0 0')}
       <div class="wb-end-tally" style="font-size:.78em;color:#9a9282">
         ${S.turn} turns.
         ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
@@ -8988,6 +9011,19 @@ function wbEnd() {
           margin-top:6px;background:${WB_COL.ink};color:${WB_COL.dim};border:1px solid ${WB_COL.line};
           border-radius:3px;padding:6px;font-family:inherit;font-size:.95em"></textarea>
       </div>
+      ${/* THE SAME SLOT AS THE PLAY SCREEN AND THE SAME RULE, applied to a screen the
+           designer did not name. It invites the click in so many words -- "click any
+           hex to read it" -- and its board takes a keyboard cursor, so an answer drawn
+           directly under the board moved the tally, the report form and the Muster
+           button every time a hex was read. Typing a report and having the textarea
+           jump is the complaint that produced this rule, one screen over.
+
+           BELOW THE REPORT RATHER THAN AT THE VERY TOP OR BOTTOM. The report block
+           sits above the log and below the tally because that is where a player's eye
+           already is when the verdict lands -- a playtest decision this must not undo.
+           So the answer goes after it and before the log, which leaves every control
+           on this screen fixed and moves only the scrollback. */''}
+      ${wbInspectAt('hex', 'margin:10px 0 0')}
       <div style="margin-top:10px;max-height:220px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.map(wbLogLine).join('')}
       </div>
