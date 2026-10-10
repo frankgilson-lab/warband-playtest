@@ -1,4 +1,4 @@
-<meta name="wb-build" content="1477f9f 2026-10-09">
+<meta name="wb-build" content="c5f8c1c 2026-10-10">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -5151,7 +5151,14 @@ function wbFreshSession() {
     // half-written opinion of somebody's game is the last thing that should travel
     // over a wire to the other seat. Cleared with the rest of this object by
     // wbSessionEnd, so Abandon and a fresh muster do not inherit an old draft.
-    report: { a: '', b: '', out: '' },
+    report: { matchId: null, a: '', b: '', out: '' },
+    // WHICH MATCH THE FIELDS CURRENTLY IN THE DOCUMENT BELONG TO. Needed because
+    // warbandSwitchMatch loads the new match BEFORE it redraws, so at the moment
+    // wbSaveReport reads the textareas, warband_state is already the new match and
+    // the text on screen is the old one. Tagging the draft from the state would
+    // therefore label the abandoned match's words with the new match's id, which is
+    // the bug this field exists to prevent.
+    shownMatch: null,
     // FIT or FULL board. A fact about this screen, not about the match, and it
     // belongs to the session for the same reason the selection does not travel.
     boardFull: null,   // null = follow the phase; see wbMapSvg
@@ -6310,6 +6317,8 @@ function wbDraw(html) {
   // only thing on any screen that a player cannot reproduce by looking again.
   wbSaveReport();
   wbSection().innerHTML = screen;
+  // The fields now in the document belong to whatever match this screen drew.
+  wbUi.shownMatch = wbMatchKey(warband_state);
   wbRestoreReport();
   if (!had || typeof document === 'undefined' || !document.querySelector) return;
   const el = document.querySelector('#' + WB_FIELD_ID);
@@ -8930,19 +8939,40 @@ function wbReportText(S, routed, loser) {
 // No inline handler either, for the same reason: saving on redraw rather than on
 // every keystroke needs nothing added to the markup, and wbDraw is the only place
 // the section is replaced, so it is the only place that can lose anything.
+// The match a snapshot or a loaded state calls itself, as text, or null.
+const wbMatchKey = (S) => ((S && S.matchId != null) ? wbText(S.matchId) : null);
+
 function wbSaveReport() {
   if (typeof document === 'undefined' || !document.getElementById) return;
+  let found = false;
   for (const [id, key] of [['wb-rep-a', 'a'], ['wb-rep-b', 'b']]) {
     const el = document.getElementById(id);
     // Only when the field is really on screen. A redraw of any OTHER screen finds
     // no textarea, and overwriting the stored draft with nothing there would lose
     // exactly what this exists to keep.
-    if (el && typeof el.value === 'string') wbUi.report[key] = wbText(el.value);
+    if (el && typeof el.value === 'string') { wbUi.report[key] = wbText(el.value); found = true; }
   }
+  // TAGGED WITH THE MATCH THAT WAS ON SCREEN, not the one in warband_state. Those
+  // differ for exactly one caller and it is the one that matters: see shownMatch.
+  if (found) wbUi.report.matchId = wbUi.shownMatch;
 }
 
 function wbRestoreReport() {
   if (typeof document === 'undefined' || !document.getElementById) return;
+  // A DRAFT BELONGS TO THE MATCH IT WAS TYPED ON, and is asked whether it still
+  // applies rather than cleared at every boundary that might need it. That is the
+  // rule `sel` already follows in wbLoad -- kept across a load, then re-validated
+  // and dropped when what it described is gone -- and it is the right shape here for
+  // the same reason: a guest who writes half a report and then accepts an offered
+  // DIFFERENT match must not find those words in a report about the new game, and a
+  // snapshot of the SAME match must keep them, which is the whole point of the
+  // repair this guards.
+  //
+  // Checking at use rather than clearing at the transition also means a future path
+  // that loads another match inherits the protection instead of needing a line added
+  // to it. Raised in review: warbandSwitchMatch does wbLoad then wbShow and cleared
+  // nothing, so the old draft came straight back.
+  if (wbUi.report.matchId !== wbMatchKey(warband_state)) return;
   for (const [id, text] of [['wb-rep-a', wbUi.report.a], ['wb-rep-b', wbUi.report.b]]) {
     const el = document.getElementById(id);
     if (el && text) el.value = text;
@@ -8969,6 +8999,17 @@ function wbReportCopy() {
   // Recorded before the DOM is touched, so a redraw between now and the player
   // pasting cannot take the text back off the screen.
   wbUi.report.out = text;
+  // AND NOT TAGGED AGAIN HERE. This line read
+  //
+  //   wbUi.report.matchId = wbUi.shownMatch;
+  //
+  // on the argument that Copy can be pressed with both fields empty, leaving the
+  // generated text owned by no match. Mutation showed no test could see it removed,
+  // and the reason is that it cannot happen: wbSaveReport tags whenever it FINDS the
+  // fields, not whenever they hold anything, and this button exists only on a screen
+  // that always draws them. So the tag is already set by the render that put the
+  // button on screen. An unreachable guard no test can exercise is a claim rather
+  // than a guard, so it is gone and the reasoning is here instead.
   const out = document.getElementById('wb-rep-out');
   if (out) { out.value = text; out.style.display = 'block'; try { out.select(); } catch (_) {} }
   const say = document.getElementById('wb-rep-said');
