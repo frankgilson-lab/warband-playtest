@@ -1,4 +1,4 @@
-<meta name="wb-build" content="551998a 2026-10-09">
+<meta name="wb-build" content="077dca4 2026-10-09">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -7075,6 +7075,46 @@ const WB_KEY_DIRS = {
 };
 // Numpad, where the layout draws the compass itself. Matched on `code` and not
 // on `key`, so the top-row digits stay unbound.
+// THE SIX KEYS, DRAWN ON THE FACES THEY MOVE ACROSS.
+//
+// The written hint this replaces was correct and useless. A playtest found
+// it: "I knew the hint letters were somewhere and did find them, but they are
+// too hard for most folks to find, see or read." It was a sentence in a legend
+// of sentences, and the one fact in it that is SPATIAL was the one thing set
+// as prose. The designer asked for a hex off the map with the letters on the
+// outside of its faces, which is the whole mapping in one glance.
+//
+// GENERATED FROM WB_KEY_DIRS, not drawn beside it. A hand-placed letter is a
+// second copy of the key map that can drift from the first, and this file has
+// already shipped one comment that named the wrong hex orientation. Each
+// label is pushed out along the SAME screen vector the cursor would travel:
+// x = sqrt(3)*(dq + dr/2), y = 1.5*dr, the formula in wbPx. So the picture
+// cannot disagree with the behaviour -- it is computed from it.
+function wbKeyHexSvg() {
+  const R = 17, CX = 32, CY = 30;
+  const pts = [];
+  for (let i = 0; i < 6; i += 1) {
+    // A VERTEX STRAIGHT UP, because these hexes are pointy-top. A flat-top
+    // diagram would draw faces where this board has corners.
+    const t = (Math.PI / 180) * (90 + 60 * i);
+    pts.push(`${(CX + R * Math.cos(t)).toFixed(1)},${(CY - R * Math.sin(t)).toFixed(1)}`);
+  }
+  // The apothem is where a face is; the gap puts the letter outside it.
+  const out = (R * Math.sqrt(3)) / 2 + 8;
+  let labels = '';
+  for (const [key, d] of Object.entries(WB_KEY_DIRS)) {
+    const x = Math.sqrt(3) * (d[0] + d[1] / 2);
+    const y = 1.5 * d[1];
+    const n = Math.sqrt(x * x + y * y);
+    labels += `<text x="${(CX + (out * x) / n).toFixed(1)}" y="${(CY + (out * y) / n).toFixed(1)}"`
+      + ` text-anchor="middle" dominant-baseline="central" font-size="12"`
+      + ` fill="${WB_COL.text}">${key.toUpperCase()}</text>`;
+  }
+  return `<svg width="64" height="60" viewBox="0 0 64 60" style="flex:0 0 auto">`
+    + `<polygon points="${pts.join(' ')}" fill="none"`
+    + ` stroke="${WB_COL.line}" stroke-width="1.5"/>${labels}</svg>`;
+}
+
 const WB_CODE_DIRS = {
   Numpad7: [0, -1], Numpad9: [1, -1], Numpad4: [-1, 0],
   Numpad6: [1, 0], Numpad1: [-1, 1], Numpad3: [0, 1],
@@ -7765,21 +7805,13 @@ function wbMapSvg(opts = {}) {
     <div class="wb-board-zoom-row" style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">
       <button class="ng-btn wb-board-zoom" onclick="wbBoardZoom()" style="font-size:.68em;opacity:.85">${
         full ? 'Fit the whole field' : 'Full size — scroll to pan'}</button></div>
-    <div class="wb-board-scroll" style="overflow-x:auto;max-width:100%">
+    <div style="overflow-x:auto;max-width:100%">
     <svg id="${WB_FIELD_ID}" tabindex="0" onkeydown="wbBoardKey(event,${opts.preview ? 'true' : 'false'})" onfocus="wbBoardFocusEnter()"
       role="group" aria-label="Battlefield" aria-activedescendant="${wbHexId(wbBoardFocusKey(S, view))}"
       viewBox="0 0 ${wpx} ${hpx}" width="${wpx}" height="${hpx}"
       style="${full ? '' : 'max-width:100%;height:auto;'}background:${WB_COL.ink};border:1px solid ${WB_COL.line};border-radius:6px">
     <desc id="${WB_NO_DESC_ID}"></desc>
     <style>#${WB_FIELD_ID}:not(:focus-visible) .wb-focus{display:none}
-      /* The hint keeps its line at all times and only fades, so the board
-         never jumps when focus arrives. :focus-within on the scroller, not
-         :focus-visible: whether a mouse click should raise it is exactly the
-         question still open against 2.4.7, and a hint is the wrong place to
-         bet on the answer -- a player who clicked the board and then reached
-         for the keyboard is the one who most needs to read it. */
-      .wb-kbd-hint{opacity:0;transition:opacity .12s}
-      .wb-board-scroll:focus-within+.wb-kbd-hint{opacity:1}
       @media (max-width:560px){.wb-lbl-fit{display:none}}
       /* THE TOGGLE IS OFFERED ONLY WHERE IT CAN ACT. Fit and Full differ by one
          thing: whether the svg carries max-width:100%. Above the board's own
@@ -8255,11 +8287,12 @@ function wbMapSvg(opts = {}) {
     legend.push(`<span style="color:${WB_COL.trace}">white arrow = what the other side just did · dashed = gave ground · ✕ = was hit</span>`);
   }
   return out + '</svg></div>'
-    // SAID TWICE, IN TWO REGISTERS. The legend names the keys for anyone
-    // reading the board; this says it again beside the board at the moment
-    // focus arrives, which is when it is wanted and the only moment it is not
-    // clutter. It also answers the question the playtester actually asked --
-    // why the arrows do nothing -- rather than leaving them to be retried.
+    // SAID TWICE, IN TWO REGISTERS, and the second one is a PICTURE. The legend
+    // names the keys in words; this draws them on the faces they move across.
+    // It is always visible rather than revealed on focus, which is a reversal:
+    // the fade was chosen so a mouse player would never see clutter, and the
+    // playtest that followed found the hint too hard to find at all. A control
+    // nobody can discover is not saved by being tidy when unused.
     //
     // aria-hidden, because the legend line carries the same sentence and is
     // not hidden: a screen reader should hear this once. Wiring it instead as
@@ -8267,7 +8300,9 @@ function wbMapSvg(opts = {}) {
     // here, because that changes what an assistive technology says on focus and
     // nothing in this repository can measure that. It belongs with the
     // screen-reader work 4.1.3 is still open about.
-    + `<div class="wb-kbd-hint" aria-hidden="true" style="margin-top:4px;font-size:.66em;color:${WB_COL.dim}">Q E / A D / Z C move the cursor one hex · Enter or Space acts on it · the arrows do nothing here: a hex has no neighbour due north or due south</div>`
+    + `<div class="wb-kbd-hint" aria-hidden="true" style="display:flex;align-items:center;gap:9px;margin-top:5px;font-size:.66em;color:${WB_COL.dim}">`
+    + wbKeyHexSvg()
+    + `<span>each letter moves the cursor across the face it sits on · Enter or Space acts on the hex under it · the arrows do nothing here: a hex has no neighbour due north or due south</span></div>`
     + `<div class="wb-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:.66em">
         ${legend.join('')}</div></div>`;
 }
