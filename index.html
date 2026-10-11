@@ -1,4 +1,4 @@
-<meta name="wb-build" content="0bff2b7 2026-10-10">
+<meta name="wb-build" content="6fee981 2026-10-10">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -2660,7 +2660,15 @@ function warbandStart() {
   const kind = document.getElementById('wb-p1-kind');
   if (kind && kind.value === 'bot') {
     wbBot = { seats: [1], delay: 550, timer: null, refusals: 0 };
-    wbLog(warband_state, null, `${warband_state.names[1]} is a sparring bot, not a player.`);
+    // AND NOTHING IS LOGGED ABOUT IT. This emitted
+    //
+    //   `${warband_state.names[1]} is a sparring bot, not a player.`
+    //
+    // as the first line of every solo match, and the designer listed it as noise in a
+    // playtest report. It is already said in two better places: the muster screen is
+    // where the second seat is SET to a sparring bot, and wbReportText names the
+    // opponent in the header of every report the end screen generates. A log is an
+    // account of what happened in the match; this is a fact about the setup.
   }
   wbShow();
   // The bot may hold the first pick of the draft, and nothing has committed yet.
@@ -3382,22 +3390,135 @@ function wbGroundOwner(S, owner) {
 // What stays here is PRESENTATION, and deliberately: the prose for each rule
 // field, the company name lookup, escaping, the vp line and the keyword block.
 // Those are ways of SAYING a fact. wbBoardView does not own strings.
+// WHAT THE GROUND DOES, decided ONCE and said in two lengths.
+//
+// A playtest of the moved inspector: "now harder to see the ground effects (hex
+// terrain effects) as we've moved it down". The full panel has to stay below the
+// controls -- it changes height, and above them it moved them -- so the same facts
+// are also drawn short, in a fixed-height strip under the board, where they can be
+// read without scrolling past a selected unit.
+//
+// ONE LIST, TWO REGISTERS, which is why this function exists rather than a second
+// set of sentences next to the strip. Two renderers deciding separately what a
+// Barricade does is how this repository produces defects, and the long form has
+// already been wrong once -- it said a barricade "can be fought across", which is
+// false for the four archetypes with range 1. `short` and `long` are two ways of
+// SAYING a fact; neither decides what the fact is.
+//
+// NOTE FOR WHOEVER MERGES THIS: the `entry` long form below is the corrected
+// wording from #101, which this branch is not based on. Whichever of the two lands
+// second must KEEP that sentence rather than take the other side's -- the old one
+// is false, and a conflict resolved by picking the wrong half would put it back.
+function wbGroundFacts(z, objective) {
+  const facts = [];
+  if (z.impassable) {
+    facts.push({ id: 'entry', short: 'Nothing may enter', long: 'Impassable: nothing may enter' });
+  } else if (z.blocks_movement) {
+    facts.push({
+      id: 'entry',
+      short: 'No entry — ranged still reaches',
+      long: 'Blocks movement: nothing may enter — it does not prevent ranged attacks',
+    });
+  } else {
+    const c = wbNum(z.movement_cost == null ? 1 : z.movement_cost);
+    facts.push({
+      id: 'entry',
+      short: `Move cost ${c}`,
+      long: `Costs ${c} movement to enter (Light units always pay 1, Heavy units pay one more)`,
+    });
+  }
+  if (z.grants_cover) {
+    facts.push({
+      id: 'cover',
+      short: 'Gives cover',
+      long: "Gives cover: incoming damage is reduced by the defender's class value",
+    });
+  }
+  if (z.blocks_los) {
+    facts.push({
+      id: 'los',
+      short: 'Blocks line of sight',
+      long: 'Blocks line of sight for shooting across it',
+    });
+  }
+  if (z.ranged_bonus) {
+    facts.push({
+      id: 'ranged',
+      short: `Shooting +${wbNum(z.ranged_bonus)} damage, +${wbNum(z.ranged_bonus)} range`,
+      long: `Shooting from here gains +${wbNum(z.ranged_bonus)} damage and +${wbNum(z.ranged_bonus)} range`,
+    });
+  }
+  facts.push(z.allows_deployment
+    ? { id: 'deploy', short: 'Deployment allowed', long: 'Units may deploy here' }
+    : { id: 'deploy', short: 'No deployment', long: 'No deployment here' });
+  if (objective) {
+    facts.push({
+      id: 'objective',
+      short: 'SCORING HEX',
+      long: 'OBJECTIVE: holding more of these than your opponent scores at the end of each turn',
+    });
+  }
+  return facts;
+}
+
+// WHICH HEX THE PLAYER IS READING: the inspector when it is on a hex, otherwise the
+// keyboard cursor. Both are places the player has pointed at, and a click sets both,
+// so they disagree only when the cursor has been driven without reading anything --
+// in which case the cursor is the more recent answer.
+function wbReadingHex(view) {
+  const i = wbUi.inspect;
+  const k = (i && i.hex != null) ? wbText(i.hex) : wbUi.boardFocus;
+  if (k == null || !view || !view.hexes) return null;
+  const f = view.hexes.get(k);
+  return f ? { k, f } : null;
+}
+
+// ONE LINE, AND ALWAYS EXACTLY ONE LINE. The height is fixed and the text is clipped
+// rather than wrapped, because this sits ABOVE the bench and the match controls and
+// the whole reason the full panel went below them is that a block which changes
+// height moves whatever is under it.
+//
+// Clipping is acceptable here and nowhere else: every word of it is also in the panel
+// below, at greater length. No scrollbar either -- overflow:auto would draw one, and
+// a classic scrollbar inside a fixed box takes its height from the line rather than
+// from the layout, which is the same defect in miniature.
+const WB_GROUND_STYLE = 'height:19px;line-height:19px;margin-top:6px;font-size:.72em'
+  + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+
+// THE SEAM IS ASKED HERE, not handed in. The play renderer has no view of its own --
+// wbBoardSlot builds one inside wbMapSvg and keeps it -- and wbInspectBody already
+// resolves the same way, `S.board ? wbHexPanel(S, wbBoardView(S), ...)`. Asking
+// wbBoardView again is the sanctioned route; what this must not do is read S.board
+// and WB.occupantOf for itself, which is the third-opinion defect #88 removed.
+function wbGroundLine(S) {
+  const view = (S && S.board) ? wbBoardView(S) : null;
+  const at = wbReadingHex(view);
+  const box = (inner) => `<div class="wb-ground" style="${WB_GROUND_STYLE};`
+    + `border-left:2px solid ${WB_COL.line};padding-left:7px">${inner}</div>`;
+  if (!at) {
+    return box(`<span style="color:${WB_COL.dimmer}">`
+      + 'Click a hex, or key to one, to read the ground.</span>');
+  }
+  const f = at.f;
+  const facts = wbGroundFacts(f.zone, f.objective).map((x) => wbEsc(x.short)).join(' · ');
+  // The occupant as well. The board already says who stands where, but the designer
+  // named this case exactly: "if a unit is selected, it can be hard to fit the hex
+  // explanation into your awareness" -- so the ground and whoever is on it are one
+  // glance rather than two.
+  const occ = (f.occupant && f.occupant.alive)
+    ? ` <span style="color:${f.occupant.owner === 0 ? WB_COL.p0 : WB_COL.p1Text}">`
+      + `· ${wbEsc(f.occupant.name)}, ${wbNum(f.occupant.hp)} hp</span>`
+    : '';
+  return box(`<b style="color:${WB_COL.p0}">${wbEsc(f.zone.name)}</b>`
+    + `<span style="color:${WB_COL.dimmer}"> hex ${wbEsc(at.k)}</span>`
+    + ` <span style="color:${WB_COL.dim}">· ${facts}</span>${occ}`);
+}
+
 function wbHexPanel(S, view, k) {
   const f = view && view.hexes ? view.hexes.get(k) : null;
   if (!f) return '';
   const z = f.zone;
-  const facts = [];
-  if (z.impassable) facts.push('Impassable: nothing may enter');
-  // SAME CORRECTION AS THE REFUSAL, and this is where the wrong phrase started: the
-  // refusal copied it from here. Leaving it would be repairing the sentence a player
-  // sees when refused and keeping the false one on the panel that explains the ground.
-  else if (z.blocks_movement) facts.push('Blocks movement: nothing may enter — it does not prevent ranged attacks');
-  else facts.push(`Costs ${wbNum(z.movement_cost == null ? 1 : z.movement_cost)} movement to enter (Light units always pay 1, Heavy units pay one more)`);
-  if (z.grants_cover) facts.push("Gives cover: incoming damage is reduced by the defender's class value");
-  if (z.blocks_los) facts.push('Blocks line of sight for shooting across it');
-  if (z.ranged_bonus) facts.push(`Shooting from here gains +${wbNum(z.ranged_bonus)} damage and +${wbNum(z.ranged_bonus)} range`);
-  facts.push(z.allows_deployment ? 'Units may deploy here' : 'No deployment here');
-  if (f.objective) facts.push('OBJECTIVE: holding more of these than your opponent scores at the end of each turn');
+  const facts = wbGroundFacts(z, f.objective).map((x) => x.long);
   const occ = f.occupant;
   return `<div style="${WB_PANEL}">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
@@ -8594,7 +8715,16 @@ function wbRender() {
     return `<div style="flex:1">
       <div style="font-size:.75em;color:${p === 0 ? WB_COL.p0 : WB_COL.p1Text};font-weight:bold">
         ${wbMark(p)} ${wbEsc(S.names[p])}</div>
-      <div style="font-size:.68em;color:${WB_COL.dim}">${band[0]} · ${S.against[p]} / ${S.breakAt[p]} conceded</div>
+      ${/* THE FIGURE IS BRIGHT AND THE WORDS AROUND IT ARE NOT. Asked for directly,
+           after a match the designer won: "the ongoing and final score text should be
+           highlighted as it's important but easy to ignore (brighter text should do
+           it)". The whole line was WB_COL.dim at .68em, so the one quantity that says
+           who is losing read as a caption.
+
+           Only the figure is raised. Brightening the band name and the word
+           "conceded" with it would put the line back to a single weight, which is the
+           thing being repaired rather than a milder version of it. */''}
+      <div style="font-size:.68em;color:${WB_COL.dim}">${band[0]} · <b style="color:${WB_COL.text}">${S.against[p]} / ${S.breakAt[p]}</b> conceded</div>
       <div style="height:7px;background:#26241f;border-radius:3px;margin-top:3px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${band[1]}"></div></div>
       <div class="wb-pools" style="font-size:.68em;color:${WB_COL.dim};margin-top:3px">
@@ -8631,6 +8761,15 @@ function wbRender() {
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
       ${wbBoardSlot()}
+      ${/* THE GROUND IN ONE FIXED LINE, directly under the board. The playtest that
+           produced the arrangement below also produced this: "now harder to see the
+           ground effects (hex terrain effects) as we've moved it down", and "if a unit
+           is selected, it can be hard to fit the hex explanation into your awareness
+           (you basically have to scroll down)".
+
+           Fixed height is what lets it sit ABOVE the controls without undoing the
+           repair below it. The full answer stays under them. See wbGroundLine. */''}
+      ${wbGroundLine(S)}
       ${/* THE ANSWER GOES UNDER THE BOARD, and this is a bug fix rather than a
            preference. It was in the head above the board, and the head is rebuilt
            on every render -- so moving the cursor one hex changed the panel's
@@ -9110,8 +9249,13 @@ function wbEnd() {
         wbBoardSlot({ preview: true })}
       <div class="wb-end-tally" style="font-size:.78em;color:#9a9282">
         ${S.turn} turns.
-        ${wbEsc(S.names[0])}: ${S.against[0]}/${S.breakAt[0]} conceded, ${pct(0)}% of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
-        ${wbEsc(S.names[1])}: ${S.against[1]}/${S.breakAt[1]} conceded, ${pct(1)}% of its break point (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
+        ${/* Same rule as the in-match strip: the figures are raised, the sentence
+             around them is not. This is the tally the designer read as "important but
+             easy to ignore" -- and in that match the losing figure was 50/48, a side
+             already past its break point, printed in the same grey as the commentary
+             about where the points came from. */''}
+        ${wbEsc(S.names[0])}: <b style="color:${WB_COL.text}">${S.against[0]}/${S.breakAt[0]}</b> conceded, <b style="color:${WB_COL.text}">${pct(0)}%</b> of its break point (${S.killPoints[1]} taken in kills, ${S.objPoints[1]} from ground${walked(0)}).
+        ${wbEsc(S.names[1])}: <b style="color:${WB_COL.text}">${S.against[1]}/${S.breakAt[1]}</b> conceded, <b style="color:${WB_COL.text}">${pct(1)}%</b> of its break point (${S.killPoints[0]} kills, ${S.objPoints[0]} ground${walked(1)}).
       </div>
       ${/* The report sits ABOVE the log and below the tally, which is where a
            player's eye already is when the verdict lands. Below the log it would be
