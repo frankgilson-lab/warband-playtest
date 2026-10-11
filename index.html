@@ -1,4 +1,4 @@
-<meta name="wb-build" content="3ccb9ba 2026-10-10">
+<meta name="wb-build" content="6c5b9b9 2026-10-10">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -1025,6 +1025,23 @@ function makeUnit(name, owner, ov) {
 const moveCost = (u, z) => (u.cls === 'light' ? 1 : (z.movement_cost ?? 1) + (u.cls === 'heavy' ? 1 : 0));
 const canEnter = (u, z) => !z.impassable && !z.blocks_movement && !(u.cls === 'heavy' && z.id === 'marsh');
 const stopsIn = (u, z) => z.special === 'ends_movement_medium_and_heavy' && u.cls !== 'light';
+// WHAT IT ACTUALLY COSTS THIS UNIT TO ENTER THIS HEX: moveCost, plus the one
+// surcharge that depends on who left the ground rather than on the ground itself.
+//
+// Extracted because `reachable` added that term inline while the interactive
+// interface quoted moveCost alone as "what you pay" -- so a Levy stepping onto
+// enemy Fallen Ranks was told 1 and charged 2. Two readings of one rule, which is
+// the defect this file keeps producing. Both the pathfinder and the presentation ask
+// this now. Raised in review.
+//
+// The ownership test is `!== null && !== u.owner`, which is exactly what reachable
+// did, so extracting it changes no path: ground nobody left has terrainOwner null and
+// taxes no one. Callers holding a possibly-undefined value normalise it to null
+// rather than this widening, because widening here would silently retax every hex a
+// caller knows nothing about.
+const entryCost = (u, z, terrainOwner) => moveCost(u, z)
+  + ((z.special === 'extra_movement_cost_enemies_only'
+    && terrainOwner !== null && terrainOwner !== u.owner) ? 1 : 0);
 const coverOf = (u) => CLASSES[u.cls].cover_reduction;
 
 // MARCH — experimental, off by default. RULES.march: 'off' | 'heavy' | 'all'.
@@ -1117,16 +1134,15 @@ function reachable(G, u, RULES) {
       for (const nb of neighbors(board, cur.h)) {
         const z = ZONES[nb.terrain];
         if (!canEnter(u, z) || nb.occupant != null) continue;
-        let cost = moveCost(u, z);
         // Only the MOVEMENT special taxes movement. Watch-Fire used to be in this
         // condition too, which made it identical to Fallen Ranks -- a playtester
         // read both cards and asked whether they differed, and they did not.
         // Watch-Fire now taxes ACTIVATION, in actionCost, which is what its own
         // `special` had always claimed.
-        const sp = ZONES[nb.terrain].special;
-        if (sp === 'extra_movement_cost_enemies_only'
-            && nb.terrainOwner !== null && nb.terrainOwner !== u.owner) cost += 1;
-        const spent = cur.spent + cost;
+        //
+        // The surcharge used to be added here, inline. It is in entryCost now so the
+        // interface can quote the same figure this walk charges.
+        const spent = cur.spent + entryCost(u, z, nb.terrainOwner);
         if (spent > allowance) continue;
         const k = key(nb.q, nb.r);
         if (seen.has(k) && seen.get(k) <= spent) continue;
@@ -2383,7 +2399,7 @@ const WarbandCore = {
   rallyPicks,
   actionCost,
   hexOf, occupantOf, place,
-  neighbors, hexDist, key, col, legal, coverOf, moveCost, canEnter, stopsIn,
+  neighbors, hexDist, key, col, legal, coverOf, moveCost, entryCost, canEnter, stopsIn,
   ZONES, ARCH, CLASSES, CFG, W, H, BASE_POOL, STABLE, PACK, RAMP, PLATEAU, ACT_COST, MAX_TURNS,
   BREAK_NUM, BREAK_DEN,
 };
@@ -3426,6 +3442,11 @@ const wbClassList = (cs) => {
 //
 // NOT TAKEN FROM THE ZONE DESCRIPTIONS, and that is not fussiness. Checking them
 // against the implementations turned up a real disagreement, recorded below.
+// THE CONFIGURED BANNER BONUS, read the same way wbPoolCeiling and the turn banner
+// read it, so the sentence and the sum cannot disagree.
+const wbBannerAct = () => ((WB && WB.CFG && WB.CFG.activation
+  && WB.CFG.activation.banner_bonus) ?? 1);
+
 const WB_GROUND_SPECIAL = {
   // core.actionCost: +1, while STANDING on it, and only when terrainOwner is set and
   // is not this unit's owner.
@@ -3448,19 +3469,33 @@ const WB_GROUND_SPECIAL = {
   // SAID BY THE CLASS PROBES BELOW INSTEAD. stopsIn is the rule, and asking it which
   // classes stop is better than repeating the id's own name back as English.
   ends_movement_medium_and_heavy: null,
-  // NO SENTENCE, AND THE REASON IS A DEFECT RATHER THAN A STYLE CHOICE. This zone's
-  // description claims "+2 activation points every turn". Nothing applies it as a
-  // property of the hex: the pool is BASE_POOL + command + fallenBanners[pl] *
-  // BANNER_ACT, which counts banners that have FALLEN and never asks who holds the
-  // ground. BANNER_ACT is `CFG.activation.banner_bonus ?? 1` and the activation block
-  // has no banner_bonus, so the applied figure is 1 -- agreeing with the id's own
-  // `_1` and with the simulation's valuation comment, and disagreeing with the
-  // description's 2.
+  // THE AMOUNT COMES OUT OF CONFIG, because it is configured and because I got this
+  // wrong by not looking. An earlier version of this table said nothing here and
+  // claimed a three-way disagreement: that `CFG.activation.banner_bonus` was absent,
+  // so `?? 1` applied 1, against a description promising 2. The key is present and
+  // set to 2. I had printed the activation block truncated to 600 characters and read
+  // the cut-off as absence, and the fallback expression made the wrong answer look
+  // self-consistent. Raised in review.
   //
-  // So there are three answers to one question and the hex is not where any of them
-  // lives. Saying nothing here is the only honest option; which of 1 or 2 is the rule
-  // is a decision for config.json and not for a summary line.
-  warband_extra_activation_1: null,
+  // So config, both drivers and the description agree on 2: runGame's pool is
+  // BASE_POOL + command + fallenBanners[pl] * BANNER_ACT, and wbPoolCeiling is the same
+  // sum. What is actually stale is the id's own `_1` suffix and a comment in the
+  // simulation's terrain valuation reading "+1 act/turn" -- a name and a comment, not
+  // a rule, and neither changes what any driver does.
+  //
+  // INTERPOLATED RATHER THAN WRITTEN OUT, so the sentence cannot drift from the value
+  // the pool actually adds. And worded as a consequence of the banner FALLING: the
+  // pool counts banners that have fallen and never asks who holds the hex, so this
+  // ground is the marker of that event and not a reward for standing on it.
+  // A FUNCTION, because `WB` is null until core has loaded -- wbEnsureCore can bind
+  // it after this file is evaluated -- so reading CFG while building this table would
+  // throw on the one path that loads core late. Resolved at render time instead, the
+  // way the two pool computations already read it.
+  warband_extra_activation_1: () => ({
+    short: `Its company gained +${wbNum(wbBannerAct())} activation a turn when it fell`,
+    long: `The company whose banner fell here gains +${wbNum(wbBannerAct())} activation `
+      + 'every turn for the rest of the match, wherever its units stand',
+  }),
   // Nothing reads this id. The hex is already impassable, which is what the sentence
   // would say, and "enemy pathing must split around it" is a consequence of that
   // rather than a second rule.
@@ -3477,7 +3512,13 @@ const WB_GROUND_SPECIAL = {
 // are derived from the predicates the movement code uses rather than from a second
 // reading of them here. canEnter's marsh clause is hardcoded in core and is in no data
 // field at all, so a restatement would have been the only copy and free to drift.
-function wbGroundFacts(z, objective, unit) {
+// `terrainOwner` is who left this ground, and it is here because the cost a unit
+// pays is not a property of the zone alone: WB.entryCost adds a point for entering
+// enemy Fallen Ranks. Quoting WB.moveCost as "what you pay" told a Levy stepping
+// onto enemy ranks that it paid 1 while the pathfinder charged it 2. Raised in
+// review, and repaired in core rather than here -- one function, asked by the walk
+// and by this line.
+function wbGroundFacts(z, objective, unit, terrainOwner) {
   const facts = [];
   const asClass = (cls) => ({ cls });
   if (z.impassable) {
@@ -3501,8 +3542,11 @@ function wbGroundFacts(z, objective, unit) {
     if (unit && !WB.canEnter(unit, z)) {
       facts.push({ id: 'entry', short: `${wbText(unit.name)} cannot enter`, long: general });
     } else if (unit) {
+      // NORMALISED TO NULL, because core treats null as "nobody left this ground" and
+      // would tax an undefined owner. A caller that does not know must not retax.
+      const owner = terrainOwner == null ? null : terrainOwner;
       facts.push({ id: 'entry',
-        short: `${wbText(unit.name)} pays ${wbNum(WB.moveCost(unit, z))}`,
+        short: `${wbText(unit.name)} pays ${wbNum(WB.entryCost(unit, z, owner))}`,
         long: general });
     } else {
       facts.push({ id: 'entry', short: `Base move cost ${c}`, long: general });
@@ -3528,7 +3572,12 @@ function wbGroundFacts(z, objective, unit) {
       // otherwise vanish from the one line a player reads while deciding a move.
       throw new Error(`wbGroundFacts: no wording for zone special ${z.special}`);
     }
-    const sp = WB_GROUND_SPECIAL[z.special];
+    const raw = WB_GROUND_SPECIAL[z.special];
+    const sp = typeof raw === 'function' ? raw() : raw;
+    // SHORT ONLY, like the other specials, and for the same reason: the panel states
+    // each of these in the zone's own description paragraph. The banner entry carries
+    // a long form anyway so the pair can be compared in a test -- which is where the
+    // amount belongs being checked, rather than on a surface that already says it.
     if (sp) facts.push({ id: 'special', short: sp.short, long: null });
   }
   if (z.grants_cover) {
@@ -3608,7 +3657,7 @@ function wbGroundLine(S) {
   // costs in the abstract. `unit` and not `picked`: a staged deployment is not a unit
   // on the board yet, and the question this line answers is about moving.
   const sel = wbSelUnit(S, 'unit');
-  const facts = wbGroundFacts(f.zone, f.objective, sel)
+  const facts = wbGroundFacts(f.zone, f.objective, sel, f.terrainOwner)
     .map((x) => wbEsc(x.short)).join(' · ');
   // The occupant as well. The board already says who stands where, but the designer
   // named this case exactly: "if a unit is selected, it can be hard to fit the hex
@@ -3631,7 +3680,7 @@ function wbHexPanel(S, view, k) {
   // pays what -- which is the whole reason this is one function.
   // The same list, and the facts that have a long form. A null long form means the
   // panel already says that fact in the zone's description; see wbGroundFacts.
-  const facts = wbGroundFacts(z, f.objective, wbSelUnit(S, 'unit'))
+  const facts = wbGroundFacts(z, f.objective, wbSelUnit(S, 'unit'), f.terrainOwner)
     .map((x) => x.long).filter((x) => x != null);
   const occ = f.occupant;
   return `<div style="${WB_PANEL}">
