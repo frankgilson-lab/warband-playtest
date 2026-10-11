@@ -1,4 +1,4 @@
-<meta name="wb-build" content="6c5b9b9 2026-10-10">
+<meta name="wb-build" content="e5d81a4 2026-10-10">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -3676,10 +3676,14 @@ function wbHexPanel(S, view, k) {
   const f = view && view.hexes ? view.hexes.get(k) : null;
   if (!f) return '';
   const z = f.zone;
-  // The same list and the same unit, so the two registers cannot disagree about who
-  // pays what -- which is the whole reason this is one function.
-  // The same list, and the facts that have a long form. A null long form means the
-  // panel already says that fact in the zone's description; see wbGroundFacts.
+  // THE EXTRACTED LIST, which is this PR, over the inline one on main. The two sides
+  // of this conflict were the corrected Barricade sentence in the old place and the
+  // new place without it -- so the resolution is only right if wbGroundFacts carries
+  // #101's wording, and it does: the `entry` long form there reads "Blocks movement:
+  // nothing may enter -- it does not prevent ranged attacks". Checked, not assumed.
+  //
+  // The facts with a long form. A null long form means the panel already says that
+  // fact in the zone's own description paragraph; see wbGroundFacts.
   const facts = wbGroundFacts(z, f.objective, wbSelUnit(S, 'unit'), f.terrainOwner)
     .map((x) => x.long).filter((x) => x != null);
   const occ = f.occupant;
