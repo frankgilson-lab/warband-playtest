@@ -1,4 +1,4 @@
-<meta name="wb-build" content="e5d81a4 2026-10-10">
+<meta name="wb-build" content="a6ae14a 2026-10-11">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -3635,6 +3635,104 @@ function wbReadingHex(view) {
 // below, at greater length. No scrollbar either -- overflow:auto would draw one, and
 // a classic scrollbar inside a fixed box takes its height from the line rather than
 // from the layout, which is the same defect in miniature.
+// ONE PREDICATE FOR A SHARE OF A BREAK POINT, because there are now two places that
+// draw one. It was computed inline inside the score track, and the status line below
+// needs the same number -- a second copy is how this repository has produced "two
+// readings of one rule" more than once, and the figure that says who is losing is a
+// bad place to start a third.
+//
+// Clamped at 100 as the track always did: a company past its threshold has broken,
+// and a bar wider than its box is not a reading.
+//
+// A NON-POSITIVE THRESHOLD RETURNS 0, which is a change and worth naming. 0/0 made
+// this NaN, and `width:NaN%` is an ignored declaration -- so the bar silently kept
+// whatever width it had. An empty bar is at least a reading. breakAt is derived from
+// a roster so a real match cannot reach it, but a malformed snapshot can and the
+// screen should not go strange when it does.
+function wbSharePct(against, breakAt) {
+  if (!(breakAt > 0)) return 0;
+  return Math.min(100, 100 * against / breakAt);
+}
+
+// THE TURN AND BOTH SCORES, DIRECTLY ABOVE THE BOARD. Asked for after a ten-turn
+// match that was decided at the ten-turn cap: "the status line of what turn it is and how
+// the scoring is should be displayed all the time otherwise I have to scroll up to
+// read it". The sentence before it in the same report is why it is not a
+// convenience: "Was working on wearing down the enemy men at arms...turn 10 ended
+// just before I could." A player formed a plan across turns and had no turn counter
+// in view while spending them. He WON that match -- a turn cap is not a timer and he
+// was not losing -- so what the limit interrupted was the plan, not the player. An
+// earlier version of this comment said he lost to a clock, which was wrong twice.
+//
+// NOT position:sticky, and this is the whole design decision. The page shell puts the
+// game in a card with overflow-x:auto, and a box with one axis scrollable computes
+// the other axis to auto as well -- so the nearest scrollport is that card, not the
+// viewport. The card grows with its content and therefore never scrolls, so a sticky
+// strip inside it would stick to a box that does not move: inert. Nothing in this
+// suite can tell a sticky that sticks from one that does not, which makes it exactly
+// the wrong mechanism to choose on a guess.
+//
+// ADJACENCY INSTEAD, which is already proven here -- the ground line sits directly
+// below the board for the same reason, and that repair was confirmed in a browser.
+// What pushed the figures out of view was the paragraph explaining the three pools,
+// which sits between the tracks and the board and is six lines long; the board now
+// has a fixed-height line on either side of it instead.
+//
+// AND THE HONEST BOUND: adjacent is not the same as always visible. If the board is
+// taller than the window, a player working near its bottom edge can still have this
+// strip scrolled off the top -- the ground line below the board has the mirror of the
+// same limitation. What adjacency buys is that the figures are no longer six lines of
+// prose and two panels away, which is the distance the report was about. Whether it
+// is enough is a browser question at a real window size, not a test question, and it
+// is not claimed here.
+//
+// MARKS RATHER THAN NAMES, deliberately. "Turn 7 of 10 · ● 42/56 75% · ○ 50/51 98%"
+// is about 40 characters; the same line with "Company A" and "Sparring bot" spelled
+// out is about 67, which clips on a phone -- and the thing it would clip is the
+// opponent's score, the half of the position a player cannot infer. The marks are
+// the same ones on the units and in the log, and the names are in the tracks above.
+const WB_STATUS_STYLE = 'height:19px;line-height:19px;margin:0 0 6px;font-size:.72em'
+  + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+
+function wbStatusLine(S) {
+  if (!S || !S.against || !S.breakAt) return '';
+  // FROM THE RULES, not from a literal. A 10 written here would be a second place
+  // the match length is defined, and it is defined in config.json under
+  // win_condition.max_turns -- which core reads as MAX_TURNS and wbBeginTurn already
+  // asks when it decides the match is over.
+  const max = WB.MAX_TURNS;
+  const last = S.turn >= max;
+  const side = (p) => {
+    const col = p === 0 ? WB_COL.p0 : WB_COL.p1Text;
+    // The figure bright, the share quiet, same rule as the track and the tally: a
+    // line where everything is raised has nothing raised in it.
+    return `<span style="color:${col}">${wbMark(p)}</span>`
+      + ` <b style="color:${WB_COL.text}">${wbNum(S.against[p])}/${wbNum(S.breakAt[p])}</b>`
+      + ` <span style="color:${WB_COL.dim}">${wbNum(Math.round(wbSharePct(S.against[p], S.breakAt[p])))}%</span>`;
+  };
+  // The last turn says so on this same line rather than on one of its own, so the
+  // strip's height cannot change on the turn when the player most needs the board to
+  // hold still.
+  const turn = `<span style="color:${WB_COL.dim}">Turn</span>`
+    + ` <b style="color:${WB_COL.text}">${wbNum(S.turn)}</b>`
+    + ` <span style="color:${WB_COL.dim}">of ${wbNum(max)}</span>`;
+  // AND IT GOES LAST, which is a clipping decision rather than a reading order. This
+  // line ellipses on a narrow window, and an ellipsis eats the right-hand end -- so
+  // the order is decreasing priority left to right, and the clause that can be spared
+  // is the one that can be inferred. "Turn 10 of 10" against a known cap already says
+  // it is the last turn; an opponent's conceded share cannot be inferred from
+  // anything on screen.
+  //
+  // It was between the turn and the scores, which put the extra text in front of both
+  // figures on the one turn when both matter most -- raised in review of this PR, and
+  // the right call: it made the final turn the likeliest moment to lose the opponent's
+  // score off the end of the line.
+  const flag = last ? ` <span style="color:${WB_COL.dimmer}">·</span> <b style="color:${WB_COL.p1Text}">last turn</b>` : '';
+  return `<div class="wb-status" style="${WB_STATUS_STYLE}">`
+    + `${turn} <span style="color:${WB_COL.dimmer}">·</span> ${side(0)}`
+    + ` <span style="color:${WB_COL.dimmer}">·</span> ${side(1)}${flag}</div>`;
+}
+
 const WB_GROUND_STYLE = 'height:19px;line-height:19px;margin-top:6px;font-size:.72em'
   + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
@@ -8854,7 +8952,7 @@ function wbRender() {
   const forfeit = wbUi.confirmPass && wbCanAct(S) ? wbPassForfeits(S) : null;
   if (wbUi.confirmPass && !forfeit) wbUi.confirmPass = false;
   const track = (p) => {
-    const pct = Math.min(100, 100 * S.against[p] / S.breakAt[p]);
+    const pct = wbSharePct(S.against[p], S.breakAt[p]);
     // Compared as fractions rather than as 33/66. config.json puts the phase
     // boundaries at 1/3 and 2/3, and the rounded literals misband scores at the
     // upper edge: 66.07% of a threshold is Attrition by the config and read as
@@ -8927,6 +9025,10 @@ function wbRender() {
         and cannot enter marsh.
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
+      ${/* THE TURN AND BOTH SCORES, immediately above the board and mirroring the
+           ground line immediately below it. Fixed height, so neither can move the
+           board. See wbStatusLine for why this is adjacency and not sticky. */''}
+      ${wbStatusLine(S)}
       ${wbBoardSlot()}
       ${/* THE GROUND IN ONE FIXED LINE, directly under the board. The playtest that
            produced the arrangement below also produced this: "now harder to see the
@@ -9192,7 +9294,21 @@ function wbReportFacts(S, routed, loser) {
   const ground = { 0.15: 'open field', 0.45: 'mixed', 0.75: 'broken ground' }[S.density] || String(S.density);
   const share = (p) => `${wbNum(S.against[p])}/${wbNum(S.breakAt[p])}`;
   const verdict = loser === null ? 'level — neither company closer to breaking'
-    : `${S.names[1 - loser]} won; ${S.names[loser]} ${routed ? 'broke' : 'was further from breaking'}`;
+    // CLOSER, NOT FURTHER, and this was backwards in every report a player has ever
+    // pasted back. `loser` is the seat with the LARGER conceded share -- wbShareCmp
+    // returns > 0 when seat 0 has the bigger fraction of its own break point, and the
+    // caller reads that as seat 0 losing -- so names[loser] is by definition the
+    // company nearer to breaking.
+    //
+    // Found in a playtest report that said "Company A won; Sparring bot was further
+    // from breaking" over a conceded line reading 42/56 against 50/51: the bot was at
+    // 98% of its threshold and the winner at 75%. The verdict on the end screen says
+    // the WINNER is further from breaking and is right; this sentence names the loser
+    // and kept the winner's adjective, so the two renderings of one fact disagreed.
+    //
+    // Only the wording. The winner, the share figures and the win condition were all
+    // correct and are untouched.
+    : `${S.names[1 - loser]} won; ${S.names[loser]} ${routed ? 'broke' : 'was closer to breaking'}`;
   return [
     `Warband playtest report`,
     `build ${wbBuildStamp()}`,
