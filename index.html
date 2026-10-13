@@ -1,4 +1,4 @@
-<meta name="wb-build" content="20c3462 2026-10-12">
+<meta name="wb-build" content="7361c7d 2026-10-12">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -9135,6 +9135,32 @@ function wbMapSvg(opts = {}) {
     </g>`;
     wbUi._noticeDrawn = true;
   }
+  // THE LEGEND IS APPENDED HERE ONLY FOR PREVIEW SCREENS, which keep the order they
+  // always had. The play screen gets it from wbBoardLegend, placed after its controls.
+  return out + '</svg></div>'
+    + (opts.preview ? wbBoardLegend(opts) : '')
+    + '</div>';
+}
+
+// THE BOARD'S REFERENCE BLOCK, split out of wbMapSvg so the play screen can place it
+// somewhere else. The owner played the published build and reported having to scroll past
+// these two to reach Deploy and Pass: measured at 1,013 visible characters between the
+// bottom of the map and the deploy buttons, of which these are about 1,160 of the 1,240
+// measured per-region. They are reference -- they do not change when the position does --
+// and the controls are not.
+//
+// IT REBUILDS THE LEGEND FROM opts AND THE STATE rather than being handed the array. The
+// alternative was stashing it on a module variable during wbMapSvg, which would have made
+// two renderers order-dependent on each other for no gain; the inputs here are the same
+// ones wbMapSvg had.
+//
+// PREVIEW SCREENS STILL GET IT FROM wbMapSvg, inside the board wrapper, exactly where it
+// was. The draft, banner and end screens all pass { preview: true } and are not reordered
+// at all -- their rendered bytes are unchanged, which is the cheapest way to be sure this
+// is a move and not a rewrite.
+function wbBoardLegend(opts = {}) {
+  const S = warband_state;
+  if (!S) return '';
   // The board speaks five languages and, until a playtester asked what the dashed
   // circles were, named none of them. Every one is already on the screen; this
   // only says which is which, in the same colours and shapes it uses.
@@ -9191,7 +9217,7 @@ function wbMapSvg(opts = {}) {
     // languages the way the rings once did.
     legend.push(`<span style="color:${WB_COL.trace}">white arrow = what the other side just did · dashed = gave ground · ✕ = was hit</span>`);
   }
-  return out + '</svg></div>'
+  return ''
     // SAID TWICE, IN TWO REGISTERS, and the second one is a PICTURE. The legend
     // names the keys in words; this draws them on the faces they move across.
     // It is always visible rather than revealed on focus, which is a reversal:
@@ -9209,7 +9235,7 @@ function wbMapSvg(opts = {}) {
     + wbKeyHexSvg()
     + `<span>each letter moves the cursor across the face it sits on · Enter or Space acts on the hex under it${escClause} · the arrows do nothing here: a hex has no neighbour due north or due south</span></div>`
     + `<div class="wb-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:.66em">
-        ${legend.join('')}</div></div>`;
+        ${legend.join('')}</div>`;
 }
 
 // The selected unit's OWN controls, in their own box. Rally used to live in the
@@ -9395,19 +9421,20 @@ function wbRender() {
   // The clause goes away rather than being filled with a plausible number; see
   // wbSpentThisTurn for why a wrong figure here is worse than no figure.
   const spent = wbSpentThisTurn(S, pl);
-  wbDraw(`
-    <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
-      <div style="display:flex;gap:16px;margin-bottom:10px">${track(0)}${track(1)}</div>
-      ${wbTurnBanner()}
-      <div style="font-size:.85em;margin-bottom:4px">
-        <b style="color:${pl === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[pl])}</b> — turn ${S.turn}
-        ${selUnit ? `· selected <b>${wbEsc(selUnit.name)}</b>` : ''}
-        ${S.rally ? `· <b style="color:${WB_COL.p0}">Rally</b> — ${picked ? `move <b>${wbEsc(picked.name)}</b>` : 'choose a man'} · ${S.rally.left} left` : ''}
-      </div>
-      <div style="font-size:.75em;color:#9a9282;margin-bottom:8px;line-height:1.6">
+  // THE THREE ECONOMIES, EXPLAINED -- reference, and it moves below the controls.
+  //
+  // The same string in the same template; only where it renders has changed. It does not
+  // move when the position does, which is the test for what is reference here: the figures
+  // it explains are in the header above the board now, and this paragraph sat between them
+  // and the map.
+  //
+  // NOT DELETED, and not collapsed either. There is no tutorial, so the player who most
+  // needs three paragraphs about the action economy is the one a <details> would hide them
+  // from. Folding it against the header is a consolidation, tracked separately.
+  const economyProse = `<div style="font-size:.75em;color:#9a9282;margin-bottom:8px;line-height:1.6">
         <b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s activation: ${S.pools[pl]} left</b>${spent == null
-          ? ' this turn.'
-          : ` of ${S.pools[pl] + spent} this turn · ${spent} spent.`}
+        ? ' this turn.'
+        : ` of ${S.pools[pl] + spent} this turn · ${spent} spent.`}
         One action costs ${Object.keys(WB.ACT_COST).map((c) => `${wbEsc(c)} ${wbNum(WB.ACT_COST[c])}`).join(' · ')}
         activation, and each further action by the SAME unit this turn costs another multiple of that.
         <br><b style="color:${WB_COL.text}">${wbEsc(S.names[pl])}’s deployment: ${S.dp[pl]} left</b> — spent only on
@@ -9416,6 +9443,16 @@ function wbRender() {
         hex costs to enter, set by its ground and the unit’s class, and it bounds how far ONE activation
         carries you. Light pays 1 whatever the ground; Medium pays what the hex says; Heavy pays that plus 1
         and cannot enter marsh.
+      </div>
+  `;
+  wbDraw(`
+    <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
+      <div style="display:flex;gap:16px;margin-bottom:10px">${track(0)}${track(1)}</div>
+      ${wbTurnBanner()}
+      <div style="font-size:.85em;margin-bottom:4px">
+        <b style="color:${pl === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(S.names[pl])}</b> — turn ${S.turn}
+        ${selUnit ? `· selected <b>${wbEsc(selUnit.name)}</b>` : ''}
+        ${S.rally ? `· <b style="color:${WB_COL.p0}">Rally</b> — ${picked ? `move <b>${wbEsc(picked.name)}</b>` : 'choose a man'} · ${S.rally.left} left` : ''}
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
       ${/* THE TURN AND BOTH SCORES, immediately above the board and mirroring the
@@ -9516,6 +9553,28 @@ function wbRender() {
            is a claim about an ordering nothing can see.) */''}
       ${wbInspectAt('arch', 'margin:10px 0 0')}
       ${wbInspectAt('hex', 'margin:10px 0 0')}
+      ${/* REFERENCE, AFTER THE CONTROLS AND AFTER THE PANELS.
+
+           The owner played the published build and reported scrolling past the keyboard
+           hint and the board legend every time they needed Deploy or Pass. Measured on a
+           rendered play screen: 1,013 visible characters between the bottom of the map and
+           the deploy buttons, of which the ground strip is about 80. These two were the
+           rest of it.
+
+           They are reference because they do not change when the position changes. The
+           ground strip stays directly under the map for the opposite reason: it answers the
+           hex the player is looking at, it changes on every click, and that is also why it
+           keeps a fixed height while these two do not need one.
+
+           AFTER THE PANELS, not between them and the controls. The selected-unit panel is
+           where the next action's cost is read, so a legend in front of it would trade one
+           scroll for another -- raised in review and the right call.
+
+           Preview screens are not reordered at all: the draft, banner and end screens pass
+           { preview: true } and keep the legend inside the board wrapper where it has
+           always been. See wbBoardLegend. */''}
+      ${wbBoardLegend()}
+      ${economyProse}
       <div style="margin-top:10px;max-height:110px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.slice(-9).reverse().map(wbLogLine).join('')}
       </div>
