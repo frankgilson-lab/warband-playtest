@@ -1,4 +1,4 @@
-<meta name="wb-build" content="3acac76 2026-10-12">
+<meta name="wb-build" content="20c3462 2026-10-12">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -3798,9 +3798,42 @@ function wbSharePct(against, breakAt) {
 // unchanged to within a hundredth of a pixel -- the baseline moves by the length of
 // the string and nothing else.
 const WB_STRIP_HEIGHT = '1.65em';
-const WB_STATUS_STYLE = `height:${WB_STRIP_HEIGHT};line-height:${WB_STRIP_HEIGHT}`
-  + ';margin:0 0 6px;font-size:.72em'
-  + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+
+// AND THE HEADER MAY NOW GROW RATHER THAN HIDE, which reverses the rule above for the
+// two rows above the board. The owner read the published build in a browser and reported
+// the strip "too small and visually subdued"; the size is answered by WB_STATUS_FONT,
+// and the subduing partly by having something worth reading there. But raising the type
+// inside `nowrap; overflow:hidden; text-overflow:ellipsis` makes the ellipsis bite
+// SOONER, and what sat rightmost was the opponent's conceded score -- so a reader who
+// zoomed in order to read the figure was the reader most likely to lose it.
+//
+// So these rows wrap. The board moves down when they do, which the fixed height existed
+// to prevent, and that trade is the owner's call: a figure that is gone is worse than a
+// board that moved. min-height keeps one line's worth pinned in em -- the #110
+// invariant, so a raised font preference still cannot clip -- while letting a narrow
+// window buy a second line instead of silence.
+//
+// THE GROUND STRIP BELOW THE BOARD IS DELIBERATELY NOT CHANGED. Its content changes on
+// every hex a player clicks or keys to, so a wrapping ground strip would move the board
+// while they read the map; these two change only when the position does. Its horizontal
+// truncation of long terrain names is a real and separate problem, and raising its type
+// without letting it wrap would make that worse rather than better.
+const WB_STATUS_FONT = '.95em';
+const WB_STATUS_STYLE = `min-height:${WB_STRIP_HEIGHT};line-height:${WB_STRIP_HEIGHT}`
+  + `;margin:0 0 6px;font-size:${WB_STATUS_FONT}`
+  + ';display:flex;flex-wrap:wrap;align-items:center;column-gap:.45em;row-gap:.1em';
+
+// ONE WAY TO LAY OUT A FIGURE ROW, asked by both header rows so they cannot disagree.
+// Each part becomes an UNBREAKABLE group, because wrapping is only safe if the atoms are
+// atomic: a wrap that left `12/56` on one line and the company mark it belongs to on the
+// next would be worse than the truncation it replaced. The separator travels INSIDE the
+// group it follows, so a wrapped line never opens with a dangling middot.
+function wbStripGroups(parts) {
+  const live = parts.filter(Boolean);
+  return live.map((p, i) => `<span style="white-space:nowrap">${p}`
+    + (i < live.length - 1 ? ` <span style="color:${WB_COL.dimmer}">&middot;</span>` : '')
+    + '</span>').join(' ');
+}
 
 function wbStatusLine(S) {
   if (!S || !S.against || !S.breakAt) return '';
@@ -3835,12 +3868,45 @@ function wbStatusLine(S) {
   // figures on the one turn when both matter most -- raised in review of this PR, and
   // the right call: it made the final turn the likeliest moment to lose the opponent's
   // score off the end of the line.
-  const flag = last ? ` <span style="color:${WB_COL.dimmer}">·</span> <b style="color:${WB_COL.p1Text}">last turn</b>` : '';
+  // No separator of its own any more -- wbStripGroups owns the separators, and a flag
+  // carrying one too produced two middots on the final turn.
+  const flag = last ? `<b style="color:${WB_COL.p1Text}">last turn</b>` : '';
   return `<div class="wb-status" style="${WB_STATUS_STYLE}">`
-    + `${turn} <span style="color:${WB_COL.dimmer}">·</span> ${side(0)}`
-    + ` <span style="color:${WB_COL.dimmer}">·</span> ${side(1)}${flag}</div>`;
+    + wbStripGroups([turn, side(0), side(1), flag]) + '</div>';
 }
 
+// THE SECOND HEADER ROW: what the acting company has left to spend.
+//
+// These two figures existed in three places and none of them was beside the board -- the
+// company tracks at the top of the page, the prose block under them, and the
+// selected-unit panel, which sits below the board, the bench AND the Pass/Abandon
+// controls. So the board lay between the player and every number they were deciding
+// with, which is the same complaint an earlier playtest made about the turn counter and
+// which adjacency answered then.
+//
+// ROW 1 IS BOTH COMPANIES AND ROW 2 IS ONLY YOURS, deliberately: the match state is a
+// comparison and belongs in one line with both sides in it, while a pool is spent by
+// whoever is acting and reads as theirs. Keeping them on separate rows is what makes the
+// distinction visible rather than a matter of word order.
+//
+// THE FIGURES ARE READ, NOT DERIVED. S.pools and S.dp are the same fields the company
+// tracks print and the same ones wbApply spends; deployPoints owns how dp is arrived at
+// and is asked at the start of a turn, not here. A row that recomputed either would be a
+// second opinion about the action economy, which is the defect #88 removed from the
+// ground panel.
+//
+// AND THE SELECTED UNIT'S NEXT-ACTION COST IS NOT HERE, on the owner's instruction: it
+// has a dedicated contextual display in the selected-unit panel, and putting it here
+// would make the header's content -- and so its height -- depend on the selection, which
+// is the one thing the header must not do.
+function wbResourceLine(S, pl) {
+  if (!S || pl == null || !S.pools || !S.dp) return '';
+  const fig = (value, label) => `<b style="color:${WB_COL.text}">${wbNum(value)}</b>`
+    + ` <span style="color:${WB_COL.dim}">${label}</span>`;
+  return `<div class="wb-resources" style="${WB_STATUS_STYLE}">`
+    + wbStripGroups([fig(S.pools[pl], 'activation'), fig(S.dp[pl], 'deployment')])
+    + '</div>';
+}
 // Same height as the status strip above the board, from the same constant, because
 // the two sit either side of it and a reader raising the type must not get one of
 // them scaling and the other clipping.
@@ -4047,7 +4113,7 @@ function wbPlayHint(S, pl) {
       ${hits ? 'Enemies ringed in orange are in reach &mdash; click one to attack.'
              : 'No enemy is in reach of it right now.'}
       Click any other hex and it tells you what is on that ground rather than moving there.
-      <b>Deselect</b> to read the gold ones too.`;
+      Press <b>Esc</b>, or <b>Deselect</b> below, to let go and read the gold ones too.`;
   }
   // The same question the branch above now asks, for the same reason: a staged
   // deployment survives an incoming snapshot, so this can be Company A's reserve
@@ -9088,6 +9154,14 @@ function wbMapSvg(opts = {}) {
       + `<polygon points="${wbClassPoints(8, 8, 5.5, cls)}" fill="${owner === 1 ? WB_COL.ink : col}"`
       + ` stroke="${owner === 1 ? col : WB_COL.ink}" stroke-width="${owner === 1 ? 2 : 1.2}"/></svg>`;
   };
+    // ONLY WHERE IT IS TRUE. Both legends render on a preview board -- the `!opts.preview`
+  // block below gates the extra ENTRIES, not the containers -- and a preview board has no
+  // selection to let go of, so wbKeyDown returns on its `!S.sel` guard. Promising Esc
+  // there would be an instruction that does nothing, which is the failure this whole
+  // change exists to remove rather than to relocate. Caught by the characterization
+  // deltas: the draft and end screens moved by the same bytes as the play screens, which
+  // they had no business doing.
+  const escClause = opts.preview ? '' : ' · Esc lets go of the selected unit';
   const legend = [
     `<span style="color:${WB_COL.text}">★ vp = scoring hex; hold more than your opponent at the end of a turn</span>`,
     `<span style="color:${WB_COL.p0}">${swatch('medium', 0)} ${wbEsc(S.names[0] || 'A')} — solid</span>`,
@@ -9101,7 +9175,7 @@ function wbMapSvg(opts = {}) {
     // the board was focusable, the cursor was drawn, and the keys were
     // unguessable. Here rather than behind `!opts.preview` because the cursor
     // moves on a preview board too.
-    `<span style="color:${WB_COL.dim}">keyboard: Q E / A D / Z C sit in the six directions and move the cursor one hex · Enter or Space acts on it</span>`,
+    `<span style="color:${WB_COL.dim}">keyboard: Q E / A D / Z C sit in the six directions and move the cursor one hex · Enter or Space acts on it${escClause}</span>`,
   ];
   if (!opts.preview) {
     legend.push(`<span style="color:${WB_COL.move}">gold edge = where it may go</span>`);
@@ -9133,7 +9207,7 @@ function wbMapSvg(opts = {}) {
     // screen-reader work 4.1.3 is still open about.
     + `<div class="wb-kbd-hint" aria-hidden="true" style="display:flex;align-items:center;gap:9px;margin-top:5px;font-size:.66em;color:${WB_COL.dim}">`
     + wbKeyHexSvg()
-    + `<span>each letter moves the cursor across the face it sits on · Enter or Space acts on the hex under it · the arrows do nothing here: a hex has no neighbour due north or due south</span></div>`
+    + `<span>each letter moves the cursor across the face it sits on · Enter or Space acts on the hex under it${escClause} · the arrows do nothing here: a hex has no neighbour due north or due south</span></div>`
     + `<div class="wb-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:.66em">
         ${legend.join('')}</div></div>`;
 }
@@ -9249,7 +9323,7 @@ function wbActionPanel(S, pl, u) {
     <div style="font-size:.72em;margin-top:5px;line-height:1.5;max-height:160px;overflow:auto">
       ${wbKeywordBlock(arch ? arch.keywords : [])}</div>
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="ng-btn" onclick="wbDeselect()" style="font-size:.72em;opacity:.8">Deselect</button>
+      <button class="ng-btn" onclick="wbDeselect()" style="font-size:.72em;opacity:.8">Deselect <span style="opacity:.75">(Esc)</span></button>
       <span style="font-size:.68em;color:${WB_COL.dimmer}">with nothing in hand, every hex reads the ground</span>
     </div>
   </div>`;
@@ -9348,6 +9422,7 @@ function wbRender() {
            ground line immediately below it. Fixed height, so neither can move the
            board. See wbStatusLine for why this is adjacency and not sticky. */''}
       ${wbStatusLine(S)}
+      ${wbResourceLine(S, pl)}
       ${wbBoardSlot()}
       ${/* THE GROUND IN ONE FIXED LINE, directly under the board. The playtest that
            produced the arrangement below also produced this: "now harder to see the
