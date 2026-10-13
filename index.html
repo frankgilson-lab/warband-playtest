@@ -1,4 +1,4 @@
-<meta name="wb-build" content="a6ae14a 2026-10-11">
+<meta name="wb-build" content="3acac76 2026-10-12">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -148,7 +148,7 @@ var WARBAND_CONFIG = {
     {
       "id": "ruins",
       "name": "Ruins",
-      "description": "Broken walls and rubble. Units here have cover against ranged attacks. Cover reduces incoming ranged damage by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
+      "description": "Broken walls and rubble. Units here have cover against every attack, melee and ranged alike. Cover reduces incoming damage from ANY attack, melee and ranged alike, by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
       "allows_deployment": true,
       "blocks_movement": false,
       "impassable": false,
@@ -184,7 +184,7 @@ var WARBAND_CONFIG = {
     {
       "id": "barricade",
       "name": "Barricade",
-      "description": "The Vanguard's shield and body wedged into the ground. Blocks movement and grants cover to units fighting from behind it. Permanent for the rest of the match. Cover reduces incoming ranged damage by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
+      "description": "The Vanguard's shield and body wedged into the ground. Blocks movement and grants cover to units fighting from behind it. Permanent for the rest of the match. Cover reduces incoming damage from ANY attack, melee and ranged alike, by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
       "allows_deployment": false,
       "blocks_movement": true,
       "impassable": false,
@@ -211,7 +211,7 @@ var WARBAND_CONFIG = {
     {
       "id": "fallen_harness",
       "name": "Fallen Harness",
-      "description": "A collapsed mass of plate and the man inside it. Impassable to all grounded units, so enemy pathing must split around it. Permanent for the rest of the match. Cover reduces incoming ranged damage by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
+      "description": "A collapsed mass of plate and the man inside it. Impassable to all grounded units, so enemy pathing must split around it. Permanent for the rest of the match. Cover reduces incoming damage from ANY attack, melee and ranged alike, by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
       "allows_deployment": false,
       "blocks_movement": true,
       "impassable": true,
@@ -239,7 +239,7 @@ var WARBAND_CONFIG = {
     {
       "id": "fallen_banner",
       "name": "Fallen Banner",
-      "description": "The company's colours driven into the ground where the bearer fell. Grants its warband +2 activation points every turn for the rest of the match. Cover reduces incoming ranged damage by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
+      "description": "The company's colours driven into the ground where the bearer fell. Grants its warband +2 activation points every turn for the rest of the match. Cover reduces incoming damage from ANY attack, melee and ranged alike, by the defender's movement class value: Light 2, Medium 1, Heavy 0.",
       "allows_deployment": false,
       "blocks_movement": false,
       "impassable": false,
@@ -267,7 +267,7 @@ var WARBAND_CONFIG = {
     {
       "id": "officers_cairn",
       "name": "Officer's Cairn",
-      "description": "The captain's body, and the stones piled over it while the fight went on around them. ANY unit adjacent to this hex deals +1 damage, whichever side it belongs to - the ground is contested and everyone fights harder over it. Permanent.",
+      "description": "The captain's body, and the stones piled over it while the fight went on around them. ANY unit adjacent to this hex deals +1 damage, whichever side it belongs to - the ground is contested and everyone fights harder over it. Units here also have cover: incoming damage from any attack, melee and ranged alike, is reduced by the defender's movement class value, Light 2, Medium 1, Heavy 0. Permanent.",
       "allows_deployment": false,
       "blocks_movement": false,
       "impassable": false,
@@ -343,6 +343,11 @@ var WARBAND_CONFIG = {
       "id": "SKT",
       "name": "Skittish",
       "description": "TRIGGERED, costs nothing. When an enemy unit moves adjacent, this unit is shoved one hex directly away along the line from that enemy. The direction is not chosen by either player — it follows from where the enemy moved, so an opponent steers this unit only indirectly, through their choice of approach. A shove blocked by the board edge, another unit or impassable terrain does not happen at all."
+    },
+    {
+      "id": "SUP",
+      "name": "Supply",
+      "description": "A living, DEPLOYED unit with Supply adds its Supply value to its company's DEPLOYMENT points at the start of every turn AFTER the turn it was deployed. It gives nothing while in reserve, nothing on the turn it arrives, and nothing once it is dead. Several of them add up. Supply never touches the ACTIVATION pool - the two economies are separate and are named separately everywhere. Deployment points do not carry over, so an unspent Supply point is lost with the rest at the end of the turn."
     }
   ],
   "beats": [
@@ -504,10 +509,14 @@ var WARBAND_CONFIG = {
       "keywords": [
         "V",
         "OVW",
-        "SKT"
+        "SKT",
+        "SUP"
       ],
+      "keyword_values": {
+        "SUP": 1
+      },
       "death_terrain": "fallen_ranks",
-      "ab": "Skittish (triggered, no activation): when an enemy unit moves adjacent, the Sutler is shoved one hex directly away from that unit. Neither player chooses the direction — it is fixed by the geometry, always the hex on the far side of the Sutler along the line from the mover. The opponent influences where he ends up only indirectly, by choosing which side to approach from. Blocked by the board edge, by other units and by impassable ground, and a blocked shove does not happen at all.",
+      "ab": "Supply (passive, no activation): while this Sutler is alive and on the field, your company gets +1 DEPLOYMENT point at the start of every turn after the turn he arrived - nothing while he waits in reserve, nothing on the turn he is deployed, nothing once he is dead. Two Sutlers give +2. It does not touch activation. Skittish (triggered, no activation): when an enemy unit moves adjacent, the Sutler is shoved one hex directly away from that unit. Neither player chooses the direction — it is fixed by the geometry, always the hex on the far side of the Sutler along the line from the mover. The opponent influences where he ends up only indirectly, by choosing which side to approach from. Blocked by the board edge, by other units and by impassable ground, and a blocked shove does not happen at all.",
       "vp": 12,
       "movement_class": "light",
       "plunder": "He carries the company's money. Cheap to hire, expensive to lose.",
@@ -655,7 +664,8 @@ var WARBAND_CONFIG = {
       4,
       5
     ],
-    "ramp_plateau": 5
+    "ramp_plateau": 5,
+    "supply": "THE SINGLE RULE, decided here before it was written, because _deferred_activation_economy records what happened last time a unit granted points and three drivers answered differently. A living, DEPLOYED unit with the Supply keyword adds its Supply value to its own company's DEPLOYMENT points, at the moment a turn's points are granted. Because that moment is always BEFORE anybody deploys in that turn, a unit deployed during turn N is not counted for turn N and is counted from turn N+1 - so the timing needs no record of when a unit arrived. Nothing in reserve, nothing dead, nothing on the arrival turn; several Sutlers add up; and it never touches the activation pool. One implementation, core.deployPoints, asked by all three drivers."
   },
   "setting": {
     "era": "early modern, 16th-17th century: the free companies of the Italian Wars and the Thirty Years War",
@@ -1004,6 +1014,12 @@ function makeUnit(name, owner, ov) {
     move: o.move ?? a.stats.move, range: o.range ?? a.stats.range,
     bypass: has(name, 'BP'), guard: has(name, 'G'),
     cmd: o.cmd ?? (has(name, 'CMD') ? kwVal(name, 'CMD') : 0),
+    // SUPPLY, and it reads exactly like cmd above because it is the same shape of
+    // thing pointed at the other economy: a keyword-driven numeric that feeds a pool.
+    // cmd adds to ACTIVATION, supply adds to DEPLOYMENT, and the two must never be
+    // summed -- config.json carries a _resource_names block because four quantities
+    // collide in this game and this is the fifth place that could get it wrong.
+    supply: o.supply ?? (has(name, 'SUP') ? kwVal(name, 'SUP') : 0),
     // Empower-style aura, experiment-only: +auraDmg to allied attacks within auraRange.
     auraDmg: o.auraDmg ?? 0, auraRange: o.auraRange ?? 0,
     // There is deliberately no activation-economy field here. A unit that grants
@@ -1039,6 +1055,41 @@ const stopsIn = (u, z) => z.special === 'ends_movement_medium_and_heavy' && u.cl
 // taxes no one. Callers holding a possibly-undefined value normalise it to null
 // rather than this widening, because widening here would silently retax every hex a
 // caller knows nothing about.
+// DEPLOYMENT POINTS FOR ONE SEAT, FOR ONE TURN. The only implementation.
+//
+// Three drivers computed the ramp separately before this: the table game at
+// engine.js, runGame below, and the analysis harness in interface.js -- whose own
+// header says "The rules are NOT reimplemented here", which this was quietly
+// contradicting. config.json's _deferred_activation_economy records what that costs:
+// a unit that granted points was once implemented three ways, "the simulation banked
+// the grant into the following turn, the analysis harness added it to the current one,
+// and the table game had no such action at all", and the machinery was removed rather
+// than left to become whichever rule fired first. Its instruction was to decide the
+// single rule in config.json and implement it in all three drivers. That rule is in
+// config.json under deployment.supply, and this is the implementation.
+//
+// WHY THIS NEEDS NO RECORD OF WHEN A UNIT ARRIVED, which is the whole timing
+// argument and the reason no state was added for it:
+//
+//   every caller computes a turn's points BEFORE anything is deployed in that turn
+//
+// So a Sutler deployed during turn N is simply not yet `deployed` when turn N's
+// points are granted, and is `deployed` when turn N+1's are. "From the turn after it
+// arrives" falls out of WHEN the count is taken rather than from a deployedTurn field,
+// a serialized field, or a hydration path. If a future caller ever grants points in
+// the middle of a turn, that assumption breaks and this comment is where to look.
+//
+// Alive AND deployed, both checked here rather than left to the caller: three callers
+// would be three chances to check one of them.
+function deployPoints(turn, army) {
+  const base = turn <= RAMP.length ? RAMP[turn - 1] : PLATEAU;
+  let supply = 0;
+  for (const u of (army || [])) {
+    if (u && u.alive && u.deployed) supply += (u.supply || 0);
+  }
+  return base + supply;
+}
+
 const entryCost = (u, z, terrainOwner) => moveCost(u, z)
   + ((z.special === 'extra_movement_cost_enemies_only'
     && terrainOwner !== null && terrainOwner !== u.owner) ? 1 : 0);
@@ -1765,7 +1816,7 @@ function runGame(opts = {}) {
     const seizedThisTurn = new Set();   // one bonus per objective per turn
 
     for (const pl of order) {
-      let pts = turn <= RAMP.length ? RAMP[turn - 1] : PLATEAU;
+      let pts = deployPoints(turn, armies[pl]);
       for (const u of armies[pl].filter((x) => !x.deployed && x.alive).sort((a, b) => b.cost - a.cost)) {
         if (u.cost > pts) continue;
         const spots = deployHexes(pl);
@@ -2397,6 +2448,7 @@ const WarbandCore = {
   // exposed so the interactive engine can reuse the exact rules the sim validated
   makeBoard, makeUnit, draft, dealPack, objectiveScore, serializeG, hydrateG, sweeps, reachable, damageOf, damageParts, effRange, redirect, losClear,
   rallyPicks,
+  deployPoints,
   actionCost,
   hexOf, occupantOf, place,
   neighbors, hexDist, key, col, legal, coverOf, moveCost, entryCost, canEnter, stopsIn,
@@ -2774,7 +2826,18 @@ function wbUnitCard(name, opts = {}) {
     + (opts.onclick ? 'cursor:pointer' : '');
   return `<div ${opts.onclick ? `onclick="${opts.onclick}"` : ''} style="${style}">
     <div style="color:${owned};font-weight:bold;font-size:.85em">${wbEsc(name)}</div>
-    <div style="font-size:.68em;color:${WB_COL.dim}">${cls} · cost ${a.cost} · ${a.vp} vp</div>
+    ${/* "vp" SAYS WHICH DIRECTION THE NUMBER POINTS. A tester read Sutler's 12 against a
+         Levy's 4 and concluded "it is triple vp value so it must be useful somehow" —
+         exactly backwards. Victory points on a card are what the OPPONENT scores when the
+         unit dies, so a high figure is a liability to protect, not a prize to field. The
+         archetype's own `plunder` line already says it in fiction — "Cheap to hire,
+         expensive to lose" — and the number said nothing.
+
+         Four words, in the line the figure is already on. config.json carries a
+         _resource_names block because four quantities collide in this game, and this is
+         the one a player reads while choosing. */''}
+    <div style="font-size:.68em;color:${WB_COL.dim}">${cls} · cost ${a.cost}
+      · ${a.vp} vp to them if it falls</div>
     <div style="font-size:.72em;color:${WB_COL.text};margin-top:3px">
       ${s.hp} hp · ${s.atk} atk · ${cap}<br>move ${s.move} · range ${s.range}</div>
     <div style="font-size:.65em;color:${WB_COL.dim};margin-top:3px">${wbEsc(kw)}</div>
@@ -2842,8 +2905,29 @@ function wbRenderDraft() {
     <div class="wb-screen" style="padding:${WB_SCREEN_PAD}px;color:${WB_COL.text}">
       ${wbTurnBanner()}
       <div style="font-size:1.05em;color:${WB_COL.p0};font-weight:bold">Draft — pack ${S.packNo} of ${WB.STABLE}</div>
+      ${/* THE RULE, NOT ONLY THE STATE. A tester reported "I only had 2 units to pick
+           from" in the first, third and fifth packs, saw a Man-at-Arms disappear, and
+           asked "could it be drawing/burning my drafts?"
+
+           Every part of what he saw was correct. Three are dealt, each player takes one,
+           the third is burned, and who picks first alternates by pack -- so the second
+           picker sees two, and whoever is second in pack 1 is second in every odd pack.
+           The Man-at-Arms did not vanish; his opponent picked first and took it.
+
+           The screen already showed him the pack number, whose pick it was, and the
+           burned cards. What it never said is the PROCEDURE that produces two cards out
+           of three, so he built a theory instead -- and his theory was half right in the
+           worst way, because a card IS burned every pack and it is not his.
+
+           DESIGN-LOG.md §3.30: these screens state the current state and almost never
+           state the rule that produces it. One sentence, in the line that already
+           explains the draft, rather than a new panel. */''}
       <div style="font-size:.78em;color:#9a9282;margin:4px 0 6px">
         <b style="color:${picking === 0 ? WB_COL.p0 : WB_COL.p1Text}">${wbEsc(who)}</b> picks.
+        Three are dealt, you each take one, and the last is burned — so whoever picks
+        second sees two. First pick alternates every pack. A burned card is gone from
+        this pack only: the next pack is dealt fresh, and the same unit can come round
+        again, or twice at once.
         Everything is open: both companies and every discard stay visible.
       </div>
       ${wbPhaseLine(`This is the field you will fight on, and you are drafting against it &mdash;
@@ -2983,7 +3067,11 @@ function wbBeginTurn(S) {
   // fire since.
   S.poolStart = S.pools.slice();
   S.acted = [new Map(), new Map()];
-  S.dp = [0, 1].map(() => (S.turn <= WB.RAMP.length ? WB.RAMP[S.turn - 1] : WB.PLATEAU));
+  // THE SEAT MATTERS NOW, and it did not before: the arrow ignored its index because
+  // the ramp is the same for both companies. Supply is not -- it belongs to whoever
+  // has the Sutler alive on the field. See core.deployPoints for the rule and for why
+  // the arrival turn needs no record.
+  S.dp = [0, 1].map((pl) => WB.deployPoints(S.turn, S.armies ? S.armies[pl] : null));
   S.activeIdx = 0; S.sel = null; S.rally = null;
   S.passed = [false, false];
 }
@@ -3691,7 +3779,27 @@ function wbSharePct(against, breakAt) {
 // out is about 67, which clips on a phone -- and the thing it would clip is the
 // opponent's score, the half of the position a player cannot infer. The marks are
 // the same ones on the units and in the log, and the names are in the tracks above.
-const WB_STATUS_STYLE = 'height:19px;line-height:19px;margin:0 0 6px;font-size:.72em'
+// THE HEIGHT IS IN em, NOT px, AND THAT IS THE WHOLE POINT OF THIS CONSTANT.
+//
+// A playtester with "ageing eyes" reported difficulty with the smallness of the type.
+// The player who answers that by raising their browser's font size is exactly the
+// player these two strips used to fail silently: font-size is in em and followed the
+// preference, height was 19px and did not, and both strips are overflow:hidden. So the
+// text grew, the box did not, and the turn counter and the terrain line were clipped
+// away from the reader who most needed them.
+//
+// Browser ZOOM was always fine -- it scales px too. It is the font-size preference
+// that separates the two units, and no test in this suite can see the clipping,
+// because jsdom does no layout. What a test can see is that the box and the type are
+// expressed in the same unit family, which is the invariant that makes the clipping
+// impossible rather than merely unobserved.
+//
+// 1.65em of a .72em font is 19.008px at a 16px root, so the default rendering is
+// unchanged to within a hundredth of a pixel -- the baseline moves by the length of
+// the string and nothing else.
+const WB_STRIP_HEIGHT = '1.65em';
+const WB_STATUS_STYLE = `height:${WB_STRIP_HEIGHT};line-height:${WB_STRIP_HEIGHT}`
+  + ';margin:0 0 6px;font-size:.72em'
   + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
 function wbStatusLine(S) {
@@ -3733,7 +3841,11 @@ function wbStatusLine(S) {
     + ` <span style="color:${WB_COL.dimmer}">·</span> ${side(1)}${flag}</div>`;
 }
 
-const WB_GROUND_STYLE = 'height:19px;line-height:19px;margin-top:6px;font-size:.72em'
+// Same height as the status strip above the board, from the same constant, because
+// the two sit either side of it and a reader raising the type must not get one of
+// them scaling and the other clipping.
+const WB_GROUND_STYLE = `height:${WB_STRIP_HEIGHT};line-height:${WB_STRIP_HEIGHT}`
+  + ';margin-top:6px;font-size:.72em'
   + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
 // THE SEAM IS ASKED HERE, not handed in. The play renderer has no view of its own --
@@ -5545,6 +5657,12 @@ function wbFreshSession() {
     // therefore label the abandoned match's words with the new match's id, which is
     // the bug this field exists to prevent.
     shownMatch: null,
+    // WHICH ZOOM MODE THE BOARD IN THE DOCUMENT WAS DRAWN IN, and the horizontal
+    // offset taken off it before the last replacement. Both session-local, neither
+    // serialized. See wbSaveScroll for why the mode cannot simply be asked for at
+    // save time.
+    shownFull: null,
+    scroll: null,
     // FIT or FULL board. A fact about this screen, not about the match, and it
     // belongs to the session for the same reason the selection does not travel.
     boardFull: null,   // null = follow the phase; see wbMapSvg
@@ -6179,7 +6297,8 @@ function warbandSwitchMatch() {
   wbUi.resyncAsked = false;
   wbUi.anchor = null;                // this game is being given up, by hand
   try {
-    wbLoad(pub);
+    // The candidate is `wbUi.offer`, which arrived from the host. Foreign bytes.
+    wbLoad(pub, { fromPeer: true });
     wbShow();
   } catch (_) {
     warband_state = kept;
@@ -6505,7 +6624,9 @@ function wbMpBind() {
     const kept = warband_state;
     const confirmPass = wbUi.confirmPass;
     try {
-      wbLoad(pub);
+      // A snapshot from the other seat. Foreign bytes, and the only path a stranger
+      // can reach: gated here, rolled back below.
+      wbLoad(pub, { fromPeer: true });
       if (!wbCanRenderLoaded()) {
         warband_state = kept;
         return;
@@ -6694,6 +6815,68 @@ function wbWaiting() {
 // So: whether the composite owned focus is read BEFORE the replacement and
 // restored after it, without scrolling -- `preventScroll`, because yanking the
 // viewport back to the board on every inbound redraw is its own defect.
+// THE BOARD IS THE ONLY SCROLLING THING THE PLAYER AIMS, so it is the only one this
+// pair touches. The container was anonymous until this change; the class exists so
+// there is something to address, and for no other reason.
+const WB_SCROLL_CLASS = 'wb-board-scroll';
+
+// WHAT ELSE THE REPLACEMENT THROWS AWAY, and wbDraw already states the principle:
+// the report is saved because it is "the only thing on any screen that a player cannot
+// reproduce by looking again". A scroll position is another. A player who has scrolled
+// the board to watch their right flank has to find it again by hand.
+//
+// Reported by a playtester: with browser zoom producing a horizontal scrollbar on the
+// map, selecting a unit returned the bar to the far left.
+//
+// AND SELECTION IS NOT THE CAUSE. wbDraw assigns section.innerHTML, which destroys
+// every element in it; the new container starts at scrollLeft 0 because it is a new
+// element. So every redraw does this -- cursor keys, inspecting a hex, the bot acting,
+// a snapshot arriving. Selection is simply when somebody noticed.
+//
+// NOT FOCUS, which was the obvious suspect and was checked: the one focus call in this
+// file passes preventScroll: true, deliberately, so restoring focus cannot scroll.
+function wbScrollEl() {
+  if (typeof document === 'undefined' || !document.querySelector) return null;
+  return document.querySelector('.' + WB_SCROLL_CLASS);
+}
+
+function wbSaveScroll() {
+  const el = wbScrollEl();
+  // THE MODE AND THE MATCH ARE SAVED WITH THE OFFSET, and they are read from wbUi
+  // rather than computed. That is the whole correctness argument of this pair, so it
+  // is spelled out: wbBoardZoom flips wbUi.boardFull and THEN redraws, so by the time
+  // this runs wbBoardFull() already answers with the NEW mode -- comparing it against
+  // itself at restore time would always match and would always restore, which is
+  // exactly the case that must not. wbUi.shownFull is the mode the board NOW IN THE
+  // DOCUMENT was drawn in, which is the thing whose offset is being read.
+  //
+  // Same reasoning as shownMatch, which exists because warbandSwitchMatch loads the
+  // new match before it redraws.
+  wbUi.scroll = el && Number.isFinite(el.scrollLeft)
+    ? { left: el.scrollLeft, full: wbUi.shownFull, match: wbUi.shownMatch }
+    : null;
+}
+
+function wbRestoreScroll() {
+  const was = wbUi.scroll;
+  // ONE RESTORE PER SAVE. Cleared first and unconditionally, so a later redraw can
+  // never reuse an offset taken from a board that is no longer on screen.
+  wbUi.scroll = null;
+  if (!was || !was.left) return;          // nothing saved, or already at the left edge
+  // A DELIBERATE REFRAMING MUST NOT BE UNDONE. "Fit the whole field" and "Full size"
+  // are the player asking for a different view; putting them back at the old offset
+  // afterwards would fight the thing they just pressed. Same for a different match.
+  if (was.full !== wbUi.shownFull || was.match !== wbUi.shownMatch) return;
+  const el = wbScrollEl();
+  if (!el) return;
+  // Browsers clamp an assignment beyond scrollWidth, so a board that rendered
+  // narrower lands at its right edge rather than erroring. That is a reframing this
+  // pair does not try to be clever about: preserving a LOGICAL position -- the hex at
+  // the viewport centre -- would be a camera, and a camera is not what a playtester
+  // asked for. Recorded in DESIGN-LOG.md §3.29 as the boundary it is.
+  el.scrollLeft = was.left;
+}
+
 function wbDraw(html) {
   const head = `${wbNoticeLine()}${wbOfferLine()}${wbInspectPanel()}`;
   const screen = head ? `<div style="padding:12px 14px 0">${head}</div>${html}` : html;
@@ -6702,10 +6885,15 @@ function wbDraw(html) {
   // WHAT THE REPLACEMENT WOULD THROW AWAY. The report goes first because it is the
   // only thing on any screen that a player cannot reproduce by looking again.
   wbSaveReport();
+  wbSaveScroll();
   wbSection().innerHTML = screen;
   // The fields now in the document belong to whatever match this screen drew.
   wbUi.shownMatch = wbMatchKey(warband_state);
+  // And the board now in the document was drawn in this mode. Recorded for the same
+  // reason as the line above and used by wbRestoreScroll; see wbSaveScroll.
+  wbUi.shownFull = wbBoardFull();
   wbRestoreReport();
+  wbRestoreScroll();
   if (!had || typeof document === 'undefined' || !document.querySelector) return;
   const el = document.querySelector('#' + WB_FIELD_ID);
   if (el && typeof el.focus === 'function') el.focus({ preventScroll: true });
@@ -6830,7 +7018,7 @@ function wbShow() {
 
 // Replace the live game with one from a snapshot. The guest side of multiplayer
 // is this call plus wbShow().
-function wbLoad(pub) {
+function wbLoad(pub, opts) {
   // A snapshot is the host's answer, so whatever a guest was holding against a
   // refusal is settled: the truth has arrived and the held copy describes a
   // board that no longer exists. Cleared here rather than in the `state`
@@ -6841,6 +7029,37 @@ function wbLoad(pub) {
   // `sel` is this client's highlight and never travels, so a snapshot would
   // otherwise clear the selection every time the opponent did anything. It is
   // dropped only when what it pointed at is gone.
+  // BEFORE ANYTHING IS READ OR MUTATED. wbHydrate validates the SHAPE of a state;
+  // this asks whether this build plays the game that state is in. The notice is set
+  // here rather than in the callers because both of them discard the error -- one
+  // restores the previous state in a bare catch, the other returns -- so the message
+  // has to be left somewhere the next render will find it.
+  //
+  // It appears on the NEXT render rather than instantly, and that is a real
+  // limitation rather than a choice: neither caller draws after a rejection. A guest
+  // refusing a host has no channel to say why either -- wbMpRefuse is host-only, and
+  // inventing a guest-to-host message is outside what this repository exposes.
+  // ONLY FOR STATES THAT CROSSED THE WIRE, and the caller says so rather than this
+  // function guessing. wbLoad does two jobs: adopt a state this build just made, and
+  // adopt one the other seat sent. Only the second can have been produced by a
+  // different ruleset, and only the second is gated.
+  //
+  // THE FLAG IS AT THE CALL AND NOT INFERRED FROM wbMp OR MP.active, which would have
+  // worked today and quietly stopped working the first time anything else fed this
+  // function foreign bytes -- a pasted snapshot, a replay, a saved match. A future
+  // caller of that kind has to decide, in the call, whether what it holds is foreign.
+  //
+  // The alternative was gating unconditionally and teaching twenty-three test
+  // fixtures to carry a revision. That would have put the literal "supply-1" in
+  // twenty-three files and broken all of them on the next rules change, which is a
+  // worse outcome than one honest argument.
+  if (opts && opts.fromPeer) {
+    const refusal = wbCompatRefusal(pub);
+    if (refusal) {
+      wbUi.notice = refusal;
+      throw new Error(refusal);
+    }
+  }
   const keep = warband_state && warband_state.sel;
   warband_state = wbHydrate(pub);
   if (keep) {
@@ -6884,10 +7103,64 @@ function wbMakeRng(seed, density, calls) {
 
 // `sel` is deliberately absent: which unit you have clicked is yours alone, and
 // pushing it would yank the other player's selection out from under them.
+// TWO VERSIONS, BECAUSE THEY CHANGE INDEPENDENTLY, and Supply is the proof. A client
+// can parse every field of a state and still play a different game with it: `supply`
+// arrived as an ordinary number that an older build reads, ignores, and then prices
+// deployment without. Nothing about the SHAPE of the bytes changed; the RULES did.
+//
+//   WB_WIRE_V      the serialized shape. Bump when fields move, are added to
+//                  WB_UNIT_FIELDS, or change type.
+//   WB_RULES_REV   the gameplay semantics. Bump when a rule changes what the same
+//                  state means -- a new keyword that feeds a pool, a cost formula, a
+//                  win condition.
+//
+// `v` was already written on every snapshot and READ NOWHERE. Measured, not assumed:
+// a build before this one accepts `v: 99` and ignores unknown top-level fields
+// entirely, so there was no accidental protection to rely on.
+const WB_WIRE_V = 1;
+const WB_RULES_REV = 'supply-1';
+
+// WHY THE GATE IS HERE. wbLoad is the earliest boundary this repository owns: both
+// inbound paths go through it, and both carry bytes from the other seat --
+// wbMpBind’s snapshot handler, and warbandSwitchMatch, whose candidate is the
+// `offer` a host sent. Both already wrap it in try/catch and restore the previous
+// state, so throwing from here is rejected AND rolled back by machinery that
+// already exists; none of it is invented.
+//
+// FAIL CLOSED, with no case falling through to acceptance. A missing revision is an
+// older build or an older save, not a licence to proceed.
+function wbCompatRefusal(pub) {
+  if (!pub || typeof pub !== 'object') return 'That is not a match state.';
+  if (typeof pub.v !== 'number' || !Number.isFinite(pub.v)) {
+    return 'That match state does not say what format it is in, so it cannot be read safely.';
+  }
+  if (pub.v !== WB_WIRE_V) {
+    return `That match is in state format ${wbNum(pub.v)} and this build reads format `
+      + `${wbNum(WB_WIRE_V)}. One of you is on an older page — reload and try again.`;
+  }
+  if (pub.rulesRev === undefined || pub.rulesRev === null) {
+    return 'That match was started by a build from before the rules were versioned, so '
+      + 'this build cannot tell which rules it is playing by. Both players should '
+      + 'reload and start a new match.';
+  }
+  if (typeof pub.rulesRev !== 'string' || !pub.rulesRev) {
+    return 'That match state names its rules in a form this build does not understand.';
+  }
+  if (pub.rulesRev !== WB_RULES_REV) {
+    return `That match is playing by rules “${wbEsc(pub.rulesRev.slice(0, 40))}” and this `
+      + `build plays “${WB_RULES_REV}”. The two would price things differently, so this `
+      + `build will not join it. Whoever is on the older page should reload.`;
+  }
+  return null;
+}
+
 function wbSerialize(S) {
   const arr = (a) => (a ? a.slice() : null);
   return {
-    v: 1,
+    v: WB_WIRE_V,
+    // The rules this state was produced under. See wbCompatRefusal: a client that can
+    // parse these bytes may still play a different game with them.
+    rulesRev: WB_RULES_REV,
     rev: S.rev || 0,
     matchId: S.matchId || null,
     seed: S.seed, density: S.density, rngCalls: S.rng.calls,
@@ -7076,6 +7349,12 @@ const WB_UNIT_FIELDS = [
   ['uid', 'num'], ['name', 'str'], ['owner', 'seat'], ['cls', 'str'],
   ['hp', 'num'], ['atk', 'num'], ['cap', 'cap'], ['move', 'num'],
   ['range', 'num'], ['bypass', 'bool'], ['guard', 'bool'], ['cmd', 'num'],
+  // supply sits HERE and not at the end, because this list must mirror makeUnit's
+  // declaration order -- the comment above says why, and the serialization test is
+  // what says it out loud: a guest rebuilding in a different order re-serializes to
+  // different bytes for the same game. makeUnit declares supply immediately after cmd,
+  // the other keyword-driven numeric, so it goes immediately after cmd here.
+  ['supply', 'num'],
   ['auraDmg', 'num'], ['auraRange', 'num'], ['flee', 'num'], ['rallyN', 'num'],
   ['rallyRange', 'num'], ['vp', 'num'], ['cost', 'num'], ['deathTerrain', 'str'],
   ['banner', 'bool'], ['at', 'key'], ['deployed', 'bool'], ['alive', 'bool'],
@@ -8334,7 +8613,7 @@ function wbMapSvg(opts = {}) {
     <div class="wb-board-zoom-row" style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">
       <button class="ng-btn wb-board-zoom" onclick="wbBoardZoom()" style="font-size:.68em;opacity:.85">${
         full ? 'Fit the whole field' : 'Full size — scroll to pan'}</button></div>
-    <div style="overflow-x:auto;max-width:100%">
+    <div class="${WB_SCROLL_CLASS}" style="overflow-x:auto;max-width:100%">
     <svg id="${WB_FIELD_ID}" tabindex="0" onkeydown="wbBoardKey(event,${opts.preview ? 'true' : 'false'})" onfocus="wbBoardFocusEnter()"
       role="group" aria-label="Battlefield" aria-activedescendant="${wbHexId(wbBoardFocusKey(S, view))}"
       viewBox="0 0 ${wpx} ${hpx}" width="${wpx}" height="${hpx}"
@@ -8867,6 +9146,22 @@ function wbMapSvg(opts = {}) {
 // Every ability the unit HAS appears here. The ones it cannot use right now are
 // greyed and carry the reason. Attacks are not in this box on purpose: an attack
 // is a target on the board, and the board is where it is chosen.
+// ONE FIGURE AND ITS LABEL. The label is a full phrase rather than a header word so
+// the pair still reads as a sentence aloud — a screen reader hearing "Activation you
+// hold 6" loses nothing the old prose gave it, which is the condition for lifting
+// these two numbers out of that prose at all.
+//
+// The note is TEXT and not only a colour. An unaffordable cost is coloured p1Text AND
+// says "more than you hold", because colour is never the only channel here —
+// config.json says so, and §3.9 is an open entry about the one place it still is.
+function wbEconFigure(label, value, col, note) {
+  return `<div style="min-width:96px">`
+    + `<div style="font-size:.68em;color:${WB_COL.dim};line-height:1.3">${wbEsc(label)}</div>`
+    + `<b style="font-size:1.05em;color:${col}">${value}</b>`
+    + (note ? ` <span style="font-size:.68em;color:${WB_COL.p1Text}">${wbEsc(note)}</span>` : '')
+    + `</div>`;
+}
+
 function wbActionPanel(S, pl, u) {
   const cost = wbCost(S, u);
   // Whose turn it is, asked of the UNIT. A selection preserved across a snapshot
@@ -8907,18 +9202,42 @@ function wbActionPanel(S, pl, u) {
         · range ${wbNum(u.range)} · move ${wbNum(u.move)}
         · ${Number.isFinite(u.cap) ? `cap ${wbNum(u.cap)}` : 'no damage cap'}</span>
     </div>
+    ${/* THE TWO NUMBERS A DECISION TURNS ON, AS FIGURES RATHER THAN INSIDE A SENTENCE.
+         Both were already here and a playtester still could not find them: he searched
+         below the board — where they are — did not see them, scrolled up to the tracks,
+         scrolled back, and then reported "I had to notice this sentence in the
+         description". The sentence read "Its next action costs 1 activation and you hold
+         6. 49 hexes in gold to move to; 0 enemies ringed in orange to attack."
+
+         So this is not new information and not a new place. It is the same two numbers,
+         lifted out of a line that also carried hex counts, enemy names and an
+         instruction. A player scanning for a number found a sentence and had to read it.
+
+         DESIGN-LOG.md §3.24 names the collision: these are `figure` content — the
+         quantities a choice turns on — and they were set as `body` with the numerals
+         bolded. Weight, not size. The same error #105 fixed on the conceded score, and
+         the same remedy: raise the figures, leave the words around them quiet.
+
+         The sizes here are LOCAL and provisional. §3.24's scale does not exist yet, so
+         1.05em against .68em is chosen to read as a figure beside this panel's .75em
+         prose, not as a step in a system. When the scale lands these become its
+         constants. */''}
+    ${acting ? `<div class="wb-economy" style="display:flex;gap:18px;flex-wrap:wrap;margin-top:7px">
+      ${wbEconFigure('Activation you hold', wbNum(S.pools[pl]), WB_COL.text)}
+      ${wbEconFigure('Its next action costs', wbNum(cost),
+        cost > S.pools[pl] ? WB_COL.p1Text : WB_COL.text,
+        cost > S.pools[pl] ? 'more than you hold' : null)}
+    </div>` : ''}
     <div style="font-size:.75em;color:${WB_COL.text};margin-top:5px;line-height:1.6">
       ${!acting
         ? `It belongs to <b>${wbEsc(S.names[u.owner] || '')}</b>, and it is not their turn — nothing can be
            done with it now. Its details are here to read.`
         : u.deployed
-          ? `Its next action costs <b>${wbNum(cost)}</b> activation and you hold <b>${wbNum(S.pools[pl])}</b>.
-             <b style="color:${WB_COL.move}">${wbNum(hexes)}</b> ${hexes === 1 ? 'hex' : 'hexes'} in gold to move to;
+          ? `<b style="color:${WB_COL.move}">${wbNum(hexes)}</b> ${hexes === 1 ? 'hex' : 'hexes'} in gold to move to;
              <b style="color:${WB_COL.hit}">${wbNum(targets.length)}</b>
              ${targets.length === 1 ? 'enemy' : 'enemies'} ringed in orange to attack${targets.length
                ? `: ${targets.map((t) => wbEsc(t.name)).join(', ')}` : ''}.`
-          : `Its next action costs <b>${wbNum(cost)}</b> activation and you hold <b>${wbNum(S.pools[pl])}</b>.
-             It is not on the field yet — click a gold hex in your own edge columns to deploy it for
+          : `It is not on the field yet — click a gold hex in your own edge columns to deploy it for
              ${wbNum(u.cost)} deployment ${u.cost === 1 ? 'point' : 'points'}.`}
     </div>
     <div style="margin-top:7px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
