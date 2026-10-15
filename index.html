@@ -1,4 +1,4 @@
-<meta name="wb-build" content="7361c7d 2026-10-12">
+<meta name="wb-build" content="31ed777 2026-10-15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warband Playtest</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
@@ -293,7 +293,8 @@ var WARBAND_CONFIG = {
     {
       "id": "BP",
       "name": "Bypass",
-      "description": "This unit's attacks ignore cover and may be made through blocks_movement and impassable zones."
+      "description": "Attacks ignore cover, but still require normal range and line of sight. Movement-blocking terrain does not itself prevent a shot.",
+      "_description": "CORRECTED 2026-10-15, on the designer's ruling, after a probe for the independent review of #133 found this field promising behaviour no build has ever had. It used to read: \"This unit's attacks ignore cover and may be made through blocks_movement and impassable zones.\" The engine has always disagreed with that and always agreed with line_of_sight.bypass_rule -- 16 losClear call sites across the three drivers, none of which consults attacker.bypass, which is read in exactly one place: the cover reduction in core.damageOf. Measured: a Bombardier with Bypass, an enemy two hexes away and fallen_harness between them is offered 0 attacks and told \"No line of sight.\" DECIDED: the mechanics are right and the text was wrong. Bypass ignores cover, not line of sight; artillery does not shoot through what nobody can see past. The old clause also described no behaviour that existed either way -- false for fallen_harness, the only impassable zone, which blocks line of sight too, and a no-op for barricade, which blocks movement but not sight, so every unit could already shoot across it. The replacement says that plainly instead of implying Bypass is what permits it. Dates from the initial commit f7f7291 of 2026-08-26, so it was never a regression. The label lives in `name`: the card renders \"Bypass — \" and then this field, so repeating the word here would print it twice."
     },
     {
       "id": "CMD",
@@ -539,7 +540,23 @@ var WARBAND_CONFIG = {
         "SWP"
       ],
       "death_terrain": "barricade",
-      "ab": "Brace (1 activation): until the start of your next turn, this unit gains Absorb 2 and cannot be pushed.",
+      "ability": {
+        "name": "Brace",
+        "cost": {
+          "actions": 1,
+          "surcharge": 0
+        },
+        "target": "self",
+        "expires": "own_next_turn",
+        "effects": [
+          {
+            "kind": "temp_cap",
+            "amount": 1,
+            "scope": "self"
+          }
+        ]
+      },
+      "ab": "Brace (1 action): until the start of your company's next turn, no single attack on this unit may deal more than 1 damage. Existing stronger protection is not weakened.",
       "vp": 8,
       "movement_class": "medium",
       "plunder": "Shield, blade and a serviceable coat.",
@@ -561,7 +578,27 @@ var WARBAND_CONFIG = {
         "OVW"
       ],
       "death_terrain": "watch_fire",
-      "ab": "Mark Target (1 activation): choose an enemy in line of sight. Allied ranged attacks against it deal +1 damage until Regroup.",
+      "ability": {
+        "name": "Marking Shot",
+        "cost": {
+          "actions": 1,
+          "surcharge": 1
+        },
+        "target": "enemy_in_range",
+        "expires": "regroup",
+        "effects": [
+          {
+            "kind": "attack"
+          },
+          {
+            "kind": "mark",
+            "amount": 1,
+            "applies_to": "ranged",
+            "on": "survivor"
+          }
+        ]
+      },
+      "ab": "Marking Shot (one action, +1 activation): Make a normal ranged attack against an enemy you can legally shoot. If that enemy survives, mark it until Regroup. Subsequent ranged attacks by your company against that enemy deal +1 damage. The marking shot itself receives no bonus from the mark it creates. Marks do not stack.",
       "vp": 12,
       "movement_class": "light",
       "plunder": "The horse and its tack are worth more than the man."
@@ -582,7 +619,28 @@ var WARBAND_CONFIG = {
         "V"
       ],
       "death_terrain": "fallen_harness",
-      "ab": "Anchor (1 action): this unit cannot move this turn. Allies within 2 hexes gain damage cap 3 until Regroup.",
+      "ability": {
+        "name": "Anchor",
+        "cost": {
+          "actions": 1,
+          "surcharge": 0
+        },
+        "target": "self",
+        "expires": "regroup",
+        "effects": [
+          {
+            "kind": "immobilize",
+            "scope": "self"
+          },
+          {
+            "kind": "temp_cap",
+            "amount": 3,
+            "scope": "allies",
+            "radius": 2
+          }
+        ]
+      },
+      "ab": "Anchor (1 action): this unit cannot move for the rest of this turn. Allies within 2 hexes when it anchors gain a damage cap of 3 until Regroup, and keep it even if they move away. The Man-at-Arms itself is not covered, and a unit already better protected is not weakened.",
       "vp": 20,
       "movement_class": "heavy",
       "plunder": "His harness is the single richest object on the field, which is the whole joke: obsolete to fight in, superb to strip.",
@@ -604,7 +662,22 @@ var WARBAND_CONFIG = {
         "V"
       ],
       "death_terrain": "burnt_ground",
-      "ab": "Sunder (2 actions): indirect fire ignoring cover. Requires line of sight like any other shot.",
+      "ability": {
+        "name": "Sunder",
+        "cost": {
+          "actions": 1,
+          "surcharge": 1
+        },
+        "target": "enemy_in_range",
+        "expires": "immediate",
+        "effects": [
+          {
+            "kind": "attack",
+            "ignores": "damage_cap"
+          }
+        ]
+      },
+      "ab": "Sunder (1 action, +1 activation): a shot that ignores the target's damage cap. Normal range and line of sight, and Bypass applies as usual.",
       "vp": 16,
       "movement_class": "heavy",
       "plunder": "Captured guns were the classic measure of a won field."
@@ -691,7 +764,8 @@ var WARBAND_CONFIG = {
     "rationale": "Flat subtraction was measured to be the single most distorting mechanic in the design. With a minimum-damage floor, any armour above about 1 put low-attack units permanently at the floor and made every damage bonus invisible: a Levy needed +4 damage before one extra point landed on a Man-at-Arms, which is why fifteen successive balance levers moved nothing. A cap inverts the relationship instead of scaling it. A Levy attacking at 2 and a Warlord attacking at 4 both deal exactly 2 to a Man-at-Arms whose cap is 2, so cheap units threaten armoured ones as effectively as expensive ones do, while expensive units remain far better against soft targets. The cap is a counter to BURST, not to chip damage.",
     "fiction": "This is how armour actually worked. No single sword stroke kills a man in full harness; the plate turns the blow. What kills him is being surrounded and dragged down and stabbed through the visor, which is how armoured men died at Agincourt. The Man-at-Arms's strength and his weakness are now the same sentence.",
     "cover_rationale": "Cover reflects a unit's ability to USE the ground it stands on - fighting from behind a wall, over rubble, out of a ditch - which helps against a sword exactly as much as against a musket. Hence it applies to melee as well as ranged.",
-    "kill_time_floor": "No unit may be destroyed by a single attack. The highest attack in the roster is 4, so the lowest hit point total is 5. Hit points were raised across the roster to preserve the relative durability of each archetype while guaranteeing that even the largest unit needs at least two attacks to remove the smallest. Simulation showed this improves archetype balance at every warband size tested, cutting the spread from 52.9 to 31.9 at six units, as well as lengthening matches slightly."
+    "kill_time_floor": "Base attack values alone cannot destroy a full-health unit in one blow. However, tactical bonuses such as Overwhelm, Marking Shot, and terrain effects can make a single attack lethal. Hit points were raised across the roster to preserve the relative durability of each archetype while guaranteeing that even the largest unit needs at least two UNMODIFIED attacks to remove the smallest. Simulation showed this improves archetype balance at every warband size tested, cutting the spread from 52.9 to 31.9 at six units, as well as lengthening matches slightly.",
+    "_kill_time_floor": "CORRECTED 2026-10-15, on the designer's ruling. This field used to open \"No unit may be destroyed by a single attack. The highest attack in the roster is 4, so the lowest hit point total is 5.\" The arithmetic is right for an UNMODIFIED attack and for nothing else, and the guarantee was false in three ways reachable through ordinary play, found by a probe for the independent review of #133 and computed with core.damageParts on boards built by the real helpers: (1) two Light attackers, open ground, no abilities -- a Levy's 3 plus Overwhelm's +2 is exactly a Levy's 5 hit points, and Overwhelm raises the damage cap by the same amount, so no cap holds the blow down; (2) a mark, which adds +1 to a ranged attack, letting a Bombardier's 4 become exactly lethal against 5 -- NEW in the abilities work, since main had no mark mechanic at all; (3) the Officer's Cairn's +1, which does the same for a Man-at-Arms. Only the Man-at-Arms, at 14 hit points behind a cap of 2, cannot be one-shot by anything. DECIDED: one-shot kills are PERMITTED when tactical modifiers reach the number. No global clamp was added, damageOf still does not consult the defender's hit points, and Overwhelm was not weakened to save the old sentence -- it exists so that coordinated attacks can bring something down, and a floor forbidding exactly that would fight its own mechanic. So the floor was an artefact of the base numbers rather than an invariant, and this field now says which. One qualification worth keeping: the counterexamples are damage configurations computed on constructed boards, not positions proven reachable by a legal sequence of actions, and an earlier write-up of (1) as \"turn-one reachable\" overstated what was measured. Both the floor's old wording and Overwhelm's +2 date from the initial commit f7f7291 of 2026-08-26."
   },
   "randomness_policy": {
     "principle": "Randomness lives in the resources, not in the gameplay.",
@@ -784,7 +858,7 @@ var WARBAND_CONFIG = {
       "fallen_harness"
     ],
     "hill_rule": "A unit standing on a Hill sees over every blocker except another Hill.",
-    "bypass_rule": "Bypass ignores COVER but not line of sight. A shell can be arced over a wall you can see past; it cannot be dropped on something nobody can see. Indirect fire without spotters was ineffective in this period, which is also what makes the Dragoon's Mark Target worth having.",
+    "bypass_rule": "Bypass ignores COVER but not line of sight. A shell can be arced over a wall you can see past; it cannot be dropped on something nobody can see. Indirect fire without spotters was ineffective in this period, which is also what makes the Dragoon's Marking Shot worth having.",
     "rationale": "Added because the Bombardier's range 5 on a nine-by-seven board could break up a Light approach before it ever arrived, and Overwhelm requires Light units to REACH adjacency. Artillery was denying the swarm its own mechanic. Woods and high ground now break those firing lines."
   },
   "_portal_integration": {
@@ -840,7 +914,7 @@ const CFG = (typeof module !== 'undefined' && module.exports)
   : (typeof WARBAND_CONFIG !== 'undefined' ? WARBAND_CONFIG : self.WARBAND_CONFIG);
 
 const SIMPLIFICATIONS = [
-  'Active abilities (Brace, Anchor, Sunder, Mark Target) are not modelled. Modelled: Rally, and the passives Last Stand, Guard, Absorb, Bypass, Leader, Banner, Skittish, and all movement-class effects.',
+  'Active abilities (Brace, Anchor, Sunder, Marking Shot) are modelled ONLY when RULES.abilityPolicy names a policy. The frozen arm that produced every historical sweep number has three action types and none of them. Always modelled: Rally, and the passives Last Stand, Guard, Absorb, Bypass, Leader, Banner, Skittish, and all movement-class effects.',
   'AI is one-ply greedy and death-BLIND: it neither avoids nor seeks its own destruction, and it walks into 4.02 lethal hexes per game playing swarm against 2.53 playing elite. RULES.sacrifice enables a death-aware AI, worth +8.3 pts to swarm and -6.3 to elite -- but see SACRIFICE-EXPERIMENT.md: all of that comes from not dying, and valuing the Last Stand feature the corpse leaves behind adds nothing measurable.',
   'Banner is assigned to the median-cost unit for every strategy, so banner policy does not confound the archetype comparison.',
   "Draft packs are drawn from a rarity weighting and curated only for legality, which is a weaker model than the designer's intended pack algorithm.",
@@ -1005,6 +1079,22 @@ function makeBoard(rng, density, objCount) {
 }
 
 // ─────────────────────────── units ───────────────────────────
+// THE ACTIVE-ABILITY DECLARATIONS, read out of config rather than retyped here.
+// Each archetype that has one carries an `ability` block: a name, a cost in actions
+// plus an activation surcharge, what it targets, when it expires, and a list of
+// effects. The numbers live there because they are rules -- the same reason RAMP and
+// the cover table do -- and a driver that hard-coded `2` or `3` would be a second
+// copy of a rule that config owns.
+const abilityOf = (name) => (ARCH[name] && ARCH[name].ability) || null;
+
+// The one effect of a given kind, or null. Abilities carry a LIST because Anchor does
+// two things at once, and a caller that wants the cap should not have to know that.
+function abilityEffect(name, kind) {
+  const ab = abilityOf(name);
+  if (!ab || !Array.isArray(ab.effects)) return null;
+  return ab.effects.find((e) => e && e.kind === kind) || null;
+}
+
 let UID = 0;
 function makeUnit(name, owner, ov) {
   const a = ARCH[name], o = (ov && ov[name]) || {};
@@ -1034,7 +1124,62 @@ function makeUnit(name, owner, ov) {
     rallyRange: o.rallyRange ?? (a.rally ? a.rally.range : 0),
     vp: o.vp ?? a.vp, cost: a.cost, deathTerrain: a.death_terrain,
     banner: false, at: null, deployed: false, alive: true,
+    // ── the three states the active abilities leave behind ───────────────────
+    // ONE FIELD FOR EVERY TEMPORARY CAP, holding the most protective in force, so
+    // Brace and Anchor cannot disagree and neither can ever weaken a unit: both
+    // write min(what is there, what they grant). Brace's 2 beats Anchor's 3; two
+    // Anchors are min(3, 3) and so do not stack; and the unit's OWN cap is left
+    // alone, because damageOf takes the smaller of the two at the point of use.
+    // null means no temporary cap, which is not the same as a cap of Infinity --
+    // serialization has to tell them apart.
+    tempCap: o.tempCap ?? null,
+    // Anchor's other half: it buys the aura by standing still. Cleared at the turn
+    // boundary with the rest of the per-turn state, never mid-turn.
+    anchored: o.anchored ?? false,
+    // Marking Shot: WHICH COMPANY marked this unit, not a boolean and not a count.
+    // The seat matters because the bonus is for that company's shots, and a count
+    // would stack -- which the design decision rules out.
+    marked: o.marked ?? null,
   };
+}
+
+// ── what the abilities leave behind, and when it lapses ──────────────────────
+// THE EXPIRIES ARE HERE, not in the drivers, for the same reason reachable is: the
+// engine, the sweeps and the bot all run turns, and three copies of "when does Brace
+// end" is three chances to disagree.
+//
+// Both durations land on the same instant and the wording differs because the
+// abilities do. Anchor says "until Regroup"; Brace says "until the start of your
+// company's next turn". Warband gives both companies one shared turn, so a company's
+// next turn begins when the current one ends -- which is Regroup. If turns are ever
+// split per company these stop being the same moment and this comment is where to look.
+function expireRegroup(G) {
+  for (const u of G.units.values()) {
+    u.marked = null;
+    u.tempCap = null;
+  }
+}
+
+// Cleared at the turn boundary with the rest of the per-turn state. Separate from
+// expireRegroup because immobility is not a protection and a future rule might want
+// one without the other.
+function expireTurn(G) {
+  for (const u of G.units.values()) u.anchored = false;
+}
+
+// THE CAP THAT ACTUALLY APPLIES to this unit right now: its own, or a temporary grant,
+// whichever protects more. Exported because damageOf is not the only thing that needs
+// it -- the selected-unit panel prints it, and printing `u.cap` there told a braced
+// Vanguard it was still capped at 3, which is a second opinion about the one number
+// the player braced to change.
+const effectiveCap = (u) => (u.tempCap == null ? u.cap : Math.min(u.cap, u.tempCap));
+
+// GRANT A TEMPORARY CAP, and never make one worse. Every caller goes through this,
+// so "Brace beats Anchor", "two Anchors do not stack" and "a better cap is not
+// weakened" are one line rather than three rules in three drivers.
+function grantTempCap(u, amount) {
+  if (!u || !(amount > 0)) return;
+  u.tempCap = u.tempCap == null ? amount : Math.min(u.tempCap, amount);
 }
 
 // ─────────────────────────── movement-class rules ───────────────────────────
@@ -1173,6 +1318,11 @@ function rallyPicks(G, cap, mine) {
 }
 
 function reachable(G, u, RULES) {
+  // ANCHORED: the Man-at-Arms bought its aura by standing still, so it has nowhere to
+  // go for the rest of the turn. Refused here rather than in a driver, because every
+  // mover -- the table game, the sweeps, the bot -- asks this one function what is
+  // reachable, and a rule enforced in one of them is a rule the other two break.
+  if (u.anchored) return [];
   const board = G.board;
   const allowance = u.move * marchMult(G, u, RULES);
   const seen = new Map([[u.at, 0]]);
@@ -1282,11 +1432,17 @@ function actionCost(G, u, spent) {
 // The ids are stable identifiers, NOT display text. What a player reads is the
 // engine's business; see wbBlowStory. Rules name what happened, the interface names
 // it in English.
-function damageOf(G, attacker, defender, RULES, story) {
+// `opts` carries what the MOVE knows and the units do not: today only Sunder, which
+// is an ordinary shot that ignores the defender's cap. It is a parameter rather than
+// a flag on the attacker because the same Bombardier makes both kinds of attack, and
+// a unit-level flag would have to be set and unset around every shot.
+function damageOf(G, attacker, defender, RULES, story, opts) {
   const board = G.board;
   const aH = hexOf(G, attacker), dH = hexOf(G, defender);
   const aZ = ZONES[aH.terrain], dZ = ZONES[dH.terrain];
   const ranged = attacker.range > 1;
+  // How much the mark contributed to this blow, for the counterfactual below.
+  let markAdd = 0;
   let dmg = attacker.atk;
   if (story) story.base = attacker.atk;
   if (ranged && aZ.ranged_bonus) {
@@ -1321,6 +1477,17 @@ function damageOf(G, attacker, defender, RULES, story) {
     dmg += add;
     if (story && add) story.adds.push({ id: 'swarm', amount: add, mates: Math.min(mates, RULES.swarmCap) });
   }
+  // THE MARK: this company's RANGED shots at a marked enemy hit one harder. Added
+  // to the blow rather than to the cap, so a capped target is still capped -- a mark
+  // makes a shot better, it does not make a cap worse. `marked` holds the company
+  // that placed it, so the mark helps its own side only and never stacks.
+  if (ranged && defender.marked != null && defender.marked === attacker.owner) {
+    const e = abilityEffect('Dragoon', 'mark');
+    const add = (e && e.amount) || 0;
+    dmg += add;
+    markAdd = add;
+    if (story && add) story.adds.push({ id: 'mark', amount: add });
+  }
   // OUTNUMBERED: being engaged from several sides at once lifts BOTH the blow and the cap.
   // Lifting only the attack would be truncated by the cap; lifting only the cap would help
   // big hitters rather than numerous ones. Lifting both is what makes numbers tell.
@@ -1350,15 +1517,92 @@ function damageOf(G, attacker, defender, RULES, story) {
     capBonus = RULES.outnumber * extra;
     if (story && extra) story.adds.push({ id: 'overwhelm', amount: RULES.outnumber * extra, others: extra });
   }
-  const capped = Math.min(dmg, defender.cap + capBonus);
+  // THE CAP THAT ACTUALLY APPLIES: the defender's own, or a temporary grant, whichever
+  // protects more. Brace and Anchor both write into tempCap with a min, so this one
+  // line is the whole stacking rule -- nothing here needs to know which granted it.
+  const ownCap = effectiveCap(defender);
+  // SUNDER goes straight through it. Overwhelm's capBonus is irrelevant when there is
+  // no ceiling to lift, so the two cannot double-count.
+  const ignoreCap = !!(opts && opts.ignoreCap);
+  const capped = ignoreCap ? dmg : Math.min(dmg, ownCap + capBonus);
   let reduce = 0;
   if (dZ.grants_cover && !attacker.bypass) reduce += coverOf(defender);   // melee AND ranged
   const out = Math.max(CFG.combat.minimum_damage, capped - reduce);
+  // WHAT THE ABILITIES ACTUALLY DID TO THIS BLOW, measured where everything is known.
+  // A take-up rate says how often a policy pressed a button; it cannot say whether
+  // pressing it changed a number. These counters can, and they are properties of the
+  // RULES rather than of any policy -- the same arithmetic runs whoever chose the move.
+  //
+  // COUNTERFACTUALS ON THE SAME BLOW, not inferences from whether the cap bound. The
+  // minimum-damage floor can swallow a difference that the cap appears to have made, so
+  // 'did capBit fire' is the wrong question; 'what would the output have been' is the
+  // right one, and it is three lines of the arithmetic already above.
+  // THE TALLY ARRIVES WITH THE BLOW, NOT ON RULES, and that is not a style choice. The
+  // policy evaluates candidate Sunders by calling this function with ignoreCap set, so
+  // a tally hanging off RULES counted every hypothetical the lookahead considered: 29
+  // counted blows against one actual use, in a single match. A measurement that counts
+  // the evaluator's own imagination is worse than none.
+  //
+  // So only the appliers pass it, and only when they are resolving a real blow.
+  const tally = opts && opts.tally;
+  if (tally) {
+    const t = tally;
+    const floor = CFG.combat.minimum_damage;
+    // Brace and Anchor: what the temporary cap prevented, this blow.
+    if (defender.tempCap != null && !ignoreCap) {
+      const withoutGrant = Math.max(floor, Math.min(dmg, defender.cap + capBonus) - reduce);
+      const saved = withoutGrant - out;
+      if (saved > 0) { t.capPrevented += saved; t.capBlows += 1; }
+      else t.capNoEffect += 1;
+      // WHERE AND AGAINST WHAT, for a question a single total cannot answer: a grant is
+      // worth different amounts on different ground and against different attacks, and
+      // the owner asked for exactly that breakdown. Buckets rather than a list of blows,
+      // so the memory is bounded however long the sweep runs.
+      if (t.by) {
+        const b = t.by;
+        const key = saved > 0 ? 'saved' : 'noEffect';
+        b.cls[defender.cls] = (b.cls[defender.cls] || 0) + (saved > 0 ? saved : 0);
+        b.clsBlows[defender.cls] = (b.clsBlows[defender.cls] || 0) + 1;
+        b[reduce > 0 ? 'onCover' : 'onOpen'][key] += 1;
+        if (reduce > 0) b.coverSaved += saved; else b.openSaved += saved;
+        if (capBonus > 0) { b.overwhelm[key] += 1; b.overwhelmSaved += saved; }
+        const dh = hexOf(G, defender);
+        if (dh && dh.objective) { b.onObjective[key] += 1; b.objectiveSaved += saved; }
+        if (out <= floor) b.flooredAnyway += 1;
+      }
+    }
+    // The mark: what the +1 actually delivered after the cap and the floor.
+    if (markAdd > 0) {
+      const withoutMark = Math.max(floor,
+        (ignoreCap ? dmg - markAdd : Math.min(dmg - markAdd, ownCap + capBonus)) - reduce);
+      const gained = out - withoutMark;
+      if (gained > 0) { t.markGained += gained; t.markBlows += 1; }
+      else t.markAbsorbed += 1;
+    }
+    // Sunder: what going through the cap was worth, this blow.
+    if (ignoreCap) {
+      const withCap = Math.max(floor, Math.min(dmg, ownCap + capBonus) - reduce);
+      const gained = out - withCap;
+      if (gained > 0) { t.sunderGained += gained; t.sunderBlows += 1; }
+      else t.sunderNoEffect += 1;
+      // AND HOW OFTEN IT WENT THROUGH A GRANTED ONE, which is the Anchor interaction the
+      // owner asked about: a Sunder ignores the cap whoever put it there.
+      if (t.by && defender.tempCap != null) {
+        t.by.sunderThroughGrant += 1;
+        t.by.sunderThroughGrantGained += gained > 0 ? gained : 0;
+      }
+    }
+  }
   if (story) {
     story.raw = dmg;                       // before the cap
-    story.cap = defender.cap;              // the defender's own ceiling
+    // WHAT ACTUALLY BOUND, not the archetype's number: a Braced Vanguard is capped at
+    // 2 and the breakdown has to say 2, or the arithmetic shown stops adding up.
+    story.cap = ownCap;                    // the ceiling in force
+    story.ownCap = defender.cap;           // and the one it was born with
+    story.tempCap = defender.tempCap;      // null unless Brace or Anchor granted one
+    story.capIgnored = ignoreCap;          // Sunder went through it
     story.capBonus = capBonus;             // how far Overwhelm lifted it
-    story.capBit = capped < dmg;           // did the ceiling actually bind?
+    story.capBit = !ignoreCap && capped < dmg;   // did the ceiling actually bind?
     story.cover = reduce;
     story.floored = (capped - reduce) < CFG.combat.minimum_damage;
     story.total = out;
@@ -1369,9 +1613,12 @@ function damageOf(G, attacker, defender, RULES, story) {
 // The same blow, with its working shown. A wrapper rather than a reimplementation:
 // it turns on the collection inside damageOf, so the parts always add up to the
 // number because they ARE the number's own arithmetic.
-function damageParts(G, attacker, defender, RULES) {
+// `opts` is threaded through for the same reason it exists at all: the UI's forecast
+// and the applier's result must be ONE calculation. A Sunder preview that could not
+// say it ignores the cap would be a second damage formula wearing the first one's name.
+function damageParts(G, attacker, defender, RULES, opts) {
   const story = { base: 0, adds: [], raw: 0, cap: Infinity, capBonus: 0, capBit: false, cover: 0, floored: false, total: 0 };
-  damageOf(G, attacker, defender, RULES, story);
+  damageOf(G, attacker, defender, RULES, story, opts);
   return story;
 }
 const effRange = (G, u) => {
@@ -1632,7 +1879,45 @@ function runGame(opts = {}) {
     sacrifice: 0, sacCost: 60, sacGain: 1, measureLethal: 0,
     // See marchMult. 'off' is the shipped rule; 'heavy' and 'all' are for measuring.
     march: 'off', marchMult: 2,
-    rallyScore: 38, fleeAware: 0 }, opts.rules || {});
+    rallyScore: 38, fleeAware: 0,
+    // ── the ability-exercising policy, OFF BY DEFAULT ─────────────────────────
+    // null means the frozen instrument: three action types, every historical sweep
+    // number comparable. Set to a NAME ('abilities-1') to let the policy consider the
+    // four abilities, and report that name beside any figure it produced -- a later
+    // policy gets a new name rather than editing these weights, so two reports can
+    // never silently be the same number from different instruments.
+    abilityPolicy: null,
+    // Weights for that policy only. Each is per point of damage the ability actually
+    // prevents or adds, so an ability that prevents nothing scores nothing and the
+    // measurement can tell 'badly priced' from 'never worth using'.
+    braceScore: 10, anchorScore: 8, markScore: 7,
+    // ── THE TWO REDESIGNS, NOW ADOPTED, AND THEIR BASELINES ─────────────────
+    // These were candidates A and B, measured here before config moved. Both are now
+    // the declared rule, so BOTH FLAGS NOW DEFAULT TO THE DECLARATION and the two
+    // flags have swapped jobs: they no longer carry a proposal, they reproduce the
+    // ruleset the proposal replaced. That is deliberate -- a comparison baseline that
+    // cannot be re-run is not a baseline, and the numbers in DESIGN-LOG for
+    // 'cap 2 + standalone mark' have to stay reproducible from this file.
+    //
+    // braceCap: null reads the declaration, which now says 1. Setting it to 2
+    // reproduces the ruleset before adoption.
+    braceCap: null,
+    // anchorCap: null reads the declaration, which says 3. Setting it to 2 is the
+    // experimental Anchor the owner asked to be priced -- a VARIANT and not a rule, for
+    // the same reason braceCap was one: config still says 3, and nothing here can move
+    // the shipped grant. Everything else about Anchor is untouched by it -- the Heavy
+    // action, the immobility, the radius, the duration and the non-stacking minimum.
+    anchorCap: null,
+    // markingShot: null reads the declaration -- the Dragoon's ability carries an
+    // `attack` effect, so a marking shot is a shot. Setting it to false reproduces the
+    // standalone Mark Target: sight alone was enough, and it carried no premium, so
+    // the surcharge is dropped with it below. Anything else would price the baseline
+    // at the new rule's cost and call the difference a rules effect.
+    markingShot: null,
+    // Where the exact effects are counted. Null means do not count, which is the
+    // frozen path.
+    tally: null,
+  }, opts.rules || {});
 
   const board = makeBoard(rng, RULES.density, RULES.objectiveCount);
   let { rosters, firstPlayer, discards, forcedPicks } = draft(rng, stratNames[0], stratNames[1]);
@@ -1803,8 +2088,28 @@ function runGame(opts = {}) {
     return { min, mean: sum / n };
   };
 
+    // WHAT THE ABILITIES ACTUALLY DID, counted only when the policy is on. `offered`
+  // is how often one was affordable and declared, `used` how often it was chosen --
+  // and the gap between them is the answer to "is this ability worth activating",
+  // which a win rate cannot give.
+  const abilityCounts = RULES.abilityPolicy
+    ? [0, 1].map(() => ({
+        offered: {}, covered: 0, sunderThrough: 0,
+        // KEYED BY THE DECLARED NAME. The markingShot:false baseline reports under
+        // 'Marking Shot' too: the flag changes what the ability does, not which
+        // ability slot was spent, and a second key would split one series in two.
+        used: { Brace: 0, Anchor: 0, 'Marking Shot': 0, Sunder: 0 },
+        // Anchor's own ledger, because the question asked of it is not "how often was it
+        // taken" but "how often could it have mattered". See the policy block.
+        anchor: { offers: 0, useful: 0, gainOffered: 0, alliesInRadius: 0,
+                  grants: 0, grantsNoop: 0 },
+      }))
+    : null;
   while (turn < maxTurns && !broke(0) && !broke(1)) {
     turn += 1;
+    // Anchor's immobility is per-turn and lapses here, in the same place the pools
+    // refresh, because it belongs to the turn exactly as they do.
+    expireTurn(G);
     // Nothing subtracts from the pool today, so the clamp cannot bite. It stays
     // because config's activation block lists modifiers as an open set and the
     // first negative one would otherwise drive the pool below zero silently.
@@ -2027,6 +2332,172 @@ function runGame(opts = {}) {
           const score = saved * RULES.rallyScore - sur;
           if (picks.length && score > 0 && (!best || score > best.score)) best = { type: 'rally', u, score, cost, picks };
         }
+
+        // ── the four active abilities ────────────────────────────────────────
+        // BEHIND RULES.abilityPolicy, AND OFF BY DEFAULT, because this file is a
+        // measuring instrument. Every sweep number in DESIGN-LOG was produced by a
+        // policy that had three action types; adding a fourth changes what the
+        // instrument does, so the historical arm must still be reachable exactly as it
+        // was. With the flag unset not one line below runs and `best` cannot differ by
+        // a single comparison.
+        //
+        // IT IS A NAMED POLICY AND NOT A TUNING, so a report can say which one produced
+        // a figure: 'abilities-1' is this block, and a later one gets its own name
+        // rather than editing these weights.
+        if (RULES.abilityPolicy) {
+          const ab = abilityOf(u.name);
+          // WHICH ABILITY THIS IS, BY SHAPE AND NOT BY NAME, for the one that has been
+          // renamed once already: Mark Target became Marking Shot, and a branch keyed on
+          // the old string would have stopped firing silently while every test that
+          // drives the applier went on passing.
+          const markEff = ab ? abilityEffect(u.name, 'mark') : null;
+          const shotMode = markEff
+            ? (RULES.markingShot != null ? RULES.markingShot : !!abilityEffect(u.name, 'attack'))
+            : false;
+          // The premium comes from the declaration -- EXCEPT for the mark's baseline.
+          // markingShot:false reproduces an ability that was one plain action with no
+          // premium, so pricing it at the new rule's cost would charge the baseline for
+          // a shot it does not take and call the difference a rules effect.
+          const surcharge = (markEff && !shotMode) ? 0 : ((ab && ab.cost && ab.cost.surcharge) || 0);
+          const abCost = cost + surcharge;
+          if (ab && abCost <= pools[pl]) {
+            if (abilityCounts) {
+              abilityCounts[pl].offered[ab.name] = (abilityCounts[pl].offered[ab.name] || 0) + 1;
+            }
+            // FROM `sur`, NOT FROM THE CLASS COST AGAIN. abCost is cost + surcharge, so
+            // (abCost - ACT_COST[u.cls]) * 4 is exactly sur + surcharge * 4 -- and
+            // deriving it the other way reads the class cost a second time inside
+            // runGame, which warband-watch-fire.test.js refuses because that is how
+            // inline pricing comes back. It caught this.
+            const abSur = sur + surcharge * 4;
+            // BRACE: worth the action when a blow is actually coming and the cap would
+            // bind it. Scored off the worst threat on this unit, because a cap that
+            // never binds is activation thrown away -- which is the question the
+            // reviewer asked us to answer rather than assume.
+            if (ab.name === 'Brace') {
+              const e = abilityEffect(u.name, 'temp_cap');
+              const grant = RULES.braceCap != null ? RULES.braceCap : (e ? e.amount : null);
+              const worst = threatOn(uHex, u, foes);
+              const cur = effectiveCap(u);
+              const per = Math.max(0, Math.min(worst, cur) - (grant == null ? cur : grant));
+              // ABILITIES-2 SCORES BRACE OVER THE TURN, NOT OVER ONE BLOW, which is the
+              // short-horizon fault in abilities-1: a cap applies to EVERY blow that
+              // lands before Regroup, so pricing it against a single worst threat
+              // undervalues it by however many enemies can reach. The count is how many
+              // foes could strike this hex, which is the honest upper bound on blows --
+              // each might act more than once, and each might not act at all.
+              //
+              // abilities-1 is left exactly as it was, so the two can be differenced.
+              let blows = 1;
+              if (RULES.abilityPolicy === 'abilities-2') {
+                blows = 0;
+                for (const e of foes) {
+                  const eH = hexOf(G, e);
+                  if (hexDist(eH, uHex) > effRange(G, e) + e.move) continue;
+                  if (e.range > 1 && !losClear(board, eH, uHex)) continue;
+                  blows += 1;
+                }
+                blows = Math.max(1, blows);
+              }
+              const saved = per * blows;
+              const score = saved * RULES.braceScore - abSur;
+              if (saved > 0 && score > 0 && (!best || score > best.score)) {
+                best = { type: 'brace', u, score, cost: abCost, amount: grant };
+              }
+            }
+            // ANCHOR: pays for itself through the allies it covers, and costs this unit
+            // its movement -- so it is only scored when standing still is tolerable,
+            // which `holding` already measures.
+            if (ab.name === 'Anchor' && !u.anchored) {
+              const e = abilityEffect(u.name, 'temp_cap');
+              const grantA = RULES.anchorCap != null ? RULES.anchorCap : e.amount;
+              let gain = 0, covered = 0;
+              for (const f of mine) {
+                if (f.uid === u.uid) continue;
+                if (hexDist(uHex, hexOf(G, f)) > e.radius) continue;
+                covered += 1;
+                const curF = f.tempCap == null ? f.cap : Math.min(f.cap, f.tempCap);
+                if (curF <= grantA) continue;                // already better protected
+                const worstF = threatOn(hexOf(G, f), f, foes);
+                gain += Math.max(0, Math.min(worstF, curF) - grantA);
+              }
+              // THE OPPORTUNITY, SEPARATELY FROM THE CHOICE. `offered` above says the
+              // ability was affordable and declared; this says whether the grant would
+              // have changed a number, which is the distinction between "nobody takes it"
+              // and "there is nothing to take". Counted for every offer, chosen or not.
+              if (abilityCounts) {
+                const a = abilityCounts[pl].anchor;
+                a.offers += 1;
+                a.alliesInRadius += covered;
+                if (gain > 0) { a.useful += 1; a.gainOffered += gain; }
+              }
+              const score = gain * RULES.anchorScore + (holding ? 6 : 0) - abSur;
+              if (gain > 0 && score > 0 && (!best || score > best.score)) {
+                best = { type: 'anchor', u, score, cost: abCost, amount: grantA, radius: e.radius };
+              }
+            }
+            // THE MARK: only worth it if this company HAS shooters that can reach the
+            // marked unit afterwards. A mark nobody can follow up is the clearest case
+            // of a correct ability that is never worth activating -- which is what the
+            // standalone Mark Target turned out to be, and why it is now a shot.
+            if (markEff) {
+              const e = markEff;
+              for (const en of foes) {
+                if (en.marked === u.owner) continue;
+                const eH = hexOf(G, en);
+                // THE ADOPTED RULE NARROWS THE LEGAL SET, and that is a rules change
+                // rather than a cost change: a marking shot has to be a legal ATTACK, so
+                // range binds as well as sight. Under the baseline sight alone was enough.
+                if (shotMode && hexDist(uHex, eH) > effRange(G, u)) continue;
+                if (!losClear(board, uHex, eH)) continue;
+                let shooters = 0;
+                for (const f of mine) {
+                  if (f.range <= 1 || f.uid === u.uid) continue;
+                  const fH = hexOf(G, f);
+                  if (hexDist(fH, eH) > effRange(G, f)) continue;
+                  if (!losClear(board, fH, eH)) continue;
+                  shooters += 1;
+                }
+                if (shotMode) {
+                  // The shot happens whether or not the mark is worth anything, so it
+                  // is priced as an attack PLUS the follow-up value -- and the shot
+                  // itself gets no bonus, which is why `plain` is the damage used.
+                  const plain = damageOf(G, u, en, RULES);
+                  const kills = en.hp <= plain;
+                  const future = kills ? 0 : shooters * e.amount * RULES.markScore;
+                  const score = (kills ? 100 + en.vp * 10 : plain * 6) + future - abSur;
+                  if (score > 0 && (!best || score > best.score)) {
+                    best = { type: 'markshot', u, target: en, dmg: plain, score, cost: abCost };
+                  }
+                  continue;
+                }
+                if (!shooters) continue;
+                const score = shooters * e.amount * RULES.markScore - abSur;
+                if (score > 0 && (!best || score > best.score)) {
+                  best = { type: 'mark', u, target: en, score, cost: abCost };
+                }
+              }
+            }
+            // SUNDER: the premium buys going through a cap, so it is worth exactly what
+            // the cap was withholding -- and nothing at all against an uncapped target.
+            if (ab.name === 'Sunder') {
+              for (const en of foes) {
+                const eH = hexOf(G, en);
+                if (hexDist(uHex, eH) > effRange(G, u)) continue;
+                if (u.range > 1 && !losClear(board, uHex, eH)) continue;
+                const plain = damageOf(G, u, en, RULES);
+                const through = damageOf(G, u, en, RULES, null, { ignoreCap: true });
+                if (through <= plain) continue;               // nothing to go through
+                const score = (en.hp <= through && en.hp > plain
+                  ? 100 + en.vp * 10
+                  : (through - plain) * 6) - abSur;
+                if (score > 0 && (!best || score > best.score)) {
+                  best = { type: 'sunder', u, target: en, dmg: through, score, cost: abCost };
+                }
+              }
+            }
+          }
+        }
       }
       return best;
     }
@@ -2068,12 +2539,85 @@ function runGame(opts = {}) {
             if (bestHex.objective) bestHex.controller = f.owner;
             triggerFlight(f);
           }
-        } else if (act.type === 'attack') {
+        } else if (act.type === 'brace') {
+          grantTempCap(act.u, act.amount);
+          if (abilityCounts) abilityCounts[pl].used.Brace += 1;
+        } else if (act.type === 'anchor') {
+          act.u.anchored = true;
+          for (const f of living(pl)) {
+            if (f.uid === act.u.uid) continue;
+            if (hexDist(hexOf(G, act.u), hexOf(G, f)) > act.radius) continue;
+            // BEFORE AND AFTER, so a grant that changed nothing is counted as one. Two
+            // Anchors do not stack and a braced unit is already better protected, so some
+            // share of the allies in radius get a grant that moves no number -- which is
+            // part of what the action buys and part of what it does not.
+            const was = f.tempCap;
+            grantTempCap(f, act.amount);
+            if (abilityCounts) {
+              abilityCounts[pl].covered += 1;
+              abilityCounts[pl].anchor.grants += 1;
+              if (f.tempCap === was) abilityCounts[pl].anchor.grantsNoop += 1;
+            }
+          }
+          if (abilityCounts) abilityCounts[pl].used.Anchor += 1;
+        } else if (act.type === 'mark') {
+          act.target.marked = act.u.owner;
+          if (abilityCounts) abilityCounts[pl].used['Marking Shot'] += 1;
+        } else if (act.type === 'markshot' || act.type === 'sunder' || act.type === 'attack') {
+          // SUNDER IS AN ATTACK and shares this whole branch, including Guard
+          // redirection and the sweep carry. The one difference is the option that
+          // reaches damageOf -- which is the same discipline the engine follows, and
+          // the reason a forecast and a result cannot disagree in either driver.
+          const sunder = act.type === 'sunder';
+          const markshot = act.type === 'markshot';
+          // The tally goes on every resolved blow, Sunder or not: Brace and the marks
+          // have to be counted on ordinary attacks too, which is most of them.
+          const opts2 = { ...(sunder ? { ignoreCap: true } : {}), tally: RULES.tally || null };
+          if (sunder && abilityCounts) {
+            abilityCounts[pl].used.Sunder += 1;
+            abilityCounts[pl].sunderThrough += act.dmg - damageOf(G, act.u, act.target, RULES);
+          }
           const victim = redirect(G, act.target, act.dmg);
-          const dmg = victim === act.target ? act.dmg : damageOf(G, act.u, victim, RULES);
+          // GUARD AND A GRANTED CAP, counted where the redirection is known. damageOf
+          // cannot see it: it is handed a defender and has no idea the blow was aimed
+          // elsewhere. The interesting case is a blow redirected ONTO a unit holding a
+          // temporary cap -- the bodyguard is protected by somebody else's Anchor.
+          if (RULES.tally && RULES.tally.by && victim !== act.target && victim.tempCap != null) {
+            RULES.tally.by.guardOntoGrant += 1;
+          }
+          // THE MAIN BLOW IS RECOMPUTED WHEN TALLYING, and only then. The applier
+          // normally reuses act.dmg from the scoring pass -- same board, same tick, so
+          // the same number -- which meant damageOf was never called again for a
+          // straight hit and the tally saw only the Guard-redirect path: 43 Sunder uses
+          // produced 20 counted blows. Recomputing under the tally fixes that, and the
+          // equality check says so out loud rather than trusting that the reuse was
+          // sound: if these ever disagree, the measurement is of a different blow.
+          let dmg;
+          if (victim === act.target) {
+            if (RULES.tally) {
+              const again = damageOf(G, act.u, victim, RULES, null, opts2);
+              if (again !== act.dmg) RULES.tally.recomputeMismatch = (RULES.tally.recomputeMismatch || 0) + 1;
+              dmg = act.dmg;
+            } else dmg = act.dmg;
+          } else {
+            dmg = damageOf(G, act.u, victim, RULES, null, opts2);
+          }
           victim.hp -= dmg; dmgDealt[pl] += dmg;
           if (TRACE) logBlow(act.u, victim, dmg, (x) => x);
           if (victim.hp <= 0) { killUnit(victim); kills += 1; if (TRACE) dsr(act.u).kills += 1; }
+          // THE MARK GOES ON AFTER THE SHOT RESOLVES, AND ONLY ON A SURVIVOR. Marking a
+          // corpse would be a mark nobody can use, and the decision says the shot
+          // itself takes no bonus -- which it cannot, because the mark is not there
+          // when damageOf runs for it.
+          //
+          // ON THE INTENDED TARGET, NOT THE VICTIM. Guard can redirect the damage to a
+          // bodyguard, and the Dragoon chose which enemy to mark; marking whoever
+          // happened to absorb the blow would hand the opponent control of where the
+          // mark lands by standing a Guard next to it.
+          if (markshot && act.target.alive) {
+            act.target.marked = act.u.owner;
+            if (abilityCounts) abilityCounts[pl].used['Marking Shot'] += 1;
+          }
           // SWEEP: a Medium unit's blow carries through the press around its target, which is
           // precisely the formation Overwhelm requires Light units to adopt.
           if (sweeps(act.u, RULES) && act.target.at != null) {
@@ -2081,7 +2625,7 @@ function runGame(opts = {}) {
               const other = occupantOf(G, nb);
               if (!other || !other.alive || other.owner === act.u.owner || other.uid === victim.uid) continue;
               if (act.u.range > 1 && !losClear(board, hexOf(G, act.u), hexOf(G, other))) continue;
-              const d2 = Math.max(1, damageOf(G, act.u, other, RULES) - RULES.sweepPenalty);
+              const d2 = Math.max(1, damageOf(G, act.u, other, RULES, null, opts2) - RULES.sweepPenalty);
               other.hp -= d2; dmgDealt[pl] += d2;
               if (TRACE) logBlow(act.u, other, d2, (x) => Math.max(1, x - RULES.sweepPenalty));
               if (other.hp <= 0) { killUnit(other); kills += 1; if (TRACE) dsr(act.u).kills += 1; }
@@ -2145,6 +2689,10 @@ function runGame(opts = {}) {
         sepMin: sep.min, sepMean: sep.mean,
       });
     }
+    // REGROUP: marks and granted caps lapse. After the objective payout and the
+    // trace frame, so a frame still describes the turn that was just played, and
+    // before the order swaps, which is the next turn's business.
+    expireRegroup(G);
     order = [order[1], order[0]];
   }
 
@@ -2206,6 +2754,9 @@ function runGame(opts = {}) {
     survivors: [living(0).length, living(1).length],
     timeout: turn >= maxTurns && !broke(0) && !broke(1),
     discards, forcedPicks, forcedRosters, lethalMoves,
+    // null unless the ability policy ran, so a caller cannot mistake a frozen-policy
+    // match for one that had the abilities available and declined them.
+    abilityCounts, abilityPolicy: RULES.abilityPolicy || null,
     everActed: [everActed[0].size, everActed[1].size],
     undeployedNames: [0, 1].map((pl) => Array.from(G.units.values())
       .filter((u) => u.owner === pl && !u.deployed).map((u) => u.name)),
@@ -2450,6 +3001,10 @@ const WarbandCore = {
   rallyPicks,
   deployPoints,
   actionCost,
+  // The active abilities: their declarations, their effects, and the three places
+  // their state is granted or lapses. Exported because the engine, the sweeps and the
+  // bot must all use these rather than each keeping its own copy.
+  abilityOf, abilityEffect, grantTempCap, expireRegroup, expireTurn, effectiveCap,
   hexOf, occupantOf, place,
   neighbors, hexDist, key, col, legal, coverOf, moveCost, entryCost, canEnter, stopsIn,
   ZONES, ARCH, CLASSES, CFG, W, H, BASE_POOL, STABLE, PACK, RAMP, PLATEAU, ACT_COST, MAX_TURNS,
@@ -3072,6 +3627,8 @@ function wbBeginTurn(S) {
   // has the Sutler alive on the field. See core.deployPoints for the rule and for why
   // the arrival turn needs no record.
   S.dp = [0, 1].map((pl) => WB.deployPoints(S.turn, S.armies ? S.armies[pl] : null));
+  // Anchor's immobility is per-turn, cleared with the rest of the per-turn state.
+  WB.expireTurn(S.G);
   S.activeIdx = 0; S.sel = null; S.rally = null;
   S.passed = [false, false];
 }
@@ -3314,9 +3871,9 @@ function wbPoolCeiling(S, pl) {
 // the unit, and they appear whether or not they are usable, greyed with a reason.
 //
 // WB_ACTIVE is the implemented set. Everything else an archetype declares is read
-// out of config's `ab` prose and shown as what it is -- Brace, Anchor, Sunder and
-// Mark Target are in the data and in no driver. Implementing one means adding an
-// entry here, not finding somewhere new to put a button.
+// out of config's `ab` prose and shown as what it is. Brace, Anchor, Sunder and the
+// Dragoon's mark were all in the data and in no driver until #122. Implementing one
+// means adding an entry here, not finding somewhere new to put a button.
 const WB_ACTIVE = [
   {
     name: 'Rally',
@@ -3333,8 +3890,99 @@ const WB_ACTIVE = [
         ? `not enough activation - ${wbCost(S, u)} needed, ${S.pools[u.owner]} left`
         : !wbRallyTargets(S, u).length ? `no ally within ${u.rallyRange} hexes` : null),
     call: (u) => `wbRally(${wbAttrNum(u.uid)})`,
+    // THE MOVE THIS CONTROL SUBMITS, and the enemies it may be pointed at. Added so
+    // that wbLegalMoves can enumerate abilities out of THIS table rather than keeping
+    // a second list of names and verbs: the panel and the bot now read one definition
+    // of "which ability, costing what, legal when, submitting what". Rally has its own
+    // target rule (wbRallyTargets picks allies, and the move carries no target), so it
+    // declares no `targets` and the enumerator leaves its existing branch alone.
+    move: 'rally',
+  },
+  // THE FOUR THAT WERE IN THE DATA AND IN NO DRIVER. Each is `has` by declaration
+  // rather than by a keyword, because that is how config describes them -- an `ability`
+  // block on the archetype, not a keyword with a value. One shape, so the panel's
+  // existing row rendering greys them with a reason without knowing which is which.
+  //
+  // `why` asks wbAbilityRefusal for everything the four share and then adds its own
+  // last question, so a player is told the cheapest reason they can act on.
+  {
+    name: 'Brace',
+    has: (u) => wbDeclares(u, 'Brace'),
+    cost: (S, u) => wbAbilityCost(S, u),
+    why: (S, u) => wbAbilityRefusal(S, u, 'Brace')
+      || (u.tempCap != null && u.tempCap <= wbGrant(u) ? 'already braced' : null),
+    call: (u) => `wbBrace(${wbAttrNum(u.uid)})`,
+    move: 'brace',
+  },
+  {
+    name: 'Anchor',
+    has: (u) => wbDeclares(u, 'Anchor'),
+    cost: (S, u) => wbAbilityCost(S, u),
+    why: (S, u) => wbAbilityRefusal(S, u, 'Anchor')
+      || (u.anchored ? 'already anchored this turn' : null),
+    call: (u) => `wbAnchor(${wbAttrNum(u.uid)})`,
+    move: 'anchor',
+  },
+  {
+    name: 'Marking Shot',
+    has: (u) => wbDeclares(u, 'Marking Shot'),
+    cost: (S, u) => wbAbilityCost(S, u),
+    // THE LAST QUESTION IS WHETHER THERE IS ANYTHING TO SHOOT, asked the same way the
+    // board decides it: an enemy this unit could legally fire on. An ability offered
+    // with no legal target is an affordance that encodes availability wrongly.
+    //
+    // TWO REASONS AND NOT ONE, because they are different situations and a player can
+    // do different things about them. Nothing in range means move; everything in range
+    // already marked means attack normally and keep the premium.
+    why: (S, u) => wbAbilityRefusal(S, u, 'Marking Shot')
+      || (!wbAttackTargets(S, u).length ? 'nothing in range to shoot' : null)
+      || (!wbMarkShotTargets(S, u).length ? 'every enemy in range is already marked' : null),
+    call: (u) => `wbAim('markshot', ${wbAttrNum(u.uid)})`,
+    move: 'markshot',
+    targets: (S, u) => wbMarkShotTargets(S, u),
+  },
+  {
+    name: 'Sunder',
+    has: (u) => wbDeclares(u, 'Sunder'),
+    cost: (S, u) => wbAbilityCost(S, u),
+    why: (S, u) => wbAbilityRefusal(S, u, 'Sunder')
+      || (!wbAttackTargets(S, u).length ? 'nothing in range' : null),
+    call: (u) => `wbAim('sunder', ${wbAttrNum(u.uid)})`,
+    move: 'sunder',
+    targets: (S, u) => wbAttackTargets(S, u),
   },
 ];
+
+// Does this unit's archetype DECLARE this ability? The declaration is the only record
+// -- there is no keyword for Brace or Anchor -- so `has` reads config through core.
+const wbDeclares = (u, name) => {
+  const ab = u && WB.abilityOf(u.name);
+  return !!(ab && ab.name === name);
+};
+
+// What this unit's own temp-cap grant is worth, for the "already braced" question.
+const wbGrant = (u) => {
+  const e = u && WB.abilityEffect(u.name, 'temp_cap');
+  return e && e.amount > 0 ? e.amount : Infinity;
+};
+
+// WHAT A MARKING SHOT MAY BE POINTED AT, asked once and used by both the availability
+// reason above and the click that follows.
+//
+// IT IS wbAttackTargets AND NOT A SIGHT TEST OF ITS OWN, which is the rules change the
+// redesign carried: the standalone Mark Target needed sight alone, so a Dragoon could
+// mark something four hexes away that it could never shoot. A marking shot IS a shot,
+// so range binds as well as sight -- and reading the attack set rather than restating
+// it is what keeps the two from drifting apart, including the effRange terrain read
+// that the attack set already does.
+//
+// MINUS WHAT THE PREMIUM COULD NOT BUY. An enemy this company has already marked would
+// take the shot and the +1 activation and gain nothing: the mark does not stack and
+// does not extend, so an ordinary attack is strictly better. Offering it would be
+// offering a cost as though it were a choice.
+function wbMarkShotTargets(S, u) {
+  return wbAttackTargets(S, u).filter((t) => t.marked !== u.owner);
+}
 
 // "Brace (1 activation): ..." -> Brace, and the parenthesis that says how it is
 // paid for. Anchored at the start so it reads a declaration and not a mention.
@@ -3819,9 +4467,96 @@ const WB_STRIP_HEIGHT = '1.65em';
 // truncation of long terrain names is a real and separate problem, and raising its type
 // without letting it wrap would make that worse rather than better.
 const WB_STATUS_FONT = '.95em';
-const WB_STATUS_STYLE = `min-height:${WB_STRIP_HEIGHT};line-height:${WB_STRIP_HEIGHT}`
+// The row gap is a CONSTANT because the two-line height below is derived from it. Two
+// lines of a wrapping flex row is two line boxes plus one gap, and a reservation that
+// guessed the gap would reserve the wrong number of pixels.
+const WB_STRIP_GAP = '.1em';
+// ── THE HEIGHT IS NO LONGER AN INLINE STYLE, and that is the #127 lesson applied before
+// it cost anything a second time. An inline style beats every stylesheet rule that is not
+// !important, so a container query that wanted to reserve a second line could never win
+// while `min-height` sat in this attribute. It is now set in the block below, at equal
+// specificity, so the query can override it by being later.
+const WB_STATUS_STYLE = `line-height:${WB_STRIP_HEIGHT}`
   + `;margin:0 0 6px;font-size:${WB_STATUS_FONT}`
-  + ';display:flex;flex-wrap:wrap;align-items:center;column-gap:.45em;row-gap:.1em';
+  + `;display:flex;flex-wrap:wrap;align-items:center;column-gap:.45em;row-gap:${WB_STRIP_GAP}`;
+
+// ── AND THE HEADER HOLDS STILL WHILE THE MATCH CHANGES ────────────────────────────────
+//
+// WHAT WAS WRONG. The comment above wbStatusLine's call site said "Fixed height, so
+// neither can move the board", and the comment two screens below it quotes the designer
+// finding exactly this defect in the panel under the board: "when moving around your
+// selection cursor...the map moves up and down...That should not happen." #117 made these
+// rows `flex-wrap:wrap` to stop a raised font preference ellipsing the opponent's score,
+// which was the right trade, and it left the height depending on the STRING -- so the
+// board moved when the string got longer. Measured at phone widths in Chromium
+// (scripts/measurements/strip-stability.mjs, which drives strip-stability.html through
+// CDP because Chromium clamps --window-size at about 500px):
+//
+//   * at a 414px CSS viewport the strip is one line at 0/51 0% and two lines from the
+//     first point conceded onwards -- the board drops 23px on the first blow of the match;
+//   * at 460-500px it is one line all match and two on turn 10, because the "last turn"
+//     flag adds a fourth group -- the board drops 23px on the one turn when the comment
+//     above the flag says it must not;
+//   * 360 and 390 are already two lines in every state, and 520 up are one in every
+//     state, so the instability is a band and not a phone-wide cost.
+//
+// WHAT COSTS WHAT. The one-line requirement, in the container's own em: 24.7 at 0/51 0%,
+// 26.3 at two digits, 28.5 against a three-digit threshold, 31.5 with the last-turn flag
+// and 32.0 with both. So the flag is 5.2em of the 7.3em spread and the digits are 2.1 --
+// the dominant cause is the flag, not the score, which is worth knowing because the flag's
+// wording is the cheaper lever and it is the designer's to pull.
+//
+// WHAT THIS DOES. Below the width where the worst reachable string needs a second line,
+// the second line is RESERVED -- so the row is two lines high whether it uses them or not
+// and the board does not move. Above that width nothing wraps and nothing is reserved.
+// Not a word changes, which is the point: the wording was approved on the condition that
+// the height stays stable, and this is the condition rather than a second opinion about
+// the wording.
+//
+// A CONTAINER QUERY, NOT A MEDIA QUERY, for the reason the board's zoom rule already
+// records: whether the row wraps is a fact about the box the row is in, and a viewport
+// query only answers it while the available width happens to be "viewport minus two
+// screen pads". The threshold is the measured requirement, so it has to be compared
+// against the width the ROW gets -- hence a wrapper that is exactly that width, rather
+// than the screen, whose padding would have to be hard-coded into the number.
+//
+// Where @container is unsupported the rule does not match and the row keeps today's
+// behaviour, which is the defect: the degradation is back to the status quo.
+const WB_STATUS_CONTAINER = 'wb-status-fit';
+// 32.0em is the measured worst case (448px of a 14px container font: turn 10, both scores
+// at two digits, the last-turn flag). One em of slack, because a font that falls back is
+// not this font and a rounding that goes the other way would reintroduce the jump at one
+// width.
+const WB_STATUS_WRAP_AT = '33em';
+// Two line boxes and the one gap between them, from the same two constants the row lays
+// itself out with. Measured: 45.2px against a one-line 21.9px at a 16px root, and the
+// same pair at 20px and 24px, because both are em.
+const WB_STRIP_TWO_LINES = `calc(2 * ${WB_STRIP_HEIGHT} + ${WB_STRIP_GAP})`;
+// THE BASE RULE GOES FIRST, same as the zoom row's: both rules name one class, so
+// specificity is equal and the later one wins. Reversing the order would restore the
+// defect with no inline style in sight, which is why the order is asserted in a test.
+// Both rows share the base rule so the two cannot disagree about their height -- which is
+// what the shared constant was for before the declaration moved out of it. Only the status
+// row gets the reservation: the resources row is two short groups and was measured on one
+// line at every width and root size tried, down to 360.
+// ONLY ON THE SCREEN THAT HAS THE ROWS. The board renders on the draft, colours and end
+// screens too, and those screens have no header rows -- so a block that carried these
+// rules everywhere would ship dead CSS on three screens, and the characterization fixture
+// for the draft screen said so immediately: its branch asserts that it never produces
+// `wb-status`, and a SELECTOR naming the class satisfied a check written about an ELEMENT.
+// The assertion is the one worth keeping, so the rules travel with the screen instead.
+//
+// AND THEY SHIP IN THE PLAY SCREEN'S ONE STYLE BLOCK, the one the board already emits,
+// rather than in a second block beside the row. Not tidiness: a <style> element in the
+// header puts the string ".wb-resources" on the screen BEFORE the resources row exists,
+// and three tests locate these rows by searching the markup for their class. One of them
+// reads the gap between the header and the board by slicing between two indexOf results,
+// and a selector that matched earlier than the element made that slice run backwards. The
+// rules are the same rules wherever they are declared; a selector in a stylesheet is not
+// an element, and the test that found this was right to insist the difference is visible.
+const WB_STATUS_RULES = `.wb-status,.wb-resources{min-height:${WB_STRIP_HEIGHT}}`
+  + `@container ${WB_STATUS_CONTAINER} (max-width:${WB_STATUS_WRAP_AT})`
+  + `{.wb-status{min-height:${WB_STRIP_TWO_LINES}}}`;
 
 // ONE WAY TO LAY OUT A FIGURE ROW, asked by both header rows so they cannot disagree.
 // Each part becomes an UNBREAKABLE group, because wrapping is only safe if the atoms are
@@ -3845,9 +4580,25 @@ function wbStatusLine(S) {
   const last = S.turn >= max;
   const side = (p) => {
     const col = p === 0 ? WB_COL.p0 : WB_COL.p1Text;
-    // The figure bright, the share quiet, same rule as the track and the tally: a
-    // line where everything is raised has nothing raised in it.
+    // "CONCEDED", BESIDE EACH COMPANY'S OWN FIGURE, because the strip had no noun at all
+    // and the missing noun is the one that reverses the reading. A returning tester quoted
+    // the whole line back and asked "what does this mean?": the figure is points conceded
+    // toward the threshold that BREAKS you, so it rises as you do worse, and they were
+    // reading it while winning.
+    //
+    // PER COMPANY RATHER THAN ONCE FOR THE ROW, and that is a measured choice rather than a
+    // stylistic one. Four candidates were built the way this function builds its row and
+    // measured in Chromium at eight widths: a shared leading label ("Points conceded toward
+    // breaking", 73 characters) wraps to two lines at a 414px and a 458px board box, a
+    // shorter shared label and a trailing gloss (67 each) wrap at 414, and this one (57)
+    // stays on one line everywhere down to 414. The header's height is the one thing it
+    // must not change, so wrapping on a phone is the cost that decides it. DESIGN-LOG has
+    // the table.
+    //
+    // The figure bright, the label and the share quiet, same rule as the track and the
+    // tally: a line where everything is raised has nothing raised in it.
     return `<span style="color:${col}">${wbMark(p)}</span>`
+      + ` <span style="color:${WB_COL.dim}">conceded</span>`
       + ` <b style="color:${WB_COL.text}">${wbNum(S.against[p])}/${wbNum(S.breakAt[p])}</b>`
       + ` <span style="color:${WB_COL.dim}">${wbNum(Math.round(wbSharePct(S.against[p], S.breakAt[p])))}%</span>`;
   };
@@ -3857,12 +4608,20 @@ function wbStatusLine(S) {
   const turn = `<span style="color:${WB_COL.dim}">Turn</span>`
     + ` <b style="color:${WB_COL.text}">${wbNum(S.turn)}</b>`
     + ` <span style="color:${WB_COL.dim}">of ${wbNum(max)}</span>`;
-  // AND IT GOES LAST, which is a clipping decision rather than a reading order. This
-  // line ellipses on a narrow window, and an ellipsis eats the right-hand end -- so
-  // the order is decreasing priority left to right, and the clause that can be spared
-  // is the one that can be inferred. "Turn 10 of 10" against a known cap already says
-  // it is the last turn; an opponent's conceded share cannot be inferred from
-  // anything on screen.
+  // AND IT GOES LAST, which was a clipping decision and is now a WRAPPING one. The order
+  // is decreasing priority left to right either way, and the clause that can be spared is
+  // the one that can be inferred: "Turn 10 of 10" against a known cap already says it is
+  // the last turn, while an opponent's conceded share cannot be inferred from anything
+  // else on screen.
+  //
+  // THE MECHANISM CHANGED UNDER THIS COMMENT AND THE COMMENT DID NOT. #117 made the header
+  // two rows and this strip `flex-wrap:wrap`; it has not ellipsed since. Measured in
+  // Chromium: white-space normal, overflow-x visible, text-overflow clip, and scrollWidth
+  // equal to clientWidth at every width down to a 414px box. So nothing is lost off the
+  // right-hand end -- what happens instead is a second ROW, which moves the board down.
+  // A stale comment about layout is worth as little as a stale comment about an
+  // accessibility tree, and this log carries one of those already: review caught a
+  // recommendation built on the sentence above.
   //
   // It was between the turn and the scores, which put the extra text in front of both
   // figures on the one turn when both matter most -- raised in review of this PR, and
@@ -3871,8 +4630,12 @@ function wbStatusLine(S) {
   // No separator of its own any more -- wbStripGroups owns the separators, and a flag
   // carrying one too produced two middots on the final turn.
   const flag = last ? `<b style="color:${WB_COL.p1Text}">last turn</b>` : '';
-  return `<div class="wb-status" style="${WB_STATUS_STYLE}">`
-    + wbStripGroups([turn, side(0), side(1), flag]) + '</div>';
+  // The wrapper is the container the query asks, and it is the row's own available
+  // width: no padding of its own, so the threshold is the measured requirement and not
+  // the requirement plus somebody's padding. See WB_STATUS_CSS.
+  return `<div class="${WB_STATUS_CONTAINER}" style="container-type:inline-size;container-name:${WB_STATUS_CONTAINER}">`
+    + `<div class="wb-status" style="${WB_STATUS_STYLE}">`
+    + wbStripGroups([turn, side(0), side(1), flag]) + '</div></div>';
 }
 
 // THE SECOND HEADER ROW: what the acting company has left to spend.
@@ -4086,6 +4849,14 @@ function wbPhaseLine(text) {
 }
 
 function wbPlayHint(S, pl) {
+  // AIMING COMES FIRST, because it is the only state in which the next click means
+  // something other than what the rest of this function is about to explain.
+  if (wbUi.aim) {
+    const au = S && S.G ? S.G.units.get(wbUi.aim.uid) : null;
+    const what = wbUi.aim.kind === 'markshot' ? 'shoot and mark' : 'fire on';
+    return `Click an enemy for <b>${wbEsc(au ? au.name : 'that unit')}</b> to ${what}`
+      + ' &mdash; or press <b>Esc</b> to put the ability down.';
+  }
   if (S.rally) return 'Rally: click one of your own men inside a dashed ring, then click the hex to move them to.';
   const sel = wbSelUnit(S, 'unit');
   if (sel) {
@@ -4127,10 +4898,78 @@ function wbPlayHint(S, pl) {
   }
   if (dep) return `Now click a gold hex inside your own edge columns to put that unit on
     the field. Any other hex tells you what is on it instead.`;
+  // "DEPLOY FIRST" IS GONE, AND IT COST A TESTER A TURN. A sixth tester believed
+  // deployment had a phase of its own and reports losing one; the word "first" states an
+  // ordering the rules do not have. Read from the appliers: deploying spends deployment
+  // points and never activation, does not mark the unit as having acted, does not hand
+  // over to the opponent, and leaves it free to act at once if activation allows -- it
+  // is ACTIONS that alternate.
+  //
+  // AND THE TURN-END SENTENCE IS IN BOTH BRANCHES, verbatim and identical. This hint
+  // returns ONE line and chose between two true sentences, so the rule that says what
+  // ends a turn was invisible for as many turns as a player had cheap units left to put
+  // down. Turn-order reversal is deliberately NOT in it: that belongs to the transition
+  // itself, and leaving it out keeps the sentence true on the final turn.
   if (S.dp[pl] > 0 && S.armies[pl].some((u) => u.alive && !u.deployed && u.cost <= S.dp[pl])) {
-    return 'Deploy first: click a unit on the bench below, then a gold hex in your own edge columns. Deploying costs deployment points, not activation, and unspent deployment points do not carry over.';
+    return 'Deploy and act in any order this turn: click a unit on the bench below, then a gold hex in your own edge columns. A unit you deploy can act straight away if you can afford it. Deploying spends deployment points rather than activation, and deployment points do not carry over. When both companies pass, the turn ends and objectives score.';
   }
-  return 'Click one of your units on the board, then click where to move it &mdash; or click an enemy to attack it. Pass when you are finished; when both companies have passed, the turn ends and objectives score.';
+  // ── IS PASS FORCED, OR CHOSEN? ────────────────────────────────────────────
+  // Two testers reported not understanding why they were "forced to pass", and the reason
+  // the interface could not tell them is that this sentence did not know. It said "click
+  // one of your units, then click where to move it" on a board that had nothing on it:
+  // measured, a play screen with the activation pool spent draws no gold, no strike rings
+  // and not even a readiness ring, because there is nothing to be ready for. An
+  // instruction the rules will refuse, over an empty board.
+  //
+  // FROM THE ENUMERATOR, NOT FROM MOVES AND ATTACKS. The first draft of this asked whether
+  // any unit had somewhere to go or anything in reach, which enumerates two action types in
+  // a game that has seven: a Vanguard with activation and nowhere to go can still BRACE, a
+  // Man-at-Arms can anchor, a Dragoon in range can take a marking shot. A sentence counting
+  // moves and attacks would announce that Pass was all that was left while the panel beside
+  // it offered an ability. So the question is put to wbLegalMoves, which is the one thing in
+  // this build that answers "what may I do now" authoritatively -- and which, since the bot
+  // work, actually includes the abilities.
+  //
+  // IT IS AFFORDABLE. Measured at 0.009ms a call against wbShow's 0.62ms, so about 1.5% of
+  // a render. A second cheaper-but-equivalent test written here to save that would be a
+  // second opinion about legality, which is the defect this file keeps finding.
+  const left = wbLegalMoves(S).filter((m) => m.type !== 'pass');
+  const END = 'When both companies pass, the turn ends and objectives score.';
+  if (!left.length) {
+    // THE REASON, cheapest true one first. All three are about this company's own
+    // position, and the numbers come from the same helpers the panel and the board use.
+    const pool = S.pools[pl];
+    const costs = wbLiving(S, pl).map((u) => wbCost(S, u));
+    const cheapest = costs.length ? Math.min(...costs) : null;
+    const why = pool <= 0
+      ? `<b>${wbEsc(S.names[pl] || '')}</b> has no activation left this turn`
+      : (cheapest != null && cheapest > pool
+        // ONE LINE, like every other hint string in this file. A template literal broken
+        // across source lines puts a newline and an indent INSIDE the sentence, and an
+        // existing affordance test matching `/click an enemy to attack it/` went red on
+        // exactly that -- the words were all there with a line break between two of them.
+        ? `you hold <b>${wbNum(pool)}</b> activation and the cheapest action any of your men can still take costs <b>${wbNum(cheapest)}</b>`
+        // Everything affordable, and nothing it could be spent on. Note what this does NOT
+        // say: nothing about whether an available action would be worth taking. Affordances
+        // here encode what the rules permit and never what is advisable.
+        : 'your men can pay for an action but none of them has anywhere to move, anything in '
+          + 'reach, or an ability to use');
+    return `<b>Pass</b> is the only move you have: ${why}. ${END}`;
+  }
+  // AND WHEN IT IS NOT FORCED, SAY SO. A player who has been told twice that Pass was all
+  // that was left needs to know the difference the third time.
+  const kinds = new Set(left.map((m) => m.type));
+  const has = (...t) => t.some((x) => kinds.has(x));
+  const what = [
+    has('move') ? 'move' : null,
+    has('attack') ? 'attack' : null,
+    has('brace', 'anchor', 'markshot', 'sunder', 'rally') ? 'use an ability' : null,
+  ].filter(Boolean);
+  const actors = new Set(left.map((m) => m.uid).filter((x) => x != null)).size;
+  const list = what.length > 1
+    ? `${what.slice(0, -1).join(', ')} or ${what[what.length - 1]}`
+    : (what[0] || 'act');
+  return `Click one of your units on the board, then click where to move it &mdash; or click an enemy to attack it. <b>${wbNum(actors)}</b> of your units can still ${list}, so Pass is a choice rather than the only move. ${END}`;
 }
 
 // ── the trace: what the other side just did ─────────────────────────────────
@@ -4347,7 +5186,120 @@ function wbRallyTargets(S, u) {
 
 function wbRally(uid) { wbCommit({ type: 'rally', uid }); }
 
+// The two that need nothing but a click. Both take a UNIT ID and submit a move; the
+// feedback-positioning helper that used to share this one's name takes a HEX KEY and
+// submits nothing, and is now wbNoticeAnchor. See its comment for what the collision
+// cost -- an ability that was unreachable from its own button for the whole of
+// rc-2026-10-14.
+function wbBrace(uid) { wbCommit({ type: 'brace', uid }); }
+function wbAnchor(uid) { wbCommit({ type: 'anchor', uid }); }
+
+// AND THE TWO THAT NEED A TARGET. Pressing the button does not spend anything -- it
+// arms the next click on an enemy. A mode rather than a second gesture because
+// clicking an enemy with one of yours selected ALREADY means attack, and overloading
+// that would make the same click mean two things depending on invisible state.
+function wbAim(kind, uid) {
+  const S = warband_state;
+  const u = S && S.G ? S.G.units.get(uid) : null;
+  if (!u) return;
+  // Refuse to arm what the applier would refuse anyway, with the applier's own reason,
+  // so the player is told now rather than after choosing a target.
+  const name = wbAimName(kind) || kind;
+  const why = wbAbilityRefusal(S, u, name);
+  if (why) { wbUi.notice = `${name} — ${why}`; wbUi.where = 'bench'; wbShow(); return; }
+  wbUi.aim = { kind, uid };
+  S.sel = { unit: uid };
+  wbUi.notice = null;
+  wbShow();
+}
+
+// THE BLOW AN ARMED ABILITY WILL DELIVER, as one table both sides read.
+//
+// rc-2026-10-14 forecast an armed Sunder as an ordinary attack: the rings said 2 against
+// a Man-at-Arms and the click dealt 4, because the applier passed { ignoreCap: true } and
+// the forecast called the same planner with no options at all. Two literals, one of them
+// forgotten. A table cannot be forgotten in one place and remembered in the other.
+//
+// BLOW options only. The mark is not part of the blow -- wbAttack strips markOnSurvivor
+// before the plan, deliberately -- so `markshot` is an EMPTY entry rather than a missing
+// one: empty says "an ordinary blow, and that was checked", missing says nothing, and
+// wbAimBlow distinguishes them so a kind nobody has priced cannot be forecast by accident.
+const WB_AIM_BLOW = { markshot: {}, sunder: { ignoreCap: true } };
+// A FUNCTION DECLARATION AND NOT A CONST ARROW, deliberately. A const binding cannot be
+// reassigned, and the technique test/warband-wiring.test.js exists for -- wrap the shared
+// helper in a counting delegate and watch the driver call it -- needs a writable binding
+// to work. Round 14's finding #5 was a shared rule quietly replaced by an inlined copy
+// with every test still passing; the counter is what makes "both sides read this table" a
+// guarantee rather than a coincidence that holds today.
+function wbAimBlow(kind) {
+  return Object.prototype.hasOwnProperty.call(WB_AIM_BLOW, kind) ? WB_AIM_BLOW[kind] : null;
+}
+
+// The armed ability as the VIEW's argument. A plain copy rather than wbUi.aim itself, so
+// nothing downstream of the seam can write back into this client's UI state through it.
+const wbAimView = () => (wbUi.aim ? { kind: wbUi.aim.kind, uid: wbUi.aim.uid } : null);
+
+// The ability's own name, FROM THE TABLE THE PANEL AND THE ENUMERATOR BOTH READ, because
+// the armed action now has to be named in five places -- the board's rings, the spoken
+// affordance, the token's tooltip, the selected-unit panel and the cancellation notice --
+// and five ternaries on `kind === 'markshot'` is four chances to rename one and miss the
+// rest. Returns null for a kind that declares no ability, so a caller cannot print
+// "undefined" at a player.
+function wbAimName(kind) {
+  const ab = WB_ACTIVE.find((a) => a.move === kind);
+  return ab ? ab.name : null;
+}
+
+// The entry in WB_ACTIVE for an armed kind, so callers that need its legal target set ask
+// the same `targets` function wbLegalMoves asks. Not a second opinion about legality.
+function wbAimAbility(kind) {
+  return WB_ACTIVE.find((a) => a.move === kind) || null;
+}
+
+// Is this aim still the one the player is pointing? An aim is armed on a unit, by a seat,
+// during a turn, and rc-2026-10-14 let it outlive all three: arm Marking Shot on a
+// Dragoon, select a Bombardier, click an enemy, and the DRAGOON fired while the
+// Bombardier sat selected and highlighted. The player's own words for that would not be
+// "the ability was still armed"; they would be "the wrong unit attacked".
+//
+// Checked HERE, at the point of use, as well as cleared at the seams below. Belt and
+// braces on purpose: the seams stop a stale aim being shown, and this stops one being
+// honoured if a path nobody has thought of yet reaches this function with one.
+function wbAimLive(S, aim) {
+  if (!S || !S.G || !aim) return false;
+  const u = S.G.units.get(aim.uid);
+  if (!u || !u.alive || !u.deployed) return false;        // gone, or never on the field
+  if (u.owner !== wbActive(S) || !wbCanAct(S)) return false; // not this seat's to spend
+  if (!wbAimBlow(aim.kind)) return false;                 // a kind with no priced blow
+  // AND IT MUST BE THE UNIT IN HAND. This is the clause the stale-aim defect needed:
+  // everything above was already true of the Dragoon.
+  return !!(S.sel && S.sel.unit === aim.uid);
+}
+
+// Clicking an enemy while aiming. Returns true when it consumed the click, so the
+// selection dispatcher can tell whether to fall through to its ordinary meanings --
+// and now returns FALSE for an aim it will not honour, so the click keeps its ordinary
+// meaning instead of being swallowed by a gesture nobody is making any more.
+function wbAimAt(targetUid) {
+  const S = warband_state;
+  const aim = wbUi.aim;
+  if (!aim) return false;
+  if (!wbAimLive(S, aim)) { wbUi.aim = null; return false; }
+  // The target has to be an enemy that is actually there. A corpse keeps `at`, so a hex
+  // click can still resolve to a dead unit; spending an ability on one is not a refusal
+  // worth showing when the ordinary attack path says it better.
+  const t = S.G.units.get(targetUid);
+  if (!t || !t.alive || !t.deployed || t.owner === wbActive(S)) { wbUi.aim = null; return false; }
+  wbUi.aim = null;
+  wbCommit({ type: aim.kind, uid: aim.uid, target: targetUid });
+  return true;
+}
+
 function wbRallyDone() { wbCommit({ type: 'rally_end' }); }
+
+// THE STATIC REFERENCE, OPENED AND CLOSED. Purely local: it changes what this client
+// shows and submits no move, like the zoom toggle and the inspector.
+function wbReference() { wbUi.reference = !wbUi.reference; wbShow(); }
 
 // Purely local: what is highlighted is not a move, and never leaves this client.
 //
@@ -4364,7 +5316,22 @@ function wbRallyDone() { wbCommit({ type: 'rally_end' }); }
 // raised from somewhere else (a lost connection, a refused pass) keeps the
 // last board position, which is still nearer the player than the page head,
 // and falls back to the head when nothing has been touched yet.
-function wbAnchor(k) { wbUi.at = k == null ? null : wbText(k); }
+// NAMED wbNoticeAnchor AND NOT wbAnchor, because `wbAnchor` was declared twice in this
+// file -- once for the Man-at-Arms ability and once here -- and a function declaration
+// later in a scope silently wins. This one won. The rendered Anchor button therefore
+// carried onclick="wbAnchor(uid)", reached THIS function, set wbUi.at to the text of a
+// unit id, and did nothing else: no activation spent, no protection granted, no action
+// taken. It shipped in rc-2026-10-14 and 1,040 tests passed over it, because every test
+// of the ability reached the applier through wbApply({type:'anchor'}) and nothing ever
+// pressed the control. Found by chilipino's independent review of #133.
+//
+// The two names now say which responsibility each has: this one positions FEEDBACK,
+// wbAnchor performs the ABILITY. A collision like it cannot recur silently:
+// test/warband-inline-handlers.test.js now fails on any top-level name declared twice
+// in a driver. That file is the right home because its own stated limit was "this proves
+// the NAME is published" -- and a published name resolving to the wrong function is the
+// very next layer down.
+function wbNoticeAnchor(k) { wbUi.at = k == null ? null : wbText(k); }
 
 // The click that lands on an occupied hex. Which command it is depends on what is
 // already pending, and the two are not interchangeable -- the claim that they were
@@ -4392,7 +5359,30 @@ function wbSelect(uid) {
   // here is safe -- wbNoticeAt stands down once the board has drawn.
   wbUi.where = 'bench';
   const any = S && S.G ? S.G.units.get(uid) : null;
-  wbAnchor(any && any.at != null ? any.at : null);
+  wbNoticeAnchor(any && any.at != null ? any.at : null);
+  // PUTTING ANOTHER UNIT IN HAND PUTS DOWN WHAT THE LAST ONE WAS AIMING.
+  //
+  // Not a blanket clear at the top of this function: the armed click ITSELF arrives
+  // here, as wbSelect(enemyUid), and is dispatched to wbAimAt further down. Clearing
+  // unconditionally would disarm every ability a moment before firing it, which is the
+  // obvious fix and is wrong. So the aim is dropped only when the click names a unit
+  // that is neither the aiming unit nor a target for it -- that is, when the player has
+  // picked up somebody else.
+  //
+  // `mine` rather than `any.owner === pl`: a bench card during deployment has no owner
+  // on the board yet, and selecting one is still picking up somebody else.
+  if (wbUi.aim && uid !== wbUi.aim.uid) {
+    const mine = S && S.armies && S.armies[pl] ? S.armies[pl].some((x) => x.uid === uid) : false;
+    if (mine) {
+      // Said out loud, and NAMED. A mode that ends silently is how a player comes to
+      // believe the ability is still armed and clicks an enemy expecting it -- and in
+      // this build that click used to be honoured, by the wrong unit. The designer's
+      // wording: short, factual, and it says which ability went away.
+      const name = wbAimName(wbUi.aim.kind);
+      wbUi.aim = null;
+      wbUi.notice = `Switched units — ${name || 'the ability'} canceled.`;
+    }
+  }
   // Not this seat's turn. Looking is still allowed -- it is not a move -- so the
   // click inspects and says why nothing else happened.
   if (!wbCanAct(S)) {
@@ -4409,6 +5399,10 @@ function wbSelect(uid) {
     // attack gesture: wbHexClick already read it that way when the click landed
     // on the HEX, but the unit token sits on top of the hex and swallowed it.
     if (any && any.alive && any.deployed && any.owner !== pl) {
+      // AN ARMED ABILITY GETS THIS CLICK FIRST. Checked before the attack gesture
+      // because the two are the same click and the armed one is the more specific
+      // intent -- the player pressed a button a moment ago and is answering it.
+      if (wbUi.aim && wbAimAt(any.uid)) return;
       const mine = S.rally ? null : wbSelUnit(S, 'unit');
       if (mine) return void wbCommit({ type: 'attack', uid: mine.uid, target: any.uid });
       wbUi.inspect = { hex: any.at };
@@ -4456,7 +5450,7 @@ function wbSelect(uid) {
 // Turns "this hex, given what is selected" into a move, and lets wbApply decide
 // whether it is legal. Nothing here changes the game.
 function wbHexClick(k) {
-  wbAnchor(k);
+  wbNoticeAnchor(k);
   const S = warband_state;
   if (!S || !S.board.get(k)) return;
   if (S.rally) {
@@ -4485,7 +5479,24 @@ function wbHexClick(k) {
   if (S.sel.deploy != null) return void wbClickHex(k, { type: 'deploy', uid: S.sel.deploy, to: k });
   if (S.sel.unit == null) return;
   const occ = WB.occupantOf(S.G, S.board.get(k));
-  if (occ && occ.owner !== wbActive(S)) return void wbClickHex(k, { type: 'attack', uid: S.sel.unit, target: occ.uid });
+  if (occ && occ.owner !== wbActive(S)) {
+    // AN ARMED ABILITY GETS THIS CLICK FIRST, exactly as it does in wbSelect. The two
+    // routes had different answers to the same question: wbSelect asked the aim and this
+    // did not. Through the rendered board they converge -- all three pointer targets in a
+    // hex carry one onclick="wbBoardActivate(k)", and that dispatcher sends a live
+    // occupied hex to wbHexUnit, so a token click and a ground click were ALREADY the
+    // same path (measured, not assumed: scripts/measurements/armed-intent.mjs reports the
+    // route count and the distinct handlers among them). This branch is still reachable
+    // another way -- wbHexUnit diverts here while a deployment or a rally pick is staged
+    // -- so the disagreement was latent rather than visible. Closed because a latent
+    // disagreement between two readings of one click is how the visible ones start.
+    //
+    // wbAimAt returns false for an aim it will not honour, so an ordinary attack still
+    // happens when nothing is armed, when the aim belongs to another unit, or when the
+    // occupant is a corpse.
+    if (wbUi.aim && wbAimAt(occ.uid)) return;
+    return void wbClickHex(k, { type: 'attack', uid: S.sel.unit, target: occ.uid });
+  }
   wbClickHex(k, { type: 'move', uid: S.sel.unit, to: k });
 }
 
@@ -4517,6 +5528,9 @@ function wbClickHex(k, move) {
 // inspection because moving there is legal.
 function wbDeselect() {
   const S = warband_state;
+  // Letting go of the unit lets go of what it was aiming, or Escape would leave the
+  // next click on an enemy still armed with an ability nobody is pointing any more.
+  wbUi.aim = null;
   if (S) S.sel = null;
   wbUi.notice = null;
   wbShow();
@@ -4600,6 +5614,12 @@ const WB_BLOW_LABEL = {
   officers_cairn: "Officer's Cairn",
   aura: 'command',
   swarm: 'numbers',
+  // The Dragoon's mark. Listed rather than left to the `|| a.id` fallback, which printed
+  // the raw internal id into the combat log -- it happened to read acceptably here, and
+  // the next id with an underscore in it would not have. Nothing exercised this line
+  // until the sparring bot learned to take a marking shot (issue #125), and the first
+  // thing that noticed was warband-blow-story's known-terms check.
+  mark: 'mark',
 };
 
 // `shown` is the number the log is about to print. The gloss RECONCILES to it:
@@ -4670,14 +5690,19 @@ function wbCloneG(G) {
   };
 }
 
-function wbBlowPlan(S, u, target) {
+// `opts` is the attack's own character, and it reaches EVERY damage call in here --
+// the main blow, the Guard redirection's test, and each sweep carry. Threading it to
+// some and not others is how a forecast and a result come to disagree: Sunder going
+// through the cap on the main blow but not on a carry would be two rules for one
+// attack, and the breakdown on screen would stop adding up to the number beside it.
+function wbBlowPlan(S, u, target, opts) {
   const R = wbRules();
   const G = wbCloneG(S.G);
   const au = G.units.get(u.uid), tg = G.units.get(target.uid);
   const uH = WB.hexOf(G, au), tH = WB.hexOf(G, tg);
-  const dmg = WB.damageOf(G, au, tg, R);
+  const dmg = WB.damageOf(G, au, tg, R, null, opts);
   const victim = WB.redirect(G, tg, dmg);
-  const story = WB.damageParts(G, au, victim, R);
+  const story = WB.damageParts(G, au, victim, R, opts);
   const real = story.total;
   const blows = [{ kind: 'main', uid: victim.uid, dmg: real, story, penalty: 0,
                    guard: victim.uid !== tg.uid, kill: victim.hp - real <= 0 }];
@@ -4689,7 +5714,7 @@ function wbBlowPlan(S, u, target) {
       const o = WB.occupantOf(G, nb);
       if (!o || !o.alive || o.owner === au.owner || o.uid === victim.uid) continue;
       if (au.range > 1 && !WB.losClear(G.board, uH, WB.hexOf(G, o))) continue;
-      const carry = WB.damageParts(G, au, o, R);
+      const carry = WB.damageParts(G, au, o, R, opts);
       const penalty = WB.CFG.sweep.penalty || 0;
       const d2 = Math.max(1, carry.total - penalty);
       blows.push({ kind: 'carry', uid: o.uid, dmg: d2, story: carry, penalty,
@@ -4701,10 +5726,14 @@ function wbBlowPlan(S, u, target) {
   return { uid: u.uid, targetUid: target.uid, from: wbHexKey(uH), to: wbHexKey(tH), blows };
 }
 
-function wbAttack(S, u, target, cost) {
+function wbAttack(S, u, target, cost, opts) {
+  // THE MARK IS NOT PART OF THE BLOW, so it is taken off the options before they reach
+  // the plan. wbBlowPlan hands its options to damageOf, which would ignore an unknown
+  // key today -- and that is exactly the kind of thing that stops being true quietly.
+  const { markOnSurvivor, ...blowOpts } = opts || {};
   // The plan IS the blow: every number below came out of wbBlowPlan, which the
   // forecast on the rings reads too. Nothing here recomputes damage.
-  const plan = wbBlowPlan(S, u, target);
+  const plan = wbBlowPlan(S, u, target, blowOpts);
   const hits = [];
   for (const b of plan.blows) {
     const victim = S.G.units.get(b.uid);
@@ -4755,6 +5784,22 @@ function wbAttack(S, u, target, cost) {
       : `  sweep carries into ${victim.name} for ${b.dmg}`
         + wbBlowStory(b.story, b.penalty, b.dmg));
     if (victim.hp <= 0) wbKill(S, victim);
+  }
+  // AND THEN THE MARK, if this was a Marking Shot and the enemy aimed at is still
+  // standing. Three decisions are in these four lines:
+  //
+  //   AFTER the blows, so the shot takes no bonus from its own mark -- the mark is not
+  //   on the board when wbBlowPlan prices it.
+  //   ONLY ON A SURVIVOR, because a mark on a corpse is a mark nobody can use, and the
+  //   player paid a premium for it.
+  //   ON THE UNIT AIMED AT, NOT THE ONE THAT TOOK IT. Guard hands a lethal blow to a
+  //   neighbour; the Dragoon chose which enemy to mark, and marking whoever absorbed
+  //   the shot would let the opponent decide where the mark lands by standing a Guard
+  //   next to it.
+  if (markOnSurvivor && target.alive) {
+    const amount = (WB.abilityEffect(u.name, 'mark') || {}).amount || 0;
+    target.marked = u.owner;
+    wbLog(S, u.owner, `  and marks ${target.name} — your ranged attacks on it do +${wbNum(amount)} until Regroup`);
   }
   wbTrace(S, u.owner, { k: 'attack', from: plan.from, to: plan.to, hits });
   wbSpend(S, u, cost); S.sel = null;
@@ -4861,6 +5906,10 @@ function wbPassForfeits(S) {
 // confirms its own player's click and nothing else.
 function wbPass() {
   const S = warband_state;
+  // Reaching for Pass is giving up the turn, so a pending ability is put down here too --
+  // before the confirm branch below, which RETURNS without committing and would otherwise
+  // leave the aim armed behind an open question.
+  wbUi.aim = null;
   if (!S) return void wbCommit({ type: 'pass' });
   // Not this client's turn, or nothing to forfeit: a pass is unremarkable and
   // stays a single click. wbCommit says "Not your turn." for the first case.
@@ -4925,6 +5974,9 @@ function wbRegroup(S) {
     S.against[1 - pl] += gain[pl]; S.objPoints[pl] += gain[pl];
     wbLog(S, pl, `${S.names[pl]} holds the field (${held[pl]}–${held[1 - pl]}) +${gain[pl]} vp`);
   }
+  // Marks and granted caps lapse at Regroup, through core's own helper so the table
+  // game and the sweeps cannot disagree about when an ability ends.
+  WB.expireRegroup(S.G);
   S.order = [S.order[1], S.order[0]];
   wbBeginTurn(S);
 }
@@ -5009,7 +6061,12 @@ function wbApply(move) {
 
 const WB_RALLY_MOVES = ['rally_move', 'rally_end', 'pass'];
 // Everything that only makes sense once the companies are on the field.
-const WB_PLAY_MOVES = ['deploy', 'move', 'attack', 'rally', 'rally_move', 'rally_end', 'pass'];
+// 'markshot' and not 'mark': the move makes an ATTACK and leaves a mark behind it, and
+// this file already has two other things called a mark -- the hit crosses painted on the
+// board, and the `marked` set wbMapSvg uses to draw each hex once. CONTEXT.md exists
+// because of exactly this, so the move type says which one it is.
+const WB_PLAY_MOVES = ['deploy', 'move', 'attack', 'brace', 'anchor', 'markshot', 'sunder',
+  'rally', 'rally_move', 'rally_end', 'pass'];
 
 function wbDispatch(S, move) {
   // Checked HERE rather than inside each applier. deploy/move/attack/rally each
@@ -5035,6 +6092,10 @@ function wbDispatch(S, move) {
     case 'deploy':     return wbMoveDeploy(S, move);
     case 'move':       return wbMoveUnit(S, move);
     case 'attack':     return wbMoveAttack(S, move);
+    case 'brace':      return wbMoveBrace(S, move);
+    case 'anchor':     return wbMoveAnchor(S, move);
+    case 'markshot':   return wbMoveMarkShot(S, move);
+    case 'sunder':     return wbMoveSunder(S, move);
     case 'rally':      return wbMoveRally(S, move);
     case 'rally_move': return wbMoveRallyMove(S, move);
     case 'rally_end':  return wbMoveRallyEnd(S, move);
@@ -5204,6 +6265,170 @@ function wbMoveAttack(S, m) {
   return wbOk;
 }
 
+// ── the four active abilities ────────────────────────────────────────────────
+// ONE SHAPE, FOUR ABILITIES, and every number comes out of config's `ability` block
+// rather than out of this file. The declaration says what it costs, what it targets,
+// when it lapses and what it does; these appliers are drivers and own none of the
+// arithmetic. core.grantTempCap owns the stacking rule and core.expireRegroup owns
+// the duration, so the table game and the sweeps cannot disagree about either.
+
+// What this unit's ability costs: its ordinary escalated action cost plus the
+// declaration's surcharge. Only Sunder carries one, and that premium IS its whole
+// tactical price -- so it is read, never assumed.
+function wbAbilityCost(S, u) {
+  const ab = WB.abilityOf(u.name);
+  const sur = (ab && ab.cost && ab.cost.surcharge) || 0;
+  return wbCost(S, u) + sur;
+}
+
+// The refusals every ability shares, cheapest question first and in the order the
+// player can do something about them.
+function wbAbilityRefusal(S, u, name) {
+  if (!u || !u.deployed) return 'not your unit';
+  const pl = wbActive(S);
+  const ab = WB.abilityOf(u.name);
+  if (!ab || ab.name !== name) return `${u.name} has no ${name}`;
+  const cost = wbAbilityCost(S, u);
+  if (cost > S.pools[pl]) {
+    return `not enough activation — ${name} needs ${cost} and ${S.names[pl]} holds ${S.pools[pl]}`;
+  }
+  return null;
+}
+
+// BRACE grants a ceiling on what any one blow can do to this Vanguard. A CAP and not
+// a subtraction, because a cap is the only mitigation this game has -- see
+// combat.description, and DESIGN-LOG on why Absorb is not coming back.
+function wbMoveBrace(S, m) {
+  const u = wbActingUnit(S, m.uid);
+  const why = wbAbilityRefusal(S, u, 'Brace');
+  if (why) return wbNo(why);
+  const e = WB.abilityEffect(u.name, 'temp_cap');
+  if (!e || !(e.amount > 0)) return wbNo('Brace grants nothing');
+  // ALREADY BRACED IS REFUSED, not merely greyed. grantTempCap takes the minimum, so a
+  // second brace on a unit already holding that cap changes no number at all -- and
+  // still spends the action and hands the turn over. The control table has said
+  // "already braced" since the ability shipped; the applier accepted it anyway, and the
+  // both-directions reconciliation in warband-bot.test.js found the disagreement the
+  // moment the enumerator started reading that table. An action with no effect that
+  // costs activation is a trap rather than a choice.
+  if (u.tempCap != null && u.tempCap <= e.amount) {
+    return wbNo(`${u.name} is already braced — no blow may exceed ${wbNum(u.tempCap)} until next turn`);
+  }
+  const cost = wbAbilityCost(S, u);
+  wbSpend(S, u, cost);
+  WB.grantTempCap(u, e.amount);
+  S.sel = null;
+  wbLog(S, u.owner, `${u.name} braces — no blow over ${wbNum(e.amount)} until next turn (${cost} activation)`);
+  return wbOk;
+}
+
+// ANCHOR: the Man-at-Arms stops moving and its neighbours get a ceiling. The set is
+// taken NOW and the grant travels with the ally, so walking away does not lose it --
+// the approved reading, and why this writes to the units rather than leaving an aura
+// to be recomputed from the anchor's position.
+function wbMoveAnchor(S, m) {
+  const u = wbActingUnit(S, m.uid);
+  const why = wbAbilityRefusal(S, u, 'Anchor');
+  if (why) return wbNo(why);
+  const e = WB.abilityEffect(u.name, 'temp_cap');
+  if (!e || !(e.amount > 0) || !(e.radius > 0)) return wbNo('Anchor grants nothing');
+  // ONCE A TURN, which is what the control table has always said and what the applier
+  // did not enforce. A second Anchor is not a no-op the way a second Brace is -- it
+  // would re-take the set and cover an ally that has since walked in -- but it has never
+  // been reachable from the interface, so allowing it over the wire or to the bot would
+  // be a capability only a non-player could use. Same refusal in both places, or the
+  // reconciliation is comparing two different rulesets.
+  if (u.anchored) return wbNo(`${u.name} has already anchored this turn`);
+  const cost = wbAbilityCost(S, u);
+  const here = WB.hexOf(S.G, u);
+  // THE CASTER IS EXCLUDED by decision: it pays with its movement. grantTempCap would
+  // refuse to weaken its own cap-2 anyway, but the exclusion is the rule either way.
+  const covered = [];
+  for (const other of S.G.units.values()) {
+    if (!other.alive || !other.deployed) continue;
+    if (other.uid === u.uid || other.owner !== u.owner) continue;
+    if (WB.hexDist(here, WB.hexOf(S.G, other)) > e.radius) continue;
+    covered.push(other);
+  }
+  wbSpend(S, u, cost);
+  u.anchored = true;
+  for (const other of covered) WB.grantTempCap(other, e.amount);
+  S.sel = null;
+  const who = covered.length === 0 ? 'nobody within reach'
+    : `${wbNum(covered.length)} ${covered.length === 1 ? 'ally' : 'allies'} capped at ${wbNum(e.amount)}`;
+  wbLog(S, u.owner, `${u.name} anchors — ${who} (${cost} activation)`);
+  return wbOk;
+}
+
+// MARKING SHOT is an ordinary ranged attack that leaves a mark on a survivor. The mark
+// is a state of the ENEMY holding which company placed it, so the bonus helps that
+// company's shots, and marking twice changes nothing.
+//
+// AN ATTACK AND NOT A SECOND DAMAGE PATH, for the reason Sunder is not one either: the
+// same wbAttack, the same wbBlowPlan, the same Guard redirection, the same Overwhelm
+// and the same sweep carry. What distinguishes it is one option that reaches wbAttack
+// and nothing that reaches damageOf -- the shot itself takes no bonus from the mark it
+// creates, which is not a special case but a consequence of ordering: the mark is not
+// on the board when the blow is priced.
+function wbMoveMarkShot(S, m) {
+  const pl = wbActive(S);
+  const u = wbActingUnit(S, m.uid);
+  const why = wbAbilityRefusal(S, u, 'Marking Shot');
+  if (why) return wbNo(why);
+  const tg = S.G.units.get(m.target);
+  if (!tg || !tg.alive || !tg.deployed) return wbNo('no such target');
+  if (tg.owner === pl) return wbNo('mark an enemy, not one of your own');
+  // RANGE AND THEN SIGHT, in the words wbMoveAttack uses and for the same reason: the
+  // three possible answers to "why can I not shoot that" used to arrive as one shrug.
+  // effRange rather than u.range, so ground that lengthens or shortens a shot
+  // lengthens or shortens this one with it.
+  const uH = WB.hexOf(S.G, u), tH = WB.hexOf(S.G, tg);
+  const reach = WB.effRange(S.G, u);
+  if (WB.hexDist(uH, tH) > reach) {
+    return wbNo(`out of range — ${u.name} shoots at ${reach} hex${reach === 1 ? '' : 'es'} and that one is ${WB.hexDist(uH, tH)} away`);
+  }
+  if (u.range > 1 && !WB.losClear(S.board, uH, tH)) return wbNo('no line of sight');
+  const e = WB.abilityEffect(u.name, 'mark');
+  if (!e || !(e.amount > 0)) return wbNo('Marking Shot grants nothing');
+  // ALREADY MARKED BY THIS COMPANY: refused, with the cheaper move named. The premium
+  // buys the mark; the mark is already there, does not stack and does not extend, so
+  // the premium would buy nothing at all. A refusal saying only "already marked" leaves
+  // the player to work out what to do instead.
+  if (tg.marked === u.owner) {
+    const plain = wbCost(S, u);
+    return wbNo(`${tg.name} is already marked — the extra ${wbNum(wbAbilityCost(S, u) - plain)} would buy nothing, so attack it normally for ${wbNum(plain)}`);
+  }
+  // THE BLOW'S OPTIONS COME FROM THE TABLE THE FORECAST READ; markOnSurvivor is added
+  // here because it is not part of the blow at all -- it is what happens AFTER one.
+  // That split is why an armed Marking Shot forecasts the plain shot it really is,
+  // rather than one already carrying the mark it has not yet created.
+  wbAttack(S, u, tg, wbAbilityCost(S, u), { ...wbAimBlow('markshot'), markOnSurvivor: true });
+  return wbOk;
+}
+
+// SUNDER is the Bombardier's ordinary shot going through the defender's cap. An
+// ATTACK and not a separate damage path -- the same wbAttack, the same damageOf, the
+// same Guard redirection and the same Overwhelm -- distinguished by one option that
+// reaches core. A second attack applier would be a second damage formula within a week.
+function wbMoveSunder(S, m) {
+  const pl = wbActive(S);
+  const u = wbActingUnit(S, m.uid);
+  const why = wbAbilityRefusal(S, u, 'Sunder');
+  if (why) return wbNo(why);
+  const target = S.G.units.get(m.target);
+  if (!target || !target.alive || !target.deployed) return wbNo('no such target');
+  if (target.owner === pl) return wbNo('that is one of yours');
+  const uH = WB.hexOf(S.G, u), tH = WB.hexOf(S.G, target);
+  if (WB.hexDist(uH, tH) > WB.effRange(S.G, u)) {
+    return wbNo(`out of range — ${u.name} strikes at ${WB.effRange(S.G, u)} hex${WB.effRange(S.G, u) === 1 ? '' : 'es'} and that one is ${WB.hexDist(uH, tH)} away`);
+  }
+  if (u.range > 1 && !WB.losClear(S.board, uH, tH)) return wbNo('no line of sight');
+  // From the table the forecast reads, so the number on the ring and the damage this
+  // deals are the same arithmetic with the same options, by construction.
+  wbAttack(S, u, target, wbAbilityCost(S, u), wbAimBlow('sunder'));
+  return wbOk;
+}
+
 function wbMoveRally(S, m) {
   const pl = wbActive(S);
   const u = wbActingUnit(S, m.uid);
@@ -5319,6 +6544,20 @@ function wbMovePass(S) {
 // activation every remaining turn; Guard redirection, so it will happily swing at
 // a target whose damage lands on somebody else; and how to retreat, ever.
 //
+// AND THE FOUR ACTIVE ABILITIES, which it does not know because it is never offered
+// them: wbLegalMoves enumerates deploy, move, attack, rally and pass, and no ability.
+// The appliers accept them -- wbApply({type:'brace'}) on the bot's own Vanguard returns
+// ok -- so this is an enumerator gap and not a rules one. A human playing the bot has
+// four abilities the bot will never use, including on archetypes whose cards advertise
+// them.
+//
+// Deliberately left as it is rather than quietly fixed: teaching the bot to brace,
+// anchor, mark and sunder is a change to how the match FEELS, which is a tuning decision
+// with a staged roadmap behind it, and not something to slip into the PR that added the
+// rules. The suite cannot see the gap either -- warband-bot.test.js reconciles this
+// enumerator against interface.legalActions, which runs with the abilities off, so both
+// sides omit them and the sets agree. Issue #125.
+//
 // LOCAL, and never serialised. Which seats a bot holds is a fact about this
 // client and this session, exactly like `wbMp` — putting it in the snapshot would
 // tell a guest something about the host. A bot never runs in multiplayer at all.
@@ -5416,6 +6655,24 @@ function wbLegalMoves(S) {
     for (const t of wbAttackTargets(S, u)) out.push({ type: 'attack', uid: u.uid, target: t.uid });
     for (const h of WB.reachable(S.G, u)) out.push({ type: 'move', uid: u.uid, to: WB.key(h.q, h.r) });
     if (u.rallyN && wbRallyTargets(S, u).length) out.push({ type: 'rally', uid: u.uid });
+    // ── THE FOUR ABILITIES, FROM THE TABLE THE PANEL READS ────────────────────
+    // They were missing here entirely: four abilities the appliers accept and the
+    // enumerator never offered, so the sparring bot played a ruleset with three action
+    // types against a human playing one with seven. Issue #125.
+    //
+    // `ab.why(S, u)` IS THE AVAILABILITY RULE, and asking it rather than restating it is
+    // the whole reason this reads from WB_ACTIVE: the panel greys a control for exactly
+    // the reasons the applier would refuse it, and a second copy here would be the third
+    // opinion about ability legality in a file that already had two about everything
+    // else. It covers ownership, the turn, the escalated cost plus any premium, and each
+    // ability's own last question -- an already-braced Vanguard, an anchored
+    // Man-at-Arms, an enemy already marked by this company.
+    for (const ab of WB_ACTIVE) {
+      if (ab.move === 'rally') continue;              // its own branch, one line above
+      if (!ab.has(u) || ab.why(S, u)) continue;
+      if (!ab.targets) { out.push({ type: ab.move, uid: u.uid }); continue; }
+      for (const t of ab.targets(S, u)) out.push({ type: ab.move, uid: u.uid, target: t.uid });
+    }
   }
   // Always available, and always last: a pass is what the bot does when nothing
   // else scores, and scoring it below everything is what stops it ending its turn
@@ -5451,6 +6708,56 @@ function wbBotReuse(S, u) {
 
 // One ply, no lookahead. Higher is better; ties go to whichever came first out of
 // wbLegalMoves, which is stable for a given position.
+// WHAT IS ABOUT TO BE DONE TO THIS UNIT, and by whom. Asked through wbThreatHexes,
+// which is the named query for "what could this unit strike from where it stands" and
+// exists precisely so that a second consumer does not reimplement the rule. It counts
+// only enemies that can strike WITHOUT MOVING, which understates the danger and is the
+// honest bound: a bot that braced against everything that could walk into range would
+// brace every turn.
+function wbBotIncoming(S, u) {
+  const here = wbHexKey(WB.hexOf(S.G, u));
+  const out = [];
+  for (const e of wbLiving(S, 1 - u.owner)) {
+    if (!wbThreatHexes(S, e).has(here)) continue;
+    out.push({ e, dmg: WB.damageOf(S.G, e, u, wbRules()) });
+  }
+  return out;
+}
+
+// What a temporary cap of `grant` would stop, on this unit, against the worst blow
+// already aimed at it. A cap prevents nothing it is not below, which is the whole
+// question the simulation's first ability policy got wrong.
+function wbBotCapWorth(S, u, grant) {
+  const inc = wbBotIncoming(S, u);
+  if (!inc.length || grant == null) return { prevented: 0, blows: 0 };
+  const worst = Math.max(...inc.map((x) => x.dmg));
+  const ceiling = WB.effectiveCap(u);
+  return { prevented: Math.max(0, Math.min(worst, ceiling) - grant), blows: inc.length };
+}
+
+// This company's OTHER shooters that could fire on `e` where everything stands. The
+// value of a mark is entirely in the shots that follow it, so a mark nobody can follow
+// up is worth nothing and must score nothing.
+function wbBotShooters(S, u, e) {
+  const eH = wbHexKey(WB.hexOf(S.G, e));
+  let n = 0;
+  for (const f of wbLiving(S, u.owner)) {
+    if (f.uid === u.uid || f.range <= 1) continue;
+    if (wbThreatHexes(S, f).has(eH)) n += 1;
+  }
+  return n;
+}
+
+// The premium an ability charges on top of the action it is made of, priced in the same
+// currency as wbBotReuse so the two are comparable: one extra activation costs what one
+// repeat action costs. Without this a Sunder that got a single point through a cap would
+// outrank the plain shot it is a more expensive version of.
+const WB_BOT_PREMIUM = 8;
+const wbBotSurcharge = (u) => {
+  const ab = WB.abilityOf(u.name);
+  return ((ab && ab.cost && ab.cost.surcharge) || 0) * WB_BOT_PREMIUM;
+};
+
 function wbBotScore(S, m) {
   const pl = wbActive(S);
 
@@ -5486,6 +6793,87 @@ function wbBotScore(S, m) {
   if (m.type === 'rally') {
     const u = S.G.units.get(m.uid);
     return 20 - (u ? wbBotReuse(S, u) : 0);
+  }
+
+  // ── the four abilities ──────────────────────────────────────────────────────
+  // ONE RULE EACH, in the same currency as everything else in this function: damage.
+  // An ability scores what it PREVENTS or ADDS, so one that would do neither scores
+  // nothing and the bot takes an ordinary action instead. That is the property worth
+  // having here -- not that the bot plays them well, but that a human watching can see
+  // why each one was used.
+  //
+  // DELIBERATELY NOT THE SIMULATION'S POLICY. core.js has two named ability policies
+  // and every figure in DESIGN-LOG was produced by one of them; these weights are
+  // tuned for how a match reads and must never be imported by a driver that measures.
+  // See CONTEXT.md on the two AIs.
+  if (m.type === 'brace') {
+    const u = S.G.units.get(m.uid);
+    if (!u) return -Infinity;
+    const e = WB.abilityEffect(u.name, 'temp_cap');
+    const worth = wbBotCapWorth(S, u, e ? e.amount : null);
+    if (!worth.prevented) return -Infinity;         // a cap that binds nothing
+    // Over the blows already aimed at it rather than over one, because a cap applies to
+    // every blow before Regroup -- and capped at three, because this is a sparring bot
+    // and an unbounded multiplier would make it brace in every crowd.
+    return worth.prevented * Math.min(worth.blows, 3) * 6 - wbBotReuse(S, u);
+  }
+
+  if (m.type === 'anchor') {
+    const u = S.G.units.get(m.uid);
+    if (!u) return -Infinity;
+    const e = WB.abilityEffect(u.name, 'temp_cap');
+    if (!e || !(e.amount > 0) || !(e.radius > 0)) return -Infinity;
+    const here = WB.hexOf(S.G, u);
+    let gain = 0;
+    for (const f of wbLiving(S, pl)) {
+      if (f.uid === u.uid) continue;                // the caster pays with its feet
+      if (WB.hexDist(here, WB.hexOf(S.G, f)) > e.radius) continue;
+      gain += wbBotCapWorth(S, f, e.amount).prevented;
+    }
+    if (!gain) return -Infinity;
+    // AND WHAT STANDING STILL COSTS, WHICH IS NOTHING ONCE IT IS IN CONTACT. Anchoring
+    // forfeits this unit's movement for the rest of the turn; the movement branch below
+    // values a step toward the enemy at 2, so a whole Heavy move is worth about 8. But a
+    // Man-at-Arms already adjacent to an enemy has nowhere it wants to go, and charging
+    // it for movement it would not have spent is what kept Anchor at zero uses across
+    // forty self-play matches.
+    const foes = wbLiving(S, 1 - pl);
+    const engaged = foes.some((f) => WB.hexDist(here, WB.hexOf(S.G, f)) === 1);
+    // Six per point of damage prevented, the same rate as every blow here.
+    return gain * 6 - (engaged ? 0 : 8) - wbBotReuse(S, u);
+  }
+
+  if (m.type === 'markshot') {
+    const u = S.G.units.get(m.uid), e = S.G.units.get(m.target);
+    if (!u || !e) return -Infinity;
+    // THE SHOT'S OWN VALUE, PRICED WITHOUT THE MARK, because the mark is not on the
+    // board when the blow is priced -- the same ordering the applier uses.
+    const dmg = WB.damageOf(S.G, u, e, wbRules());
+    const kills = e.hp <= dmg;
+    const mark = WB.abilityEffect(u.name, 'mark');
+    // A kill leaves no survivor to mark, so a marking shot that kills is strictly a more
+    // expensive plain attack. Scoring the follow-up at zero is what makes the bot take
+    // the ordinary shot instead, rather than paying a premium for nothing.
+    // SIX PER POINT, which is the rate every other blow in this function is valued at
+    // (`dmg * 6`). A mark is worth the damage it adds to the shots that follow it, so it
+    // has to be priced in the same currency or the comparison with a plain attack is
+    // between two different units. One other gun scores 6 against a premium of 8, so the
+    // bot marks when MORE THAN ONE can use the mark -- which is the rule in one line.
+    const follow = kills ? 0 : wbBotShooters(S, u, e) * ((mark && mark.amount) || 0) * 6;
+    const base = kills ? 100 + e.vp * 10 : dmg * 6;
+    return base + follow - wbBotSurcharge(u) - wbBotReuse(S, u);
+  }
+
+  if (m.type === 'sunder') {
+    const u = S.G.units.get(m.uid), e = S.G.units.get(m.target);
+    if (!u || !e) return -Infinity;
+    const plain = WB.damageOf(S.G, u, e, wbRules());
+    const through = WB.damageOf(S.G, u, e, wbRules(), null, { ignoreCap: true });
+    if (through <= plain) return -Infinity;         // nothing to go through
+    const base = (e.hp <= through && e.hp > plain)
+      ? 100 + e.vp * 10                             // the cap was all that was saving it
+      : (through - plain) * 6;
+    return base - wbBotSurcharge(u) - wbBotReuse(S, u);
   }
 
   // move and rally_move are scored the same way: both are one unit changing hex,
@@ -5732,6 +7120,11 @@ function wbFreshSession() {
     // FIT or FULL board. A fact about this screen, not about the match, and it
     // belongs to the session for the same reason the selection does not travel.
     boardFull: null,   // null = follow the phase; see wbMapSvg
+    // AIMING AN ABILITY THAT NEEDS A TARGET -- Marking Shot and Sunder. Session-local
+    // and NOT game state, deliberately: nothing has been spent and nothing is
+    // constrained until the target is clicked, so unlike a half-finished rally this
+    // does not have to travel to the other seat. { kind, uid } or null.
+    aim: null,
     // WHERE THE KEYBOARD CURSOR IS, as a hex key. Session-local like the
     // selection and the inspector, never serialized, and cleared with the rest of
     // this object by wbSessionEnd.
@@ -5744,6 +7137,17 @@ function wbFreshSession() {
     // board that refuses clicks.
     boardFocus: null,
     confirmPass: false,// this player's Pass is armed and waiting on an answer, and is NOT game state
+    // IS THE STATIC REFERENCE OPEN? Session-local, never serialized, cleared with the rest
+    // of this object by wbSessionEnd -- exactly like the inspector, the armed pass and the
+    // board's zoom mode. It has to live here rather than in a native <details> because
+    // wbShow replaces the whole section's innerHTML, so an element's own open state is
+    // destroyed on every action; a disclosure that shut itself every time the player did
+    // anything would be worse than one that never closed.
+    //
+    // AND IT MUST NOT BE GAME STATE. Whether this player has the legend open says nothing
+    // about the match and must not travel to the other seat, for the same reason the
+    // selection and the zoom mode do not.
+    reference: false,
     rejectDrawn: 0,    // when a refusal off the wire was last allowed to redraw
     // A seat reported gone, and the timer that will concede for it if it stays
     // gone: { seat, timer }. Cleared the moment that seat is heard from again.
@@ -5836,6 +7240,20 @@ function wbCommit(move, where) {
   // deploying the last affordable company, or moving instead. Cleared here rather
   // than in each handler so a sixth entry point cannot forget.
   wbUi.confirmPass = false;
+  // AND SO IS A PENDING ABILITY, for the same reason and in the same place. A move was
+  // just submitted; whatever the player had armed before it is not what they are doing
+  // now. rc-2026-10-14 let an armed Sunder survive a PASS -- the turn changed, the other
+  // company acted, and the aim was still sitting there pointing at a unit that was no
+  // longer this seat's to spend.
+  //
+  // This is the seam that covers pass, turn change and phase transition at once, because
+  // all three arrive as a committed move. The snapshot case is wbLoad's, and the
+  // selection case is wbSelect's; wbAimLive then refuses to honour anything that slips
+  // past all three. wbAimAt clears the aim BEFORE calling this, so the ability it is
+  // firing is unaffected -- and a REFUSED ability stays disarmed, which is deliberate:
+  // the player is told why and arms it again, rather than holding a loaded gesture
+  // whose refusal they may not have read.
+  wbUi.aim = null;
   if (!S) return wbNo('no game');
   if (!wbCanAct(S)) { wbUi.notice = 'Not your turn.'; wbShow(); return wbNo('not your turn'); }
   if (wbMp && wbMp.mode === 'guest') {
@@ -7092,6 +8510,12 @@ function wbLoad(pub, opts) {
   // that a burst whose first move was ACCEPTED does not leave a stale copy that
   // blocks the next burst from opening one.
   wbUi.held = null;
+  // AND A PENDING ABILITY, which unlike `sel` must NOT survive a snapshot. An aim is a
+  // unit id plus an intention to spend this seat's activation; an incoming state can have
+  // moved, killed or re-numbered that unit, and honouring the aim afterwards would spend
+  // the activation on whoever now answers to the id. `sel` survives because a wrong
+  // highlight is a cosmetic error, and this does not because a wrong aim is a move.
+  wbUi.aim = null;
   // `sel` is this client's highlight and never travels, so a snapshot would
   // otherwise clear the selection every time the opponent did anything. It is
   // dropped only when what it pointed at is gone.
@@ -7184,7 +8608,20 @@ function wbMakeRng(seed, density, calls) {
 // a build before this one accepts `v: 99` and ignores unknown top-level fields
 // entirely, so there was no accidental protection to rely on.
 const WB_WIRE_V = 1;
-const WB_RULES_REV = 'supply-1';
+// BUMPED FOR THE FOUR ABILITIES. The SHAPE of a snapshot did not change -- three new
+// unit fields ride in on WB_UNIT_FIELDS and WB_WIRE_V stays 1 -- but what the same
+// bytes MEAN did: a build without these drivers reads `tempCap` and `marked`, ignores
+// both, and prices every blow differently. That is the exact divergence this constant
+// exists to refuse, and it is why there are two versions rather than one.
+//
+// AND BUMPED AGAIN TO -2 FOR THE TWO REDESIGNS. Nothing new arrived on the wire: the
+// same `tempCap` and the same `marked` travel, and a -1 build would read both and
+// answer with the numbers it has. That is the whole problem. Under -1 a braced Vanguard
+// is capped at 2 and a mark costs one plain action; under -2 the cap is 1 and the mark
+// arrives on the back of a shot that costs a premium. Two seats disagreeing about what
+// a blow does while agreeing about every byte is the divergence this constant exists to
+// refuse, so the token moves even though the shape did not.
+const WB_RULES_REV = 'supply-1+abilities-2';
 
 // WHY THE GATE IS HERE. wbLoad is the earliest boundary this repository owns: both
 // inbound paths go through it, and both carry bytes from the other seat --
@@ -7424,6 +8861,19 @@ const WB_UNIT_FIELDS = [
   ['auraDmg', 'num'], ['auraRange', 'num'], ['flee', 'num'], ['rallyN', 'num'],
   ['rallyRange', 'num'], ['vp', 'num'], ['cost', 'num'], ['deathTerrain', 'str'],
   ['banner', 'bool'], ['at', 'key'], ['deployed', 'bool'], ['alive', 'bool'],
+  // THE THREE ABILITY STATES, last because makeUnit declares them last, and the order
+  // IS the rule: a guest rebuilding in a different order re-serializes to different
+  // bytes for the same game. Supply's comment above is the same lesson, and omitting
+  // these broke six tests -- four of them multiplayer divergence.
+  //
+  // tempCap is 'cap' AND NOT 'num', which is the whole reason that kind exists: null
+  // means no temporary cap, and coercing it to 0 would give the unit a cap of nothing
+  // -- immunity, out of a buff that is supposed to be a ceiling.
+  ['tempCap', 'cap'],
+  ['anchored', 'bool'],
+  // marked holds WHICH COMPANY marked this unit, so it is a seat that may be absent.
+  // 'seat' alone would turn null into 0 and silently mark every unit for Company A.
+  ['marked', 'seat?'],
 ];
 
 function wbSnapshotG(g) {
@@ -7460,6 +8910,8 @@ function wbSnapshotG(g) {
       else if (kind === 'str') out[f] = String(u[f]);
       else if (kind === 'bool') out[f] = !!u[f];
       else if (kind === 'cap') out[f] = u[f] == null ? null : wbNum(u[f]);
+      // A seat that may be absent: null stays null, anything else is bounded to 0 or 1.
+      else if (kind === 'seat?') out[f] = u[f] == null ? null : (wbSeat(u[f]) === 1 ? 1 : 0);
       else out[f] = u[f] == null ? null : String(u[f]);
     }
     return out;
@@ -7878,6 +9330,9 @@ function wbBoardFull() {
 // The composite takes focus and the letters move a cursor inside it, which is
 // what every grid widget worth using does.
 const WB_FIELD_ID = 'wb-field';
+// The disclosure's region, named here because the button's aria-controls has to agree with
+// it and two literals that must match are one literal.
+const WB_REF_ID = 'wb-reference-body';
 
 // Screen directions, computed from wbPx rather than assumed: with
 // `x = SIZE*sqrt(3)*(q + r/2)` and `y = SIZE*1.5*r`, the six axial neighbours
@@ -8252,7 +9707,13 @@ function wbHexA11yName(S, view, k, preview, ctx) {
 
   const can = [];
   if (view.reach && view.reach.has(k)) can.push('move here');
-  if (occ && occ.alive && view.attack.uids.has(occ.uid)) can.push('attack');
+  // NAMED, WHEN IT IS NOT AN ORDINARY ATTACK. "you may attack" beside a ring that will
+  // fire Marking Shot tells a screen-reader user the one thing the sighted channel does
+  // not: the wrong action.
+  if (occ && occ.alive && view.attack.uids.has(occ.uid)) {
+    const named = view.attack.action === 'attack' ? null : wbAimName(view.attack.action);
+    can.push(named ? `use ${named}` : 'attack');
+  }
   if (view.deploy && view.deploy.hexes.has(k)) can.push('deploy here');
   if (can.length) parts.push(`you may ${can.join(', ')}`);
 
@@ -8367,9 +9828,20 @@ function wbThreatHexes(S, u) {
   return out;
 }
 
-// THE BOARD, AS THE RULES SEE IT. A function of S and nothing else: no
+// THE BOARD, AS THE RULES SEE IT. A function of its ARGUMENTS and nothing else: no
 // `opts.preview`, no `wbUi`, no `wbMp`, no colours, no geometry, no draw order
 // and no accessible strings. Those are presentation, and the renderer owns them.
+//
+// `aim` IS AN ARGUMENT AND NOT A GLOBAL READ, and the distinction is the whole point.
+// The forecast has to describe the blow the next click will actually deliver, and which
+// ability is armed lives in `wbUi.aim` -- not a fact of S. Reading wbUi from in here to
+// get it would rebuild the hidden dependency #87 spent three rounds removing, one layer
+// up and harder to see, which is exactly what the comment above wbThreatHexes warns
+// about. So the renderer, which already knows, passes it in; callers that only want
+// occupancy or hex geometry pass nothing and get the unarmed board.
+//
+// Shape: { kind, uid } or null. An aim belonging to a unit that is not the selected
+// shooter changes nothing, so a stale one cannot colour the forecast either.
 //
 // THREE INDEPENDENT ACTION SETS, not one `interaction` enum -- and the honest
 // reason, because the obvious one is false. No hex carries two permissions at
@@ -8389,7 +9861,7 @@ function wbThreatHexes(S, u) {
 // Computed once for the whole board rather than per hex: reachable() is a flood
 // fill and wbAttackTargets walks every unit, and the code this replaced called
 // reachable() sixty-three times to draw sixty-three hexes.
-function wbBoardView(S) {
+function wbBoardView(S, aim) {
   const hexes = [...S.board.values()];
   // The per-hex facts the renderer used to rediscover for itself, and that
   // wbHexPanel rediscovers a second time independently.
@@ -8469,7 +9941,21 @@ function wbBoardView(S) {
   // decision from `move` -- it costs the ally nothing and spends the captain's
   // activation instead.
   const reach = mover ? of(S.rally ? 'rally_move' : 'move', mover.uid, 'to') : null;
-  const hits = of('attack', shooter && shooter.uid, 'target');
+  // WHICH ACTION THE RINGS ARE ABOUT.
+  //
+  // Armed, they are about THAT ability's legal targets; unarmed, an ordinary attack. The
+  // rings used to show attack targets whatever was armed, so a Marking Shot offered every
+  // enemy in range including the ones this company had already marked -- and that click
+  // is refused, because the premium would buy nothing. An affordance encodes what the
+  // rules permit, and it was encoding a different action's permission.
+  //
+  // THE SET COMES FROM THE SAME ENUMERATOR, not from a new rule: wbLegalMoves already
+  // offers { type: 'markshot' | 'sunder', uid, target } built from each ability's own
+  // `targets`, which for Marking Shot is the unmarked set. So this is one lookup against
+  // the authority, and there is still exactly one legality calculation in the driver.
+  const aimedAt = aim && shooter && aim.uid === shooter.uid && wbAimBlow(aim.kind)
+    ? aim.kind : null;
+  const hits = of(aimedAt || 'attack', shooter && shooter.uid, 'target');
   // Unit objects, in the order the enumerator offered them.
   const strikeable = S.G ? [...hits].map((uid) => S.G.units.get(uid)).filter(Boolean) : [];
   const deployable = of('deploy', depUnit && depUnit.uid, 'to');
@@ -8484,8 +9970,13 @@ function wbBoardView(S) {
   // which keeps it inside the rule that an affordance encodes what the rules
   // permit rather than what the interface thinks is worth doing.
   const forecast = new Map();
+  // THE OPTIONS THE ARMED ABILITY'S BLOW CARRIES, from the one table the applier reads.
+  // Guarded on the aim belonging to THIS shooter: an aim left over from another unit must
+  // not describe this one's blow, which is the same stale-intent defect seen from the
+  // forecast's side. Null when nothing is armed, which is byte-for-byte today's forecast.
+  const aimOpts = aimedAt ? wbAimBlow(aimedAt) : null;
   for (const t of strikeable) {
-    for (const b of wbBlowPlan(S, shooter, t).blows) {
+    for (const b of wbBlowPlan(S, shooter, t, aimOpts).blows) {
       // One unit can be reached by two different strikes on offer -- as a Sweep
       // carry from one, and as a target in its own right of another. Its own
       // direct blow is the one a player is asking about when they look at it, so
@@ -8565,7 +10056,11 @@ function wbBoardView(S) {
     moverUid: mover ? mover.uid : null,
     reach,
     shooterUid: shooter ? shooter.uid : null,
-    attack: { uids: hits },
+    // `action` says WHICH action those uids are targets for: 'attack', or the armed
+    // ability's move. Published rather than left for each consumer to re-derive from
+    // wbUi, so the ring, the spoken affordance and the tooltip name one action -- and so
+    // a consumer that forgets to look still reads 'attack', which is what it meant before.
+    attack: { uids: hits, action: aimedAt || 'attack' },
     forecast,
     deploy: { unitUid: depUnit ? depUnit.uid : null, hexes: deployable },
   };
@@ -8594,8 +10089,14 @@ function wbMapSvg(opts = {}) {
   // clicks outright, so neither may light a hex. Highlights that cannot be acted
   // on are the same lie again, just one the player cannot even test.
   const live = !opts.preview;
-  // Every board fact below comes from the seam, computed once from S alone.
-  const view = wbBoardView(S);
+  // Every board fact below comes from the seam, computed once.
+  //
+  // THE ARMED ABILITY IS HANDED IN, and only on a live board: a preview refuses gameplay
+  // clicks, so forecasting an ability nobody can fire there would be the same lie as a
+  // lit hex. This one argument is what makes the drawn figure and the spoken "your strike
+  // would deal N" describe the move the click submits -- both read this view, so they
+  // cannot now disagree with each other either.
+  const view = wbBoardView(S, live ? wbAimView() : null);
   // Preview is the end-of-match map and the draft screen: both refuse gameplay
   // clicks outright, so neither may light a hex. Highlights that cannot be acted
   // on are a lie the player cannot even test.
@@ -8674,9 +10175,31 @@ function wbMapSvg(opts = {}) {
   //
   // The rule is one line in the rendered markup on purpose: this explanation
   // used to sit inside the <style> block and shipped in every single render.
+  //
+  // ── AND THE ZOOM ROW'S OWN LAYOUT IS IN THAT BLOCK TOO, which is a repair rather
+  // than a tidy-up. Those five declarations were a style ATTRIBUTE on the element, and
+  // an inline style beats every stylesheet rule that is not !important -- so the
+  // container query below, which exists to hide the row where it cannot act, could
+  // never win. The control was shown at every width for as long as that rule has
+  // existed, including the widths where it does nothing, which is exactly what the rule
+  // was written to prevent and exactly what a playtester then reported.
+  //
+  // Measured in Chromium on a byte-identical copy of the published build: the row shown
+  // at a 902px board box against a natural width of 728, with the svg rendering 728 in
+  // BOTH modes, and the identical rule injected with !important hiding it at once.
+  // scripts/measurements/browser-widths.html re-runs it; DESIGN-LOG has the table.
+  //
+  // THE BASE RULE GOES FIRST IN THE BLOCK. Both rules name one class, so specificity is
+  // equal and the later one wins -- which is the point: this sets the row's display, the
+  // query overrides it, and neither needs !important. Moving the base rule after the
+  // query would restore the defect with no inline style in sight, so the ORDER is what
+  // warband-affordances pins.
+  //
+  // And it is three lines of CSS in the render rather than twenty of prose, for the
+  // reason the paragraph above gives.
   const full = wbBoardFull();
   let out = `<div class="wb-board" style="max-width:100%;container-type:inline-size;container-name:wb-board">
-    <div class="wb-board-zoom-row" style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">
+    <div class="wb-board-zoom-row">
       <button class="ng-btn wb-board-zoom" onclick="wbBoardZoom()" style="font-size:.68em;opacity:.85">${
         full ? 'Fit the whole field' : 'Full size — scroll to pan'}</button></div>
     <div class="${WB_SCROLL_CLASS}" style="overflow-x:auto;max-width:100%">
@@ -8686,6 +10209,7 @@ function wbMapSvg(opts = {}) {
       style="${full ? '' : 'max-width:100%;height:auto;'}background:${WB_COL.ink};border:1px solid ${WB_COL.line};border-radius:6px">
     <desc id="${WB_NO_DESC_ID}"></desc>
     <style>#${WB_FIELD_ID}:not(:focus) .wb-focus{display:none}
+      .wb-board-zoom-row{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px}
       @media (max-width:560px){.wb-lbl-fit{display:none}}
       /* THE TOGGLE IS OFFERED ONLY WHERE IT CAN ACT. Fit and Full differ by one
          thing: whether the svg carries max-width:100%. Above the board's own
@@ -8715,7 +10239,13 @@ function wbMapSvg(opts = {}) {
          This is the affordance rule applied to a control instead of a hex:
          availability has to be truthful, and a control that cannot change
          anything is not available. */
-      @container wb-board (min-width:${wpx}px){.wb-board-zoom-row{display:none}}</style>`;
+      @container wb-board (min-width:${wpx}px){.wb-board-zoom-row{display:none}}${
+        /* The newline is INSIDE the branch, so a preview screen is unchanged to the byte
+           rather than carrying seven characters of indentation it has no rules for --
+           which is what the characterization fixtures measure and what keeps the delta
+           on this change readable. */
+        opts.preview ? '' : `
+      ${WB_STATUS_RULES}`}</style>`;
   // THE CURSOR IS ACCUMULATED, NOT EMITTED. One hex at most carries it, and it
   // is drawn after the whole loop; see the block that fills it for why.
   let cursor = '';
@@ -8985,7 +10515,11 @@ function wbMapSvg(opts = {}) {
       if (!opts.preview) out += `<polygon points="${poly(c)}" fill="none" pointer-events="all"
         aria-hidden="true" style="cursor:pointer" onclick="wbBoardActivate('${wbAttrStr(k)}',false)"/>`;
       const tokenTitle = `<title>${wbEsc(S.names[u.owner])} — ${wbEsc(u.name)}, ${wbNum(u.hp)} hp, `
-        + `${wbNum(u.vp)} vp to the enemy${canHit ? ' — click to attack' : ''}</title>`;
+        + `${wbNum(u.vp)} vp to the enemy${canHit
+          ? (view.attack.action === 'attack'
+            ? ' — click to attack'
+            : ` — click for ${wbAimName(view.attack.action) || 'the armed ability'}`)
+          : ''}</title>`;
       // Selection is a white contour of the unit's OWN silhouette, drawn behind
       // the token. It used to recolour the token's stroke, which cannot work now
       // that Company B's colour lives in that stroke and nowhere else.
@@ -9217,7 +10751,7 @@ function wbBoardLegend(opts = {}) {
     // languages the way the rings once did.
     legend.push(`<span style="color:${WB_COL.trace}">white arrow = what the other side just did · dashed = gave ground · ✕ = was hit</span>`);
   }
-  return ''
+  const body = ''
     // SAID TWICE, IN TWO REGISTERS, and the second one is a PICTURE. The legend
     // names the keys in words; this draws them on the faces they move across.
     // It is always visible rather than revealed on focus, which is a reversal:
@@ -9236,6 +10770,44 @@ function wbBoardLegend(opts = {}) {
     + `<span>each letter moves the cursor across the face it sits on · Enter or Space acts on the hex under it${escClause} · the arrows do nothing here: a hex has no neighbour due north or due south</span></div>`
     + `<div class="wb-legend" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;font-size:.66em">
         ${legend.join('')}</div>`;
+  // ── FOLDED ON THE PLAY SCREEN, OPEN EVERYWHERE ELSE ───────────────────────
+  // Measured on a play screen: this block is 710 visible characters across twelve entries,
+  // 8% of the whole screen, identical on every turn of every match. A returning tester:
+  // "A lot of text is unnecessary, and it's hard to parse what's important" -- two
+  // different complaints, and this answers the first without making the second worse,
+  // because nothing is removed. The summary is about thirty characters and everything is
+  // one press away, in the same place every time, for every input device.
+  //
+  // THE PREVIEW SCREENS KEEP IT OPEN. On the draft, colours and end screens the board is
+  // the content rather than a workspace, there are no controls to compete with, and the
+  // legend is what a player is reading the board WITH. Folding it there would answer a
+  // complaint nobody made about a screen nobody made it about -- and it keeps this change
+  // off three of the ten characterization fixtures, which is how the delta stays readable.
+  //
+  // A BUTTON AND A REGION, NOT <details>. Two reasons, and the second is the one that
+  // decides it: wbShow replaces the whole section's innerHTML, so a native element's open
+  // state is destroyed on every action -- the state has to be ours either way, and once it
+  // is, the standard button/aria-expanded/aria-controls disclosure is the honest
+  // construction. It is focusable, announced as a disclosure, and operable from the
+  // keyboard and from a touch tap without a hover anywhere.
+  //
+  // THE REGION IS ALWAYS RENDERED, `hidden` when closed, rather than omitted. aria-controls
+  // pointing at an element that does not exist is a broken promise to a screen reader, and
+  // a collapsed disclosure whose content is absent cannot be announced as collapsed.
+  //
+  // AND THE LABEL NAMES THE KEYBOARD. The one entry in here that cannot teach itself is the
+  // cursor keys -- every other affordance is discovered by pointing at it. The tester who
+  // asked for this is a mouse user and called that line useless to them, which it is to
+  // them; the answer is to fold it with a label that tells a keyboard user it is in here,
+  // not to delete it. See DESIGN-LOG, "Folding the reference, without removing it".
+  if (!opts.collapsible) return body;
+  const open = !!wbUi.reference;
+  return `<div class="wb-reference" style="margin-top:6px">
+      <button class="ng-btn wb-ref-toggle" onclick="wbReference()"
+        aria-expanded="${open ? 'true' : 'false'}" aria-controls="${WB_REF_ID}"
+        style="font-size:.66em;opacity:.85">${open ? '\u25be' : '\u25b8'} Board colours &amp; keyboard controls</button>
+      <div id="${WB_REF_ID}" class="wb-ref-body"${open ? '' : ' hidden'}>${body}</div>
+    </div>`;
 }
 
 // The selected unit's OWN controls, in their own box. Rally used to live in the
@@ -9281,7 +10853,18 @@ function wbActionPanel(S, pl, u) {
   const canMoveNow = acting && u.deployed && !S.rally && wbCost(S, u) <= S.pools[u.owner];
   const hexes = canMoveNow
     ? new Set(WB.reachable(S.G, u).map((h) => WB.key(h.q, h.r))).size : 0;
-  const targets = acting ? wbAttackTargets(S, u) : [];
+  // WHAT THE RINGS BESIDE THIS SENTENCE ACTUALLY ARE. While an ability is armed on THIS
+  // unit the board rings that ability's own legal targets, so counting attack targets here
+  // would print "3 enemies ringed in orange" next to two rings -- a new disagreement
+  // introduced by fixing the old one.
+  //
+  // Read through WB_ACTIVE's own `targets`, which is the function wbLegalMoves calls, so
+  // the panel and the board are quoting one answer rather than two.
+  const armedKind = acting && wbUi.aim && wbUi.aim.uid === u.uid ? wbUi.aim.kind : null;
+  const armedAb = armedKind ? wbAimAbility(armedKind) : null;
+  const targets = !acting ? []
+    : (armedAb && armedAb.targets ? armedAb.targets(S, u) : wbAttackTargets(S, u));
+  const ringedFor = armedAb ? wbAimName(armedKind) : null;
   const abil = wbUnitAbilities(S, u);
   const arch = Object.prototype.hasOwnProperty.call(WB.ARCH, u.name) ? WB.ARCH[u.name] : null;
   const btn = (x) => (x.call
@@ -9300,7 +10883,15 @@ function wbActionPanel(S, pl, u) {
       <b style="color:${own};font-size:.9em">${wbEsc(S.names[u.owner])} · ${wbEsc(u.name)}${u.banner ? ' ⚑' : ''}</b>
       <span style="font-size:.7em;color:${WB_COL.dim}">${wbEsc(u.cls)} · ${wbNum(u.hp)} hp · ${wbNum(u.atk)} atk
         · range ${wbNum(u.range)} · move ${wbNum(u.move)}
-        · ${Number.isFinite(u.cap) ? `cap ${wbNum(u.cap)}` : 'no damage cap'}</span>
+        · ${(() => {
+          // THE CAP IN FORCE, through core's own helper rather than u.cap. A braced
+          // Vanguard reads 2 here and a plain one reads 3, which is the only place a
+          // player can confirm the activation bought what it promised. Asking core
+          // means this cannot drift from what damageOf actually applies.
+          const c = WB.effectiveCap(u);
+          if (!Number.isFinite(c)) return 'no damage cap';
+          return `cap ${wbNum(c)}${u.tempCap != null && u.tempCap <= u.cap ? ' (held)' : ''}`;
+        })()}</span>
     </div>
     ${/* THE TWO NUMBERS A DECISION TURNS ON, AS FIGURES RATHER THAN INSIDE A SENTENCE.
          Both were already here and a playtester still could not find them: he searched
@@ -9335,7 +10926,7 @@ function wbActionPanel(S, pl, u) {
         : u.deployed
           ? `<b style="color:${WB_COL.move}">${wbNum(hexes)}</b> ${hexes === 1 ? 'hex' : 'hexes'} in gold to move to;
              <b style="color:${WB_COL.hit}">${wbNum(targets.length)}</b>
-             ${targets.length === 1 ? 'enemy' : 'enemies'} ringed in orange to attack${targets.length
+             ${targets.length === 1 ? 'enemy' : 'enemies'} ringed in orange ${ringedFor ? `for ${wbEsc(ringedFor)}` : 'to attack'}${targets.length
                ? `: ${targets.map((t) => wbEsc(t.name)).join(', ')}` : ''}.`
           : `It is not on the field yet — click a gold hex in your own edge columns to deploy it for
              ${wbNum(u.cost)} deployment ${u.cost === 1 ? 'point' : 'points'}.`}
@@ -9456,8 +11047,15 @@ function wbRender() {
       </div>
       ${wbPhaseLine(wbPlayHint(S, pl))}
       ${/* THE TURN AND BOTH SCORES, immediately above the board and mirroring the
-           ground line immediately below it. Fixed height, so neither can move the
-           board. See wbStatusLine for why this is adjacency and not sticky. */''}
+           ground line immediately below it. See wbStatusLine for why this is adjacency
+           and not sticky.
+
+           IT IS NOT A FIXED HEIGHT ANY MORE, and this comment said it was for as long
+           as that stopped being true. #117 made both rows wrap rather than ellipse, so
+           the height follows the string; the reservation in WB_STATUS_CSS is what keeps
+           it from following it DURING a match, which is the part that moves the board.
+           The ground line below the board is still genuinely fixed and truncates
+           instead. */''}
       ${wbStatusLine(S)}
       ${wbResourceLine(S, pl)}
       ${wbBoardSlot()}
@@ -9573,7 +11171,7 @@ function wbRender() {
            Preview screens are not reordered at all: the draft, banner and end screens pass
            { preview: true } and keep the legend inside the board wrapper where it has
            always been. See wbBoardLegend. */''}
-      ${wbBoardLegend()}
+      ${wbBoardLegend({ collapsible: true })}
       ${economyProse}
       <div style="margin-top:10px;max-height:110px;overflow:auto;font-size:.7em;color:${WB_COL.dim};line-height:1.6">
         ${S.log.slice(-9).reverse().map(wbLogLine).join('')}
@@ -10054,9 +11652,21 @@ function wbEnd() {
 if (typeof window !== 'undefined') Object.assign(window, {
   warbandShowSetup, warbandStart, warbandResync, warbandSwitchMatch,
   wbPick, wbSetBanner, wbSelect, wbHexClick, wbPass,
-  wbInspectHex, wbInspectArch, wbInspectClose, wbDeselect, wbBoardZoom,
+  wbInspectHex, wbInspectArch, wbInspectClose, wbDeselect, wbBoardZoom, wbReference,
   wbPassConfirm, wbPassCancel,
   wbRally, wbRallyDone,
+  // The four ability handlers. wbBrace and wbAnchor are inline onclick handlers and
+  // MUST be here; wbAim is too, and wbAimAt is exported so a test can drive the armed
+  // click without synthesising a DOM event.
+  //
+  // THIS LIST WAS ALREADY WRONG ABOUT wbAnchor and could not say so. Two functions were
+  // declared with that name, the second won, and what this list exported under it was the
+  // feedback-positioning helper -- so a test reaching for the Anchor ability through the
+  // window got the wrong function too, and the ability had no exported surface at all.
+  // wbAimLive and wbAimBlow are exported for the tests that prove a stale aim is refused
+  // and that the forecast and the blow read one table.
+  wbBrace, wbAnchor, wbAim, wbAimAt, wbAimLive, wbAimBlow, wbNoticeAnchor,
+  wbMarkShotTargets,
   wbSerialize, wbHydrate, wbMakeRng, wbApply, wbShow, wbLoad, wbNewGame,
   wbHexUnit, wbKeyDown,
   // THE BATTLEFIELD'S OWN HANDLERS, and they are inline attributes, so by this
