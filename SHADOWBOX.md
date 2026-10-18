@@ -35,6 +35,32 @@ The three rules files are carried byte for byte:
 | `core.js` | 122,593 | `b175ded9f00c4b029beb83acc04a60749e2bbeee84788bd785709c0183cb4790` |
 | `engine.js` | 508,065 | `ae1ce0780b2e6dfca52738ca71e69329adb3e65822257b3d6b9ecc5703153f42` |
 
+And the artifact they make: **800,497 bytes**, sha256
+`7d4e605da43402da6cfa8a176d5d326a89e31d0b905cb4c9a730dc5b13a2c439`.
+
+## Two works, two sets of terms
+
+This matters more than its position in a README suggests, so it is stated before the build
+instructions rather than after the limitations.
+
+- **The canonical Warband rules engine is MIT-licensed**, Copyright (c) 2026 Frank Trevor
+  Gilson. MIT asks that the copyright notice and the permission notice accompany every copy
+  and every substantial portion, and a page that inlines the whole engine is a substantial
+  portion. So the licence is **embedded verbatim, twice**: as an HTML comment at the top of
+  the file, where it can never be dismissed or restyled away, and as a readable panel in the
+  opening notice. Both copies are `31ed777:LICENSE` byte for byte — 1,076 bytes, sha256
+  `f736741c65c17618a6767290792c4c94368bbd60e415889725f18186f9a84289`.
+- **The Shadow-Box renderer and its graphics are Brian Schneider's work** (@brianhschneider),
+  published here **with his permission**. Permission is not a licence: they are **not** MIT,
+  and nothing in this repository grants anyone the right to reuse them. The page says so in
+  the same words, in the notice and in the permanent stamp.
+
+The builder reads the licence out of the same commit as the rules and **refuses to build**
+if it is missing or is not the MIT text — so the notice travels with every future build
+rather than with the one artifact somebody remembered to paste it into. Both refusals are
+exercised in `scripts/shadowbox-acceptance.mjs`'s evidence; a licence containing `--` is
+also refused, because it could not be carried verbatim inside an HTML comment.
+
 ## Rebuilding it
 
 The generated HTML is **not** a source. Edit the prototype or the builder, never the output.
@@ -43,7 +69,7 @@ The builder lives with the renderer it inlines, in `warband-live`:
 
 ```
 node scripts/build-shadowbox.mjs \
-  --app-ref   prototype/shadowbox \
+  --app-ref   0da6f6b \
   --rules-repo ../warband \
   --rules-ref  31ed777 \
   --out        ../warband-playtest/shadowbox.html
@@ -62,67 +88,79 @@ are; gameplay, balance, the sparring bot and every interaction decision are unto
 **Preview-then-Take stays an experiment of this prototype's** and is labelled as such on
 the page — it is not adopted for the canonical interface.
 
-1. The Google Fonts `<link>` is dropped.
-2. Two CSS rules redirect the renderer's two font families onto locally installed stacks.
+1. The verbatim MIT licence of the rules goes in at the top of the file, with the
+   renderer's separate terms stated beside it.
+2. The Google Fonts `<link>` is dropped.
+3. Two CSS rules redirect the renderer's two font families onto locally installed stacks.
    The renderer names fonts in SVG `font-family` **presentation attributes**, which any CSS
    rule outranks, so this needs no edit to `kit.js` or `sb.js`. A locally installed Inter or
    Lilita One is first in each stack and still wins, so a machine that has them renders
    exactly as the prototype did.
-3. The five `<script src>` tags become five inline `<script>` blocks in the same order.
-4. The `<title>` says the build is experimental.
-5. A dismissible notice and a permanent provenance stamp are added **over** the page, so the
-   renderer's own muster screen and start button are untouched. The notice is removed from
-   the DOM when dismissed, so it cannot swallow a click meant for the board.
+4. The five `<script src>` tags become five inline `<script>` blocks in the same order, each
+   headed by a comment naming its source commit and its terms.
+5. The `<title>` says the build is experimental.
+6. A dismissible notice — now carrying the licence and the attribution — and a permanent
+   provenance stamp are added **over** the page, so the renderer's own muster screen and
+   start button are untouched. The notice is removed from the DOM when dismissed, so it
+   cannot swallow a click meant for the board; the stamp stays, and carries the attribution
+   in words rather than only in two short SHAs.
 
 ## Self-containment
 
 No externally loaded JavaScript, stylesheet, font, image, XHR, socket or backend. Verified
 by opening the file in Chromium **with every URL blocked and the connection emulated
-offline**, playing a complete game, and recording that no off-origin request was even
-attempted. The single `http` string in the file is the anchor in the notice that links back
-to the established playtest — a hyperlink, not a loaded resource.
+offline**, playing both games to their verdicts, and recording that no off-origin request
+was even attempted. The single `http` string in the file is the anchor in the notice that
+links back to the established playtest — a hyperlink, not a loaded resource.
 
 `?seed=N` works as it does in the prototype, and defaults to 28.
 
-## A match cannot be finished yet — read this before publishing
+## Both seeds play to a verdict
 
-**This is the reason not to merge.** On both requested seeds the game freezes at turn 7 and
-cannot continue:
+Both requested seeds were played end to end **with every URL blocked and the connection
+emulated offline**, by a driver that clicks marks the page painted and never computes
+legality. The verdict is read from `wbState()`, the engine's own accessor — **not** from the
+view-model handed to `SB.paint`, which stops updating once `S.phase === 'over'` and would
+show a finished match as a frozen one. That mistake produced a wrong defect report against
+the renderer in an earlier round; it is why the check is written this way.
 
 ```
-seed 28   phase=play turn=7 active=1 pools=0/0 against=45/46  (one point from a break)
-seed  3   phase=play turn=7 active=1 pools=4/6 against=42/54
+seed  3   over at turn 7    against 54/12 of 54/48   Company A broke    alive A 4  B 5
+seed 28   over at turn 10   against 48/8  of 46/51   Company A broke    alive A 2  B 5
 ```
 
-It is the bot's turn in both cases. The page is **idle, not busy and not looping** — a
-repaint counter sat at 101 with no change over sixteen seconds — and no error reaches the
-console. On seed 3 the bot still has five live units with `acted: 0` and costs of 1, 3, 1, 2
-and 1 against a pool of 6, so it is not short of legal moves; it simply never takes one. The
-renderer's click handler returns early unless `active === HUMAN`, so **a player has no way
-to recover**: the match is dead where it stands.
+For both: `wbLegalMoves(wbState())` returns **0** at the ending, the **Chronicle is on
+screen**, **zero console errors**, and **no off-origin request was even attempted**. Between
+them the two runs exercised the draft, the colours, deployment, movement, plain strikes,
+Pass, Rally, Brace, Anchor and a Marking Shot, and no click that changed nothing was counted
+as an action.
 
-**It is not this build.** Brian's page, byte-identical and served from its own directory
-with its real webfonts and five separate script files, settles into the same state on the
-same turn with the same damage and the same exercised tally. The fault is in PR #4's
-turn-driving glue, not in inlining.
+`scripts/shadowbox-acceptance.mjs`, in `warband-live`, is the run:
 
-The root cause is **not** established here, and three plausible explanations were each
-killed by measurement rather than argument — an empty bot pool (false on seed 3), a turn cap
-(the rules set `max_turns` to 10), and `afterMove()` spinning on a null from `wbBotChoose`
-(false; the page does not repaint at all). Pinning it down belongs with the renderer's
-author. Until it is fixed, a playtester invited to this page will reach turn 7 and stop.
+```
+node scripts/shadowbox-acceptance.mjs ../warband-playtest/shadowbox.html   --rules-repo ../warband --rules-ref 31ed777
+```
+
+61 checks, all passing.
 
 ## Known limitations, reported rather than designed around
 
-- **Desktop only, measured.** The page is one 1920×1080 canvas scaled to the viewport, so a
-  small screen shrinks everything rather than reflowing it. Nothing clips and no scrollbar
-  appears at any size, but the type shrinks with the board:
+- **Desktop only, measured during play.** The page is one 1920×1080 canvas scaled to the
+  viewport, so a small screen shrinks everything rather than reflowing it. Nothing clips and
+  no scrollbar appears at any size, but the type shrinks with the board:
 
   | viewport | scale | smallest label | labels under 10px |
   |---|---|---|---|
-  | 1920×1080 | 1.00 | 22.0px | 0 of 12 |
-  | 1366×768 | 0.71 | 15.6px | 0 of 12 |
-  | 640×360 | 0.33 | **7.3px** | **7 of 12** |
+  | 1920×1080 | 1.00 | 13.2px | 0 of 18 |
+  | 1366×768 | 0.71 | 9.4px | 1 of 18 |
+  | 640×360 | 0.33 | **4.4px** | **9 of 18** |
+
+  **An earlier version of this table was measured on the wrong screen.** It reported 22.0px,
+  15.6px and 7.3px across 12 labels, and said no label fell under 10px at 1366×768. Those
+  numbers came from the muster screen: the measuring run clicked the start button without
+  first dismissing the notice that covers it, so the game never began and the table
+  described a title card. The figures above are from a game in progress, which is what a
+  playtester will be looking at.
 
   At 640×360 most of the interface is unreadable. There is no mobile layout, and adding one
   would be a redesign of Brian's prototype rather than a build step, so it is reported here
@@ -136,13 +174,3 @@ author. Until it is fixed, a playtester invited to this page will reach turn 7 a
 - **One human against the bot.** No hotseat, no second human, no audience.
 - **Not Warband Live.** The streamer-versus-audience prototype is separate and is not part
   of this page.
-
-## Licensing and permissions
-
-- The rules are MIT, copyright Frank Trevor Gilson, from `warband-prototype`. MIT asks that
-  the notice travel with substantial portions; the existing `index.html` carries none, so
-  this is a standing question for both pages rather than something introduced here.
-- **The Shadow-Box renderer is `brianhschneider`'s work**, in `Everyone-Loves-Beacon/warband-live`,
-  a private repository in another organisation **with no declared licence**. Publishing it
-  from this public repository needs his explicit agreement. That agreement is not recorded
-  anywhere this build can see, so it is the open question in front of this change.

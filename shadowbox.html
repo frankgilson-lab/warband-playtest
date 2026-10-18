@@ -1,4 +1,47 @@
 <!doctype html>
+<!--
+  Warband · Shadow-Box — an experimental, self-contained playtest build.
+
+  TWO WORKS TRAVEL IN THIS FILE, UNDER TWO DIFFERENT SETS OF TERMS.
+
+  1. THE CANONICAL WARBAND RULES ENGINE — config.js, core.js and engine.js, from
+     frankgilson-lab/warband-prototype at 31ed7774cef58a545066301845271646d3143030 — is MIT-licensed.
+     Its licence and copyright notice follow in full, verbatim, as MIT requires of
+     every copy and of every substantial portion.
+
+  2. THE SHADOW-BOX RENDERER AND ITS GRAPHICS — index.html, kit.js and sb.js, from
+     Everyone-Loves-Beacon/warband-live at 0da6f6b2314122851acbbd819bd016573071498d — are the work of
+     Brian Schneider (@brianhschneider), published here with the author's permission.
+     They are NOT covered by the MIT licence below, and this file grants no licence to
+     use, copy, modify or redistribute them. Permission to publish this playtest is not
+     permission to reuse the renderer.
+
+  ---- 31ed7774cef58a545066301845271646d3143030:LICENSE, verbatim ----
+
+MIT License
+
+Copyright (c) 2026 Frank Trevor Gilson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+  ---- end of licence ----
+-->
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Warband · Shadow-Box (experimental desktop playtest)</title>
@@ -15,7 +58,7 @@
 </style></head>
 <body>
 <svg id="s" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet"></svg><div class="grain"></div>
-<script>/* warband rules config.js — canonical 31ed777 */
+<script>/* warband rules config.js — canonical 31ed777 — MIT, Copyright (c) 2026 Frank Trevor Gilson */
 // Generated from config.json — do not edit by hand.
 // Loaded before core.js so the rules module has its data synchronously,
 // following the portal cards-generated.js convention.
@@ -797,7 +840,7 @@ if (typeof self !== 'undefined') self.WARBAND_CONFIG = WARBAND_CONFIG;
 if (typeof window !== 'undefined') window.WARBAND_CONFIG = WARBAND_CONFIG;
 
 </script>
-<script>/* warband rules core.js — canonical 31ed777 */
+<script>/* warband rules core.js — canonical 31ed777 — MIT, Copyright (c) 2026 Frank Trevor Gilson */
 // ── Warband Core ──────────────────────────────────────────────────────────────
 // Pure game logic: no DOM, no rendering. Shared by worker.js (simulation) and
 // engine.js (interactive play), so the prototype and the sweeps can never drift
@@ -2921,7 +2964,7 @@ else if (typeof self !== 'undefined') self.WarbandCore = WarbandCore;
 else if (typeof window !== 'undefined') window.WarbandCore = WarbandCore;
 
 </script>
-<script>/* warband rules engine.js — canonical 31ed777 */
+<script>/* warband rules engine.js — canonical 31ed777 — MIT, Copyright (c) 2026 Frank Trevor Gilson */
 // ── Warband Engine ────────────────────────────────────────────────────────────
 // Interactive hotseat play for the portal. All RULES come from core.js, which the
 // Monte Carlo sweeps also use, so what people play is exactly what was simulated.
@@ -11615,7 +11658,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
 });
 
 </script>
-<script>/* shadow-box kit.js — 0da6f6b */
+<script>/* shadow-box kit.js — 0da6f6b — Brian Schneider, published with permission; not MIT */
 // Concept-still kit: a Warband hex board drawn in the "Shadow-Box" (FunFab papercut) direction.
 // Pointy-top hexes, odd-r offset, 9 x 7 like the prototype. Pure SVG strings, no deps.
 (function () {
@@ -11927,7 +11970,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
 })();
 
 </script>
-<script>/* shadow-box sb.js — 0da6f6b */
+<script>/* shadow-box sb.js — 0da6f6b — Brian Schneider, published with permission; not MIT */
 // Warband · Shadow-Box prototype.
 // A new renderer over Frank's rules engine (upstream engine.js/core.js, untouched).
 // Every rule, move, forecast and bot decision comes from the engine:
@@ -13014,6 +13057,7 @@ window.P = P; window.svg = svg;
     #sb-gate ul{padding-left:17px}
     #sb-gate li{margin:0 0 3px}
     #sb-gate .prov{font-size:11px;margin-top:10px;padding-top:8px}
+    #sb-gate .legal{font-size:11.5px;margin-top:8px;padding-top:8px}
   }
   #sb-gate h1{margin:0 0 4px;font:700 23px/1.25 'Inter','Inter Variable',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Liberation Sans',sans-serif;color:#f0e6d6}
   #sb-gate .tag{display:inline-block;margin:0 0 14px;padding:2px 8px;border:1px solid #7a5c2e;border-radius:999px;
@@ -13027,8 +13071,15 @@ window.P = P; window.svg = svg;
   #sb-gate button:focus-visible{outline:3px solid #f0e6d6;outline-offset:2px}
   #sb-gate .prov{margin-top:15px;padding-top:12px;border-top:1px solid #3a322c;
     font:400 12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#9a8e7f}
-  #sb-stamp{position:fixed;right:9px;bottom:7px;z-index:8;pointer-events:none;
+  #sb-gate .legal{margin-top:13px;padding-top:11px;border-top:1px solid #3a322c;font-size:13px;color:#b5aa9a}
+  #sb-gate .legal p{margin:0 0 7px}
+  #sb-gate .legal summary{cursor:pointer;color:#d8a24a}
+  #sb-gate .legal pre{margin:9px 0 0;max-height:190px;overflow:auto;padding:9px 11px;background:#1a1613;
+    border:1px solid #3a322c;border-radius:6px;white-space:pre-wrap;
+    font:400 11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#9a8e7f}
+  #sb-stamp{position:fixed;right:9px;bottom:7px;z-index:8;pointer-events:none;text-align:right;
     font:400 11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#6d6358}
+  #sb-stamp .terms{font-size:10px;color:#5d544b}
 </style>
 <div id="sb-gate" role="dialog" aria-modal="true" aria-labelledby="sb-gate-h">
   <div class="card">
@@ -13059,9 +13110,43 @@ window.P = P; window.svg = svg;
       shadow-box renderer &nbsp;0da6f6b2314122851acbbd819bd016573071498d<br>
       built &nbsp;2026-10-18 &nbsp;·&nbsp; seed via <code>?seed=N</code>
     </div>
+    <div class="legal">
+      <p><strong>Two works, two sets of terms.</strong> The canonical Warband rules engine this
+        page runs on is <strong>MIT-licensed</strong> — Copyright (c) 2026 Frank Trevor Gilson — and its licence travels
+        in full with every build.</p>
+      <p>The <strong>Shadow-Box renderer and its graphics are Brian Schneider's work</strong>
+        (@brianhschneider), published here <strong>with the
+        author's permission</strong>. They are <strong>not</strong> MIT-licensed, and no licence
+        to reuse them is granted here.</p>
+      <details id="sb-licence">
+        <summary>The MIT licence of the Warband rules, in full</summary>
+        <pre id="sb-licence-text">MIT License
+
+Copyright (c) 2026 Frank Trevor Gilson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+      </details>
+    </div>
   </div>
 </div>
-<div id="sb-stamp" title="canonical rules 31ed7774cef58a545066301845271646d3143030 · shadow-box renderer 0da6f6b2314122851acbbd819bd016573071498d">rules 31ed777 · renderer 0da6f6b</div>
+<div id="sb-stamp" title="canonical rules 31ed7774cef58a545066301845271646d3143030 · shadow-box renderer 0da6f6b2314122851acbbd819bd016573071498d · rules MIT (Copyright (c) 2026 Frank Trevor Gilson) · renderer Brian Schneider, published with permission, not MIT">rules 31ed777 · renderer 0da6f6b<div class="terms">rules MIT, © 2026 Frank Trevor Gilson · renderer © Brian Schneider, by permission</div></div>
 <script>
 (() => {
   const gate = document.getElementById('sb-gate');
