@@ -14,25 +14,44 @@ build.
   status                experiment                    supported
 ```
 
-## THIS CANDIDATE IS NOT CLEARED FOR PUBLICATION
+## Published by the owner's decision — and one question left open
 
-**One** prerequisite is open, and until it is closed this file is a prepared, tested
-candidate and nothing more. It is not a build problem and it cannot be closed from here.
+This page is published. **The owner decided to publish it on 2026-10-22, explicitly, and
+without waiting for an answer on the question below.** That decision supersedes the hold
+this file previously carried. It is recorded here in the owner's name because it is the
+owner's, and because the question it was taken over is not closed by it.
 
-1. **Brian Schneider has not confirmed distribution under the new proprietary
-   arrangement.** His permission on record covers the earlier MIT-licensed build. The
-   request to extend it to a Limited Playtest License build was put to him on
-   `Everyone-Loves-Beacon/warband-live` **PR #4** and has had no answer. The licence
-   embedded in this very page ends with the sentence that makes this decisive: *"This
-   licence applies only to material the relevant copyright holders have authorized for
-   distribution on these terms."* The renderer in this page is his work.
+What is actually recorded about the renderer's terms, in full:
 
-Merging this PR publishes the page. Do not merge it while that item is open.
+- The Shadow-Box renderer and its graphics are **Brian Schneider's work**
+  (@brianhschneider), contributed as `0da6f6b` on `Everyone-Loves-Beacon/warband-live`
+  **PR #4**.
+- The owner's account is that Brian authorized an **earlier, MIT-based** build.
+- Authorization for **this** arrangement — his renderer travelling inside a build offered
+  under the proprietary Limited Playtest License — was requested of him on PR #4 on
+  2026-10-22, in those words.
+- **No answer has been received.** Nothing written by Brian in either repository records a
+  grant, a scope, or a refusal; he has not written on the subject at all. The scope of any
+  earlier permission therefore remains unresolved, and this file does not resolve it.
+- **The owner has decided to proceed regardless.**
+
+**That decision is not Brian's approval, and must never be described as one.** It is not a
+grant of permission and it is not evidence of one. Anyone reading this file later should
+take the permission question as open and the publication as the owner's own act.
+
+There is also **no prohibition** to report: Brian has recorded neither permission nor
+refusal on this distribution, and no licence or statement in either repository forbids it.
+`docs/RIGHTS.md` in `warband-live` holds the complete evidence, deliberately split into what
+the repositories verify and what rests on assertion; it is the place to look, not this
+summary.
+
+The separate terms below stand unchanged. The rules are the owner's and proprietary; the
+renderer is Brian's and is **not** licensed to anyone by this page.
 
 ### Closed: the canonical rules commit is published
 
-The second prerequisite this file used to carry — that `eb49d71` existed on one machine and
-on no remote — is **closed**. The commit is now on the branch `licence/limited-playtest` of
+This file used to carry a second blocker — that `eb49d71` existed on one machine and on no
+remote — and it is **closed**. The commit is now on the branch `licence/limited-playtest` of
 `frankgilson-lab/warband-prototype`, pushed by explicit refspec as a single commit on top of
 the MIT baseline `31ed777`. After the push it was verified three independent ways, each
 reporting that exact SHA and that parent: a fresh clone into an empty directory, the GitHub
@@ -111,9 +130,10 @@ instructions rather than after the limitations.
   the em dash in its title and the `©` in its copyright line — sha256
   `d24c1c5e5a17155ee1ca530a4e159e0a8c8880709636e60d754b5535adfabcb7`.
 - **The Shadow-Box renderer and its graphics are Brian Schneider's work**
-  (@brianhschneider). The permission on record is for the earlier MIT build; **permission
-  for this one has been requested and not yet given** (see the top of this file). Permission
-  is not a licence in any case: the renderer is not covered by the rules' licence, and
+  (@brianhschneider). The permission the owner reports is for the earlier MIT build;
+  **permission for this one was requested and has not been answered**, and the page is
+  published on the owner's decision rather than on an answer (see the top of this file).
+  Permission is not a licence in any case: the renderer is not covered by the rules' licence, and
   nothing here grants anyone the right to reuse it. The page says so in the same words, in
   the notice and in the permanent stamp.
 
@@ -197,13 +217,12 @@ standalone acceptance opens the file in Chromium **with every URL blocked and th
 connection emulated offline**, plays to a verdict, and records that no off-origin request
 was even attempted. `?seed=N` works as it does in the prototype.
 
-## Deploying it
+## How it was deployed, and how to check it
 
 GitHub Pages serves this repository from the **`main` branch, path `/`** (legacy build).
 There is no workflow and no build step: a file merged to `main` is the file served.
 
-1. Merge the deployment PR into `main` — **only once the prerequisite at the top of this
-   file is closed**.
+1. Deployment PR **#1** was merged into `main` on the owner's authorization of 2026-10-22.
 2. Wait for the Pages build to report `built`:
    `gh api repos/frankgilson-lab/warband-playtest/pages --jq .status`
 3. Fetch the published page and check it against the artifact, rather than trusting the
