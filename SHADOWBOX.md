@@ -16,8 +16,8 @@ build.
 
 ## THIS CANDIDATE IS NOT CLEARED FOR PUBLICATION
 
-Two prerequisites are open, and until both are closed this file is a prepared, tested
-candidate and nothing more. Neither is a build problem and neither can be closed from here.
+**One** prerequisite is open, and until it is closed this file is a prepared, tested
+candidate and nothing more. It is not a build problem and it cannot be closed from here.
 
 1. **Brian Schneider has not confirmed distribution under the new proprietary
    arrangement.** His permission on record covers the earlier MIT-licensed build. The
@@ -26,12 +26,26 @@ candidate and nothing more. Neither is a build problem and neither can be closed
    embedded in this very page ends with the sentence that makes this decisive: *"This
    licence applies only to material the relevant copyright holders have authorized for
    distribution on these terms."* The renderer in this page is his work.
-2. **The canonical rules commit `eb49d71` is unpublished.** It exists on one machine, on a
-   local branch `licence/limited-playtest`, and on no remote: `git ls-remote` returns no ref
-   at it. The page stamps that SHA as its provenance, so until the commit is published
-   nobody outside that machine can resolve what this build was made from.
 
-Merging this PR publishes the page. Do not merge it while either item above is open.
+Merging this PR publishes the page. Do not merge it while that item is open.
+
+### Closed: the canonical rules commit is published
+
+The second prerequisite this file used to carry — that `eb49d71` existed on one machine and
+on no remote — is **closed**. The commit is now on the branch `licence/limited-playtest` of
+`frankgilson-lab/warband-prototype`, pushed by explicit refspec as a single commit on top of
+the MIT baseline `31ed777`. After the push it was verified three independent ways, each
+reporting that exact SHA and that parent: a fresh clone into an empty directory, the GitHub
+API, and `git ls-remote`. The rules themselves did not move — `games/warband` is the *same
+tree object* at `31ed777` and at `eb49d71`, which is to say the licence changed and the game
+did not.
+
+**That repository is private, and the owner has decided it stays private.** So the commit's
+provenance is verifiable by anyone authorized on the repository and by nobody else: its
+GitHub links return 404 to an anonymous request, as does `git ls-remote` without
+credentials. This is the intended end state rather than a gap still to be closed —
+publishing the canonical source was never the aim, and the licence embedded in this page
+forbids redistributing the rules in the first place.
 
 ## What it is built from
 
@@ -39,7 +53,7 @@ Three pinned commits, and nothing else.
 
 | part | repository | commit |
 |---|---|---|
-| canonical rules | `frankgilson-lab/warband-prototype` | `eb49d71338e270efffa618ebadd8c31314aebeaa` |
+| canonical rules | `frankgilson-lab/warband-prototype` (private), `licence/limited-playtest` | `eb49d71338e270efffa618ebadd8c31314aebeaa` |
 | Shadow-Box renderer | `Everyone-Loves-Beacon/warband-live`, PR #4 | `0da6f6b2314122851acbbd819bd016573071498d` |
 | explanatory UX layer | `Everyone-Loves-Beacon/warband-live`, `playtest/shadowbox-ux` | `80dbe4ef6b57aac013d676ff46f75c6012778a40` |
 
@@ -64,6 +78,23 @@ shadowbox.html
 sha256  21bd3004147e0577071bf45364b2599f199ab420aae10296e2ac5e282a1bd1ea
 ```
 
+### What these hashes prove, and what they do not
+
+Two different claims live in this file, and only one of them is checkable by a reader
+without repository access.
+
+- **The artifact is publicly verifiable.** Once the page is live, anyone can fetch it and
+  compute `21bd3004…` for themselves. That settles which bytes are being served, and that
+  they are the bytes every suite below was run against.
+- **The build's ancestry is not.** The three rules-file hashes above, the licence hash
+  below, and the three pinned SHAs are a *manifest of the inputs* — and all three
+  repositories they name are private. A reader outside them cannot recompute a single one of
+  those digests, so the manifest records what was measured rather than proving it: only the
+  private history it was measured against can confirm it. Independent verification of the
+  ancestry needs access to `frankgilson-lab/warband-prototype` and
+  `Everyone-Loves-Beacon/warband-live`, which is granted person by person and not by this
+  file. A matching hash in a document is evidence of care, not a proof of provenance.
+
 ## Two works, two sets of terms
 
 This matters more than its position in a README suggests, so it is stated before the build
@@ -76,7 +107,8 @@ instructions rather than after the limitations.
   publication, modification or derivative work. The licence is **embedded verbatim, twice**
   — as an HTML comment at the top of the file, where it can never be dismissed or restyled
   away, and as a readable panel in the opening notice. Both copies are `eb49d71:LICENSE`
-  byte for byte: 1,779 bytes, sha256
+  byte for byte: **1,782 bytes** — 1,779 Unicode characters, the three-byte difference being
+  the em dash in its title and the `©` in its copyright line — sha256
   `d24c1c5e5a17155ee1ca530a4e159e0a8c8880709636e60d754b5535adfabcb7`.
 - **The Shadow-Box renderer and its graphics are Brian Schneider's work**
   (@brianhschneider). The permission on record is for the earlier MIT build; **permission
@@ -170,8 +202,8 @@ was even attempted. `?seed=N` works as it does in the prototype.
 GitHub Pages serves this repository from the **`main` branch, path `/`** (legacy build).
 There is no workflow and no build step: a file merged to `main` is the file served.
 
-1. Merge the deployment PR into `main` — **only once both prerequisites at the top of this
-   file are closed**.
+1. Merge the deployment PR into `main` — **only once the prerequisite at the top of this
+   file is closed**.
 2. Wait for the Pages build to report `built`:
    `gh api repos/frankgilson-lab/warband-playtest/pages --jq .status`
 3. Fetch the published page and check it against the artifact, rather than trusting the
