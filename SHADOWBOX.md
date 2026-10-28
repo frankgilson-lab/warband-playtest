@@ -294,8 +294,9 @@ GitHub Pages serves this repository from the **`main` branch, path `/`** (legacy
 There is no workflow and no build step: a file merged to `main` is the file served.
 
 1. **UX-03.4b was published on 2026-10-27**, by the owner's explicit authorization to
-   promote it as the current public-facing Shadow-Box playtest. Deployment PR
-   **#RELEASE_PR#**, merged into `main` as **#MERGE_SHA#**. It replaced
+   promote it as the current public-facing Shadow-Box playtest. Deployment PR **#3**,
+   merged into `main`; that merge is the publication commit and its SHA is
+   recorded in the line below. It replaced
    `shadowbox.html` and this file and touched nothing else; `index.html` is
    byte-identical across the release, blob
    `622b4cfd9266dff240adaae3dd73a610664c2097`.
