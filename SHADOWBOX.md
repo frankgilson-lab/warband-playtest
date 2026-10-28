@@ -74,7 +74,7 @@ Three pinned commits, and nothing else.
 |---|---|---|
 | canonical rules | `frankgilson-lab/warband-prototype` (private), `licence/limited-playtest` | `eb49d71338e270efffa618ebadd8c31314aebeaa` |
 | Shadow-Box renderer | `Everyone-Loves-Beacon/warband-live`, PR #4 | `0da6f6b2314122851acbbd819bd016573071498d` |
-| explanatory UX layer | `Everyone-Loves-Beacon/warband-live`, `playtest/shadowbox-ux` | `80dbe4ef6b57aac013d676ff46f75c6012778a40` |
+| explanatory UX layer | `Everyone-Loves-Beacon/warband-live`, `playtest/ux034b-victory` | `6b393e63f3a5ffb755b394bc6795d3d5357b7417` |
 
 All three SHAs are stamped into the page — in full in the opening notice and in the `title`
 of the stamp at the bottom right, in short form in the stamp itself — so feedback can be
@@ -92,9 +92,26 @@ build time rather than taken on the word of `rules/MIRROR.json`:
 And the artifact they make:
 
 ```
-shadowbox.html
+shadowbox.html  (UX-03.4b, published 2026-10-27)
+1,269,564 bytes
+sha256  0a8619c96243b8db97a4592b8476fdbd3de4a6b7e8ff9d25c585510da36c9332
+```
+
+The rules and the renderer are pinned to the same two commits as the first
+release; only the explanatory layer moved. The three rules-file digests above and
+the licence digest below are therefore **unchanged from the previous published
+version**, which is the check that the rules did not move with the interface.
+
+A rebuild from those three pins at release time reproduced this artifact **byte
+for byte** — same 1,269,564 bytes, same sha256, 0 differing lines of 21,236.
+
+**The previous published version is retained** and is the rollback target:
+
+```
+shadowbox.html  (published 2026-10-22, superseded)
 1,112,451 bytes
 sha256  21bd3004147e0577071bf45364b2599f199ab420aae10296e2ac5e282a1bd1ea
+git      ceaf85aa7c2c093cafb1e2f643e6dbe33dd31de4   blob ad12947a6ed4e6591eb7cca567e4e25f89ea2990
 ```
 
 ### What these hashes prove, and what they do not
@@ -103,7 +120,7 @@ Two different claims live in this file, and only one of them is checkable by a r
 without repository access.
 
 - **The artifact is publicly verifiable.** Once the page is live, anyone can fetch it and
-  compute `21bd3004…` for themselves. That settles which bytes are being served, and that
+  compute `0a8619c9…` for themselves. That settles which bytes are being served, and that
   they are the bytes every suite below was run against.
 - **The build's ancestry is not.** The three rules-file hashes above, the licence hash
   below, and the three pinned SHAs are a *manifest of the inputs* — and all three
@@ -153,7 +170,7 @@ The builder lives with the renderer it inlines, in `warband-live`:
 node scripts/build-shadowbox.mjs \
   --app-ref    0da6f6b \
   --rules-repo ../warband \
-  --ux-ref     80dbe4e \
+  --ux-ref     6b393e6 \
   --out        ../warband-playtest/shadowbox.html
 ```
 
@@ -163,6 +180,40 @@ MIT-licensed artifact instead, licence and all.
 It reads every input out of git rather than the working tree, so a dirty checkout cannot
 leak into a build; it refuses outright if the working tree differs from the ref it was told
 to build. `--explain` prints the complete list of changes applied to the renderer.
+
+## What changed since the previous published version
+
+Eighty-five commits of the explanatory layer, between `80dbe4e` and `6b393e6`.
+The rules did not move and the renderer did not move: every change below is the
+layer that reads the engine and draws over the board, and none of them changes a
+rule, a score, an action or the sparring bot.
+
+The work that a player will notice, in the order it was done:
+
+| | what it answers |
+|---|---|
+| **HP-002** | what the game *is*, on the opening, and what you can do right now, in a strip that has room for it at every size |
+| **UX-02** | hierarchy and phase identity; How to Play; a feedback path; the pip legend beside the circles it explains |
+| **UX-03** | the result panels stop above the bar instead of running under it, and the break-point share is drawn rather than spelled out |
+| **UX-03.2** | the commitment control has three states, and the committed one is read out of the state rather than assumed |
+| **UX-03.2b** | the company you are building, while you build it |
+| **UX-03.2c** | the ability on the card, and RECRUIT on the button |
+| **UX-03.3a** | a selected unit with nothing it can legally do now says so, on the board |
+| **UX-03.3a.1 / .2** | the map answer and the commitment explained where they are, describing the recruit they are drawn on |
+| **UX-03.3b** | the combat forecast reads the engine's own list, and the tooltip keeps off it |
+| **UX-03.3c** | a refused click keeps the selection — and says why it was refused |
+| **UX-03.4a** | the endgame hex inspector reads the evidence before the ground |
+| **UX-03.4b** | **who holds the objectives, at all times, and what Regroup paid for them** |
+
+UX-03.4b is the release's headline and the newest: a permanent count of how many
+objectives each company controls, and an announcement at each Regroup saying what
+that count paid. The count is the engine's own `objectiveScore` — ownership, not
+a tally of who is standing where — so a hex a Dragoon rode over and left still
+counts for the company that took it. A tied Regroup is announced too; it
+previously produced no output anywhere.
+
+Those task records live in `warband-live/docs/`, one per item, and are not
+public.
 
 ## What changed since the MIT candidate
 
@@ -186,29 +237,49 @@ layer now states the exact total across the top of the button, reading the same
 ## How this exact file was verified
 
 Every suite below was run against **this artifact** — the file in this commit, sha256
-`21bd3004…`, built from the final commit before any suite started — one at a time, never
-two at once.
+`0a8619c9…` — one at a time, never two at once. This is the project's Tier 2 gate,
+its complete manifest, run once: **21 of 21 steps green, exit 0, in 1559.3s**.
 
-| suite | result |
+| step | result |
 |---|---|
+| unit tests (vitest, 8 files) | **186 passed** |
+| results and the plaque | 210 / 210 |
+| licence gate | 52 / 52 |
+| match lifecycle | 45 / 45 |
 | PASS forfeiture (HP-001) | 52 / 52 |
 | playtest report | 158 / 158 |
-| objective history | 135 / 135 |
 | Chronicle | 90 / 90 |
-| match lifecycle | 45 / 45 |
-| results and the plaque | 208 / 208 |
-| verdict | 67 / 67 |
+| objective history | 135 / 135 |
 | battle record | 56 / 56 |
-| licence gate, incl. the historical MIT build | 57 / 57 |
+| verdict | 67 / 67 |
+| guidance strip | 210 / 210 |
+| affordances | 25 / 25 |
+| explanations | 41 / 41 |
+| map answer | 50 / 50 |
+| combat forecast | 29 / 29 |
+| clicks, legal and refused | 35 / 35 |
+| endgame hex inspector | 45 / 45 |
+| **objectives held and Regroup scoring** | **83 / 83** |
 | seizure regression | correct — announced as a seizure |
-| standalone acceptance | 71 / 71 |
-| explanatory layer acceptance | 258 / 258 |
-| unit tests (vitest, 6 files) | 159 passed |
-| rules mirror against upstream | the mirror is clean — no fork |
+| explanatory layer acceptance | **273 / 273** |
+| standalone acceptance | **71 / 71** |
 
-The gate's five provenance checks need the earlier MIT artifact to compare against, so a
-`--rules-ref 31ed777` build was made from the same UX commit and passed to it; that is the
-only other artifact involved, and nothing about this one is inferred from it.
+**1,727 suite checks and 186 unit tests passed; 0 failed, 0 skipped.** The rules
+mirror was re-derived from upstream at build time and matches byte for byte — no
+fork.
+
+Two things about that gate are worth recording, because a green number is worth
+less than the account of how it was obtained.
+
+- **One earlier attempt did not complete.** It reached 20 of 21 and failed the
+  one step it is forbidden to skip, because the runner could not launch its unit
+  command on this platform at all (`spawn npm ENOENT`). That was a defect in the
+  test runner, not in this build: the 186 unit tests passed when invoked
+  directly, and every suite count above is identical to that attempt's. The
+  runner was repaired separately and the gate then ran complete.
+- **The artifact was validated as the file, not as a checkout.** The suites ran
+  against this exact HTML, and the byte-identical rebuild from the three pins is
+  what ties it back to its sources.
 
 ### Self-containment
 
@@ -222,7 +293,14 @@ was even attempted. `?seed=N` works as it does in the prototype.
 GitHub Pages serves this repository from the **`main` branch, path `/`** (legacy build).
 There is no workflow and no build step: a file merged to `main` is the file served.
 
-1. Deployment PR **#1** was merged into `main` on the owner's authorization of 2026-10-22.
+1. **UX-03.4b was published on 2026-10-27**, by the owner's explicit authorization to
+   promote it as the current public-facing Shadow-Box playtest. Deployment PR
+   **#RELEASE_PR#**, merged into `main` as **#MERGE_SHA#**. It replaced
+   `shadowbox.html` and this file and touched nothing else; `index.html` is
+   byte-identical across the release, blob
+   `622b4cfd9266dff240adaae3dd73a610664c2097`.
+1. The first Shadow-Box deployment, PR **#1**, was merged into `main` on the owner's
+   authorization of 2026-10-22.
 2. Wait for the Pages build to report `built`:
    `gh api repos/frankgilson-lab/warband-playtest/pages --jq .status`
 3. Fetch the published page and check it against the artifact, rather than trusting the
@@ -230,8 +308,9 @@ There is no workflow and no build step: a file merged to `main` is the file serv
    ```
    curl -fsSL https://frankgilson-lab.github.io/warband-playtest/shadowbox.html | sha256sum
    ```
-   It must print the sha256 above. A PR preview, a local open or an inspection of the
-   committed file proves nothing about the public URL.
+   It must print the sha256 above — `0a8619c9…`. A PR preview, a local open or an
+   inspection of the committed file proves nothing about the public URL, and neither does
+   a Pages status of `built`. Add a cache-busting query if a stale copy is suspected.
 4. Open `https://frankgilson-lab.github.io/warband-playtest/shadowbox.html` in a browser,
    accept the licence on the start screen, and play one turn. The page is self-contained, so
    it must work with no further network access at all.
@@ -247,6 +326,12 @@ Nothing about this deployment is irreversible, and the original page is never in
   its blob is identical on `main` and on the candidate branch
   (`622b4cfd9266dff240adaae3dd73a610664c2097`, sha256
   `aea188b3b52fb341e7f604e9ba78a5775a70978c431ca89cbbcdd9d99c0e9a58`).
+- **To go back to the previous published Shadow-Box** (the 2026-10-22 release, which is
+  the current rollback target):
+  `git checkout ceaf85a -- shadowbox.html SHADOWBOX.md` (1,112,451 bytes, sha256
+  `21bd3004147e0577071bf45364b2599f199ab420aae10296e2ac5e282a1bd1ea`), or rebuild it with
+  `--ux-ref 80dbe4e`. That restores the prior page and its release documentation together,
+  and leaves `index.html` alone.
 - **To go back to the earlier MIT-licensed candidate**, which asks nothing of Brian beyond
   the permission already on record:
   `git checkout 2dc2316 -- shadowbox.html SHADOWBOX.md` (800,497 bytes, sha256
@@ -285,6 +370,9 @@ from the match record; it decides nothing.
 - the action strip: whose turn it is, the activation pool, the deployment granted this turn
   and what passing would throw away;
 - an inspection panel for any hex, unit or HUD symbol, pinned until dismissed;
+- how many objectives each company holds, at all times during a battle, and an
+  announcement at each Regroup of what that holding paid — including a tie, which pays
+  nothing and used to say nothing;
 - the Chronicle, the certified score breakdown and the objective history, as three views of
   one finished match;
 - the result plaque, which withdraws its own verdict rather than show one its inputs no
