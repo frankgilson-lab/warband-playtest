@@ -295,8 +295,10 @@ There is no workflow and no build step: a file merged to `main` is the file serv
 
 1. **UX-03.4b was published on 2026-10-27**, by the owner's explicit authorization to
    promote it as the current public-facing Shadow-Box playtest. Deployment PR **#3**,
-   merged into `main`; that merge is the publication commit and its SHA is
-   recorded in the line below. It replaced
+   merged into `main` as **`11dae9d56595475da8a5f793e9ec3668d6ab22d8`** — the
+   publication commit. GitHub Pages built it in 35.5s and reports `built`, and
+   the served bytes were checked against the artifact rather than the status.
+   It replaced
    `shadowbox.html` and this file and touched nothing else; `index.html` is
    byte-identical across the release, blob
    `622b4cfd9266dff240adaae3dd73a610664c2097`.
