@@ -5,7 +5,7 @@
   TWO WORKS TRAVEL IN THIS FILE, UNDER TWO DIFFERENT SETS OF TERMS.
 
   1. THE CANONICAL WARBAND RULES ENGINE — config.js, core.js and engine.js, from
-     frankgilson-lab/warband-prototype at eb49d71338e270efffa618ebadd8c31314aebeaa.
+     frankgilson-lab/warband-prototype at 5bbcbcf1cc2ffa214ed296777b7b666271c66d07.
      It is PROPRIETARY, and is offered to playtesters under the Limited Playtest
      License that follows in full, verbatim: evaluation and playtesting only, with
      no redistribution, no derivative works and no commercial use.
@@ -14,13 +14,13 @@
      those terms.
 
   2. THE SHADOW-BOX RENDERER AND ITS GRAPHICS — index.html, kit.js and sb.js, from
-     Everyone-Loves-Beacon/warband-live at 0da6f6b2314122851acbbd819bd016573071498d — are the work of
+     Everyone-Loves-Beacon/warband-live at b27b373899bb6358b533ab438d4a5117052e73aa — are the work of
      Brian Schneider (@brianhschneider), published here with the author's permission.
      They are NOT covered by the licence below, which does not reach them, and this
      file grants no licence to use, copy, modify or redistribute them.
      Permission to publish this playtest is not permission to reuse the renderer.
 
-  ---- eb49d71338e270efffa618ebadd8c31314aebeaa:LICENSE, verbatim ----
+  ---- 5bbcbcf1cc2ffa214ed296777b7b666271c66d07:LICENSE, verbatim ----
 
 Warband — Limited Playtest License v0.1
 
@@ -45,7 +45,7 @@ This licence applies only to material the relevant copyright holders have author
   ---- end of licence ----
 -->
 <html><head><meta charset="utf-8">
-<meta name="wb-build" content="shadow-box 0da6f6b/eb49d71">
+<meta name="wb-build" content="shadow-box b27b373/5bbcbcf">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Warband · Shadow-Box (experimental desktop playtest)</title>
 <style>
@@ -345,6 +345,92 @@ This licence applies only to material the relevant copyright holders have author
    PAPER FOR A, GOLD FOR B: the company colours this build has used since round
    3B.2, on the dark panel where the gold is readable. #F3ECE0 on #221c18 is
    13.5:1 and #F9C718 is 11.4:1, so neither leans on being large text. */
+/* UX-03.4c.1: THE LAST STAND NOTICE. The same panel material as the objective
+   counter -- #221c18 behind #3a322b -- because this is the same kind of thing:
+   a quiet statement of fact beside the board, not a dialog in front of it. Left
+   and top are set from script in viewBox units; nothing here positions it.
+
+   NO pointer-events RULE IS NEEDED and none is given: #sbux-stage sets
+   pointer-events:none on the whole layer and grants it back only to .hit, and
+   there is no .hit in this box. One line of CSS that said `auto` here would take
+   clicks off the hexes underneath, which is the thing it must never do.
+
+   WIDTH IS FIXED AND HEIGHT IS NOT. The script measures the rendered height to
+   place the box, so a notice with no victory-point line and no second casualty
+   is a shorter box rather than a padded one.
+
+   CONTRAST, ON #221c18, EVERY PART, COMPUTED NOT ESTIMATED: #F3ECE0 14.34:1,
+   #F9C718 10.59:1, #cfc5b6 9.87:1, #a79c8d 6.24:1, #968d84 5.16:1. All five
+   clear WCAG 1.4.3 for normal text, and the suite recomputes each of them from
+   the rendered computed styles so none can drift.
+
+   THE SMALL CAPS ARE NOT THE USUAL #8a8178. That token is used twenty-six times
+   in this file and is 4.40:1 here -- under the 4.5:1 AA floor for normal text,
+   and 13px bold is not large text by WCAG's definition (it wants 18.66px bold).
+   This element uses #968d84 instead. The token itself is left alone: changing
+   it would move twenty-six other surfaces, which is not this task.
+
+   The older figures of 13.5:1 and 9.2:1 in two comments above were estimates;
+   the numbers here come from the WCAG relative-luminance formula. They do not
+   change any of those comments' conclusions, and those comments are not this
+   task either.
+   size. The terrain name takes the paper white because it is the answer to the
+   question the notice exists for. */
+#sbux-last{position:absolute;width:452px;display:flex;flex-direction:column;gap:4px;
+  padding:12px 16px 14px;border-radius:10px;background:#221c18;
+  border:1px solid #3a322b;border-left:4px solid #8a2b2b;z-index:3}
+#sbux-last[hidden]{display:none}
+/* UX-03.6 C: THE DISMISSAL CONTROL. Top right, inside the box's own padding, and
+   large enough to hit without aiming -- 34x34 against the 24px minimum this
+   layer uses elsewhere.
+
+   IT IS THE ONLY PART OF THE NOTICE THAT TAKES A POINTER EVENT. The grant is
+   `.hit` on the button in the template, never on the box: the comment above
+   this one says that one line saying `auto` for the box would take clicks off
+   the hexes underneath, and UX-03.6 proved it by putting `.hit` on the box and
+   losing a legal attack to it. The box stays transparent; this 34x34 corner is
+   solid. */
+#sbux-last button.x{position:absolute;right:8px;top:6px;width:34px;height:34px;
+  display:flex;align-items:center;justify-content:center;padding:0;
+  background:none;border:2px solid #4a4038;border-radius:9px;
+  font:400 22px/1 var(--sbux-sans);color:#a79c8d}
+#sbux-last button.x:hover{background:#2a231e;border-color:#6b6158;color:#F3ECE0}
+#sbux-last button.x:focus-visible{outline:3px solid #00C1BF;outline-offset:2px}
+/* THE HEADINGS KEEP CLEAR OF IT. The box is 452 wide and the control takes the
+   top-right 42 of it, so the two lines that can run long stop short of it
+   rather than running underneath. */
+#sbux-last .tag,#sbux-last .who{padding-right:44px}
+
+/* ── the ring on the hex the notice is about ─────────────────────────────────
+   Cased in paper under an ink core, like the endgame's killing line, so it reads
+   on light ground and on dark; in neither the teal of a legal move nor the
+   orange of a strike forecast, because this is a record of something that has
+   already happened. It takes no pointer events: it is drawn ON the hex a player
+   may want to click. */
+#sbux-fellnow{position:absolute;left:0;top:0;width:1920px;height:1080px;
+  pointer-events:none;overflow:visible}
+#sbux-fellnow[hidden]{display:none}
+#sbux-fellnow circle.case{fill:none;stroke:#F3ECE0;stroke-width:10;opacity:.95}
+#sbux-fellnow circle.core{fill:none;stroke:#8a2b2b;stroke-width:4.5}
+#sbux-last .tag{font:700 13px/1.1 var(--sbux-sans);letter-spacing:.09em;
+  text-transform:uppercase;color:#968d84}
+#sbux-last .who{font:400 27px/1.1 var(--sbux-display);color:#F3ECE0}
+#sbux-last .ground{font:700 21px/1.2 var(--sbux-sans);color:#F3ECE0}
+#sbux-last .where{font:700 13px/1.1 var(--sbux-sans);letter-spacing:.06em;
+  text-transform:uppercase;color:#968d84;font-variant-numeric:tabular-nums}
+#sbux-last .why{font:400 19px/1.3 var(--sbux-sans);color:#cfc5b6}
+#sbux-last .vp{font:700 17px/1.2 var(--sbux-sans);color:#F9C718;
+  font-variant-numeric:tabular-nums}
+#sbux-last .more{font:400 16px/1.25 var(--sbux-sans);color:#a79c8d}
+#sbux-last .where[hidden],#sbux-last .why[hidden],
+#sbux-last .vp[hidden],#sbux-last .more[hidden]{display:none}
+/* A PLAYER WHO TURNED ANIMATION OFF STILL GETS THE WHOLE NOTICE. There is no
+   entry animation to suppress -- the box is drawn, not played -- so this only
+   has to make sure nothing inherited leaves it transparent or offset. The
+   essential information is text in the box either way, which is the point. */
+@media (prefers-reduced-motion: reduce){
+  #sbux-last{transition:none;animation:none;opacity:1;transform:none}
+}
 #sbux-held{position:absolute;left:1688px;top:14px;width:200px;height:74px;
   display:flex;flex-direction:column;justify-content:center;gap:3px;
   padding:0 10px;border-radius:8px;background:#221c18;border:1px solid #3a322b;
@@ -461,7 +547,29 @@ This licence applies only to material the relevant copyright holders have author
 
    The action strip and the forfeiture caption need no such care: neither takes
    pointer events at all, so they may sit over anything. */
-#sbux-inspect{position:absolute;display:none;flex-direction:column;padding:20px 22px;overflow:hidden}
+/* UX-03.6 A: AND IT IS ABOVE THE INSPECTION MARK. The third instance of the one
+   defect the tooltip and modal blocks below already record, in the same two
+   elements' relationship and for the same reason: #sbux-mark is positioned with
+   z-index 1 (2 on a card, 3 on a chip), this panel carried `auto`, and a
+   positioned element with a z-index paints above a positioned sibling with
+   `auto` whatever the document order.
+   So pinning a hex that the panel covers drew four white brackets across the
+   words explaining that very hex -- measured on the accepted UX-03.5+Guard
+   artifact with hex 1,5 pinned on the recruitment screen, where the panel sits
+   at 236,532 1086x312 over the board's lower half: the mark 127x127 at 630,610
+   at 1920x1080 and 90x90 at 448,434 at 1366x768, INSIDE the panel both times --
+   a complete overlap, not a clipped corner.
+   4, AND THE TOOLTIP MOVES TO 5. The panel must cover every mark variant, so it
+   needs more than the chip's 3; the tooltip must still cover the panel, because
+   the panel's own rows carry hover help and a hint drawn under the surface that
+   raised it would be worse than the brackets. There is no integer between 3 and
+   4, so the tooltip takes 5 and the hierarchy is unchanged in order while being
+   explicit in number: board < mark 1/2/3 < panel 4 < tooltip 5 < modal 20.
+   Nothing moves and nothing changes hands: the panel is drawn where it was, at
+   the size it was, and the mark still takes no pointer events. This changes
+   paint order and nothing a click can reach. */
+#sbux-inspect{position:absolute;display:none;flex-direction:column;padding:20px 22px;
+  overflow:hidden;z-index:4}
 /* The log's slot: the one part of the play screen holding nothing clickable. */
 #sbux-inspect.at-play{left:1388px;top:706px;width:500px;height:196px}
 /* Taller when nothing is selected, because the side card above the log is drawn
@@ -521,7 +629,22 @@ This licence applies only to material the relevant copyright holders have author
 #sbux-inspect.at-draft{left:236px;top:532px;width:1086px;height:312px}
 #sbux-inspect.open{display:flex}
 #sbux-inspect .head{display:flex;align-items:baseline;gap:12px}
-#sbux-inspect .head h2{margin:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* UX-03.6 F: THE HEADING WRAPS RATHER THAN TRUNCATING. It is built from
+   "{zone} — left by {company} · hex {key}", and on a hex that two units died on
+   that is "Fallen Ranks — left by Company A · hex 5,0" against a head 500 wide
+   with a Close button in it -- so nowrap plus an ellipsis rendered it as
+   "Fallen Ranks — left by …", losing the company that owns the ground, which is
+   the one thing the heading is there to say. Designer inspection reported it as
+   the terrain name and "left by Company X" being unreadable.
+
+   WRAPPING, NOT SHORTENING. Every word is kept and nothing is moved: the head
+   grows by a line and the body follows it down. min-width:0 is what lets a flex
+   child shrink below its content and wrap at all; without it the h2 holds its
+   intrinsic width and pushes the Close button off the end instead. The panel's
+   clearance of the footer controls is measured after this change, not assumed,
+   because a taller panel is exactly what UX-03.6 F is about at the other end. */
+#sbux-inspect .head h2{margin:0;flex:1 1 auto;min-width:0;
+  overflow-wrap:anywhere;white-space:normal}
 #sbux-inspect .body{flex:1 1 auto;overflow-y:auto;margin-top:10px;padding-right:6px;
   /* A SCROLLBAR THAT CAN BE SEEN. The recruitment panel holds about 500 pixels of
      a card's prose and the screen has 210 free during recruitment -- the rest is
@@ -686,9 +809,25 @@ This licence applies only to material the relevant copyright holders have author
 /* ── the hover tooltip ───────────────────────────────────────────────────────
    Concise, and it never takes a pointer event: it must not stand between the
    player and the hex they are about to click. */
+/* UX-03.5 B: AND IT IS ABOVE THE INSPECTION MARK. This is the same defect the
+   modal block below records, in the same two elements' relationship: #sbux-mark
+   is positioned with z-index 1 (2 on a card, 3 on a chip), the tooltip carried
+   `auto`, and a positioned element with a z-index paints above a positioned
+   sibling with `auto` whatever the document order. So selecting a unit and then
+   hovering it drew four white brackets across the top-left corner of the words
+   explaining it -- measured on the accepted Round 2 artifact at 1920x1080: the
+   mark at 687,313 127x127, the tooltip at 776,400 560x210, overlapping by 38 x
+   39 units, with the heading inside the overlap.
+   5 since UX-03.6 A, 4 before it: above every mark variant AND above the
+   inspection panel, which took 4 when the same defect was found a third time in
+   it, and still below the modals, which must cover the tooltip rather than
+   appear under it. Nothing moves -- the tooltip is
+   placed where it was, and the mark is drawn where it was, at the size it was.
+   Both still take no pointer events, so this changes paint order and nothing a
+   click can reach. */
 #sbux-tip{position:absolute;display:none;max-width:560px;padding:10px 14px;
   background:#15110f;border:2px solid #4a4038;border-radius:10px;
-  font:400 21px/1.4 var(--sbux-sans);color:#cfc5b6;pointer-events:none}
+  font:400 21px/1.4 var(--sbux-sans);color:#cfc5b6;pointer-events:none;z-index:5}
 #sbux-tip.on{display:block}
 #sbux-tip .t{font:700 22px/1.25 var(--sbux-sans);color:#F3ECE0}
 #sbux-tip .f{margin-top:5px;color:#a69c90}
@@ -1128,7 +1267,7 @@ table.score tfoot tr.con td.num{color:#cfc5b6;font-weight:400}
 </style></head>
 <body>
 <svg id="s" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet"></svg><div class="grain"></div>
-<script>/* warband rules config.js — canonical eb49d71 — proprietary — Limited Playtest License, Copyright © 2026 Frank Trevor Gilson. All rights reserved. */
+<script>/* warband rules config.js — canonical 5bbcbcf — proprietary — Limited Playtest License, Copyright © 2026 Frank Trevor Gilson. All rights reserved. */
 // Generated from config.json — do not edit by hand.
 // Loaded before core.js so the rules module has its data synchronously,
 // following the portal cards-generated.js convention.
@@ -1575,7 +1714,8 @@ var WARBAND_CONFIG = {
           }
         ]
       },
-      "ab": "Brace (1 action): until the start of your company's next turn, no single attack on this unit may deal more than 1 damage. Existing stronger protection is not weakened.",
+      "ab": "Brace (1 action): until the start of your company's next turn, this unit's damage cap becomes 1. Overwhelm still raises that cap, and Sunder still ignores it. Existing stronger protection is not weakened.",
+      "_ab": "CORRECTED 2026-10-30. This field used to promise \"no single attack on this unit may deal more than 1 damage\" — an unqualified absolute, with no exception named. The engine has never honoured it and was never meant to: the owner's ruling of 2026-10-14, recorded in DESIGN-LOG.md, is that \"Overwhelm continues to lift granted damage caps\", because \"Overwhelm exists in part to let coordinated attacks overcome defensive protection\". Measured on the pinned ruleset, a braced Vanguard takes 1, 3, 5, 7, 9 and 11 against one to six adjacent Light attackers, so at five attackers one Levy's blow is exactly its 9 hit points. Sunder ignores the cap outright, which is what its activation surcharge buys. Both were already pinned by test/warband-abilities.test.js; only the card was wrong. The repair is a reframing rather than a new clause: saying the damage cap BECOMES 1, instead of naming 1 as a damage ceiling, puts Brace under the CAP keyword and overwhelm's declared interaction with it, which is where the arithmetic has always been. DECIDED: the behaviour stands and the text was wrong. Brace's calculation, Overwhelm's calculation and Anchor are untouched. Anchor's own text already reads \"gain a damage cap of 3\" and needed no change for the same reason.",
       "vp": 8,
       "movement_class": "medium",
       "plunder": "Shield, blade and a serviceable coat.",
@@ -1910,7 +2050,7 @@ if (typeof self !== 'undefined') self.WARBAND_CONFIG = WARBAND_CONFIG;
 if (typeof window !== 'undefined') window.WARBAND_CONFIG = WARBAND_CONFIG;
 
 </script>
-<script>/* warband rules core.js — canonical eb49d71 — proprietary — Limited Playtest License, Copyright © 2026 Frank Trevor Gilson. All rights reserved. */
+<script>/* warband rules core.js — canonical 5bbcbcf — proprietary — Limited Playtest License, Copyright © 2026 Frank Trevor Gilson. All rights reserved. */
 // ── Warband Core ──────────────────────────────────────────────────────────────
 // Pure game logic: no DOM, no rendering. Shared by worker.js (simulation) and
 // engine.js (interactive play), so the prototype and the sweeps can never drift
@@ -2146,7 +2286,7 @@ function makeUnit(name, owner, ov) {
     // ── the three states the active abilities leave behind ───────────────────
     // ONE FIELD FOR EVERY TEMPORARY CAP, holding the most protective in force, so
     // Brace and Anchor cannot disagree and neither can ever weaken a unit: both
-    // write min(what is there, what they grant). Brace's 2 beats Anchor's 3; two
+    // write min(what is there, what they grant). Brace's 1 beats Anchor's 3; two
     // Anchors are min(3, 3) and so do not stack; and the unit's OWN cap is left
     // alone, because damageOf takes the smaller of the two at the point of use.
     // null means no temporary cap, which is not the same as a cap of Infinity --
@@ -2615,7 +2755,9 @@ function damageOf(G, attacker, defender, RULES, story, opts) {
   if (story) {
     story.raw = dmg;                       // before the cap
     // WHAT ACTUALLY BOUND, not the archetype's number: a Braced Vanguard is capped at
-    // 2 and the breakdown has to say 2, or the arithmetic shown stops adding up.
+    // 1, not at the 3 on its card, and the breakdown has to say 1 or the arithmetic
+    // shown stops adding up. (Both of these said 2 until 2026-10-30: they dated from
+    // the commit that added the abilities, and the cap moved from 2 to 1 in d560b08.)
     story.cap = ownCap;                    // the ceiling in force
     story.ownCap = defender.cap;           // and the one it was born with
     story.tempCap = defender.tempCap;      // null unless Brace or Anchor granted one
@@ -2662,11 +2804,65 @@ function sweeps(u, RULES) {
   return on !== 0 && u.cls === cls && has(u.name, 'SWP');
 }
 
-function redirect(G, target, dmg) {
+// GUARD: an adjacent ally takes a blow that would kill the unit aimed at, provided
+// it can actually survive the blow IT will receive.
+//
+// THAT LAST CLAUSE IS THE WHOLE REPAIR. This function used to clear a candidate with
+// `g.hp > dmg`, where `dmg` is the damage computed against the ORIGINAL TARGET -- and
+// every caller then recomputes the blow for whoever actually takes it, because a
+// redirected blow has to meet the new defender's cap, cover and press. Those are two
+// different numbers, so the test was answering a question about a different unit:
+//
+//   Levy aimed at, in Ruins, 2 hp. Man-at-Arms attacking at 4.
+//     against the Levy:    no cap, Light cover 2  ->  2    the Levy dies
+//     Warlord with G, 3 hp:  3 > 2, eligible      ->  redirect
+//     against the Warlord: cap 3, Heavy cover 0   ->  3    the WARLORD dies
+//
+// and the direction of that error is systematic rather than exotic: cover is Light 2,
+// Medium 1, Heavy 0, and every unit carrying G is Medium or Heavy, so a Light ally in
+// cover -- precisely what a Guard screen is for -- always prices the blow below what
+// the protector will take. Overwhelm makes it worse again, because it is counted
+// around the DEFENDER's hex and the defender has just changed: a full-health Vanguard
+// shielding a Levy from a blow of 1 was measured taking 9 and dying.
+//
+// It failed in the other direction too, and that one simply lost protection: a
+// Man-at-Arms behind a cap of 2 was refused as a protector against an uncapped blow
+// of 4 it would have taken 2 from and walked away from.
+//
+// So each candidate is now priced AGAINST ITSELF, through damageOf -- the same
+// function that will resolve the blow, so there is no second formula to drift. `dmg`
+// is still a parameter because it answers the first question (would the unit aimed at
+// die?), which is about the target and nothing else.
+//
+// TWO THINGS THE PROBE MUST NOT DO, both enforced here rather than at the three call
+// sites, because a caller that forgets would be silent:
+//
+//   It must not MUTATE anything. damageOf writes only into `story` and `opts.tally`,
+//   so passing neither makes it a pure read of the board.
+//   It must not COUNT. The tally is for resolved blows; core already learned this the
+//   expensive way when a tally hanging off RULES counted every hypothetical a
+//   lookahead considered -- 29 counted blows against one actual use. `probe` is
+//   therefore built fresh with ignoreCap alone, never forwarded wholesale.
+//
+// ignoreCap IS carried, because a Sunder redirected onto a protector still ignores
+// that protector's cap, and pricing the candidate without it would refuse protectors
+// that a Sunder really does kill -- which is the first error again, mirrored.
+function redirect(G, target, dmg, attacker, RULES, opts) {
+  // A LOUD FAILURE, not a quiet fall back to the old rule. Three drivers call this and
+  // the recurring defect in this repository is two of them disagreeing in silence.
+  //
+  // CHECKED BEFORE THE EARLY RETURN, deliberately. Below it the throw would fire only
+  // on blows that are actually lethal, so a driver left on the old three-argument form
+  // would run clean through every ordinary attack and fail only in the one position
+  // that matters -- which is the silence this is here to break.
+  if (!attacker) throw new Error('redirect needs the attacker to price each candidate');
   if (target.hp > dmg) return target;
+  const probe = (opts && opts.ignoreCap) ? { ignoreCap: true } : null;
   for (const nb of neighbors(G.board, hexOf(G, target))) {
     const g = occupantOf(G, nb);
-    if (g && g.alive && g.owner === target.owner && g.guard && g.uid !== target.uid && g.hp > dmg) return g;
+    if (!g || !g.alive || g.owner !== target.owner || !g.guard || g.uid === target.uid) continue;
+    // What THIS candidate would take from THIS attack, cap, cover, press and all.
+    if (g.hp > damageOf(G, attacker, g, RULES, null, probe)) return g;
   }
   return target;
 }
@@ -3596,7 +3792,10 @@ function runGame(opts = {}) {
             abilityCounts[pl].used.Sunder += 1;
             abilityCounts[pl].sunderThrough += act.dmg - damageOf(G, act.u, act.target, RULES);
           }
-          const victim = redirect(G, act.target, act.dmg);
+          // The attacker, the ruleset and the attack's own character all go in, so each
+          // Guard candidate is priced against itself. `opts2` carries the tally; redirect
+          // takes ignoreCap off it and leaves the counting to the resolved blow below.
+          const victim = redirect(G, act.target, act.dmg, act.u, RULES, opts2);
           // GUARD AND A GRANTED CAP, counted where the redirection is known. damageOf
           // cannot see it: it is handed a defender and has no idea the blow was aimed
           // elsewhere. The interesting case is a blow redirected ONTO a unit holding a
@@ -4034,7 +4233,7 @@ else if (typeof self !== 'undefined') self.WarbandCore = WarbandCore;
 else if (typeof window !== 'undefined') window.WarbandCore = WarbandCore;
 
 </script>
-<script>/* warband rules engine.js — canonical eb49d71 — proprietary — Limited Playtest License, Copyright © 2026 Frank Trevor Gilson. All rights reserved. */
+<script>/* warband rules engine.js — canonical 5bbcbcf — proprietary — Limited Playtest License, Copyright © 2026 Frank Trevor Gilson. All rights reserved. */
 // ── Warband Engine ────────────────────────────────────────────────────────────
 // Interactive hotseat play for the portal. All RULES come from core.js, which the
 // Monte Carlo sweeps also use, so what people play is exactly what was simulated.
@@ -6720,7 +6919,10 @@ function wbBlowPlan(S, u, target, opts) {
   const au = G.units.get(u.uid), tg = G.units.get(target.uid);
   const uH = WB.hexOf(G, au), tH = WB.hexOf(G, tg);
   const dmg = WB.damageOf(G, au, tg, R, null, opts);
-  const victim = WB.redirect(G, tg, dmg);
+  // The attacker and the ruleset reach redirect, so each Guard candidate is priced
+  // against its own cap, cover and press rather than against the blow aimed at `tg`.
+  // The forecast and the blow stay one calculation: this is the plan both read.
+  const victim = WB.redirect(G, tg, dmg, au, R, opts);
   const story = WB.damageParts(G, au, victim, R, opts);
   const real = story.total;
   const blows = [{ kind: 'main', uid: victim.uid, dmg: real, story, penalty: 0,
@@ -6776,10 +6978,16 @@ function wbAttack(S, u, target, cost, opts) {
     // enemy Levy". He was not healthy. He has G, he was adjacent to the men being
     // struck, and WB.redirect hands a LETHAL blow to a neighbour with Guard who can
     // survive it -- so those three lines are nine damage he took for other men,
-    // 11 hp down to 2. At 2 he could no longer guard (`g.hp > dmg` fails), which is
-    // why the fourth line carries no tag and why it killed him. The log described
-    // every one of those as something happening TO him with a reassuring
-    // parenthesis after it.
+    // 11 hp down to 2. At 2 he could no longer guard, which is why the fourth line
+    // carries no tag and why it killed him. The log described every one of those as
+    // something happening TO him with a reassuring parenthesis after it.
+    //
+    // "WHO CAN SURVIVE IT" IS NOW TRUE. It was not when this was written: the test
+    // read `g.hp > dmg` against the blow aimed at the OTHER unit, so a protector
+    // could be cleared on one number and killed by a larger one. core.redirect now
+    // prices each candidate against itself, and the comment above describes what the
+    // log does rather than a guarantee the arithmetic did not keep. The sequence
+    // still happens, and should: a Warlord really does spend hit points for its men.
     //
     // `target` is the unit the attacker aimed at and `victim` is the one who took
     // it; they differ exactly when b.guard is set, which is how b.guard is defined
@@ -9640,7 +9848,21 @@ const WB_WIRE_V = 1;
 // arrives on the back of a shot that costs a premium. Two seats disagreeing about what
 // a blow does while agreeing about every byte is the divergence this constant exists to
 // refuse, so the token moves even though the shape did not.
-const WB_RULES_REV = 'supply-1+abilities-2';
+//
+// AND A THIRD COMPONENT ON 2026-10-30, FOR THE GUARD SURVIVAL REPAIR. Same story a
+// third time, and the clearest instance of it yet: nothing new travels, the same
+// `guard` flag on the same units in the same hexes, and two builds hand the blow to
+// DIFFERENT UNITS. Under the old rule a Guard-bearer was cleared by comparing its hit
+// points against the damage aimed at the ally it was shielding; under this one it is
+// priced against the blow it will itself take. So from one identical snapshot an older
+// seat kills the Warlord and this one kills the Levy -- the same bytes, a different
+// game, which is the exact divergence the paragraph above says to move the token for.
+//
+// A COMPONENT RATHER THAN abilities-3, because the abilities did not change: Brace,
+// Anchor, Mark and Sunder price as they did, and only their CARD text was corrected.
+// What moved is a unit keyword in combat, so it is named after itself, the way
+// `supply-1` was added rather than folded into a number that meant something else.
+const WB_RULES_REV = 'supply-1+abilities-2+guard-1';
 
 // WHY THE GATE IS HERE. wbLoad is the earliest boundary this repository owns: both
 // inbound paths go through it, and both carry bytes from the other seat --
@@ -12728,7 +12950,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
 });
 
 </script>
-<script>/* shadow-box kit.js — 0da6f6b — Brian Schneider, published with permission; separate terms */
+<script>/* shadow-box kit.js — b27b373 — Brian Schneider, published with permission; separate terms */
 // Concept-still kit: a Warband hex board drawn in the "Shadow-Box" (FunFab papercut) direction.
 // Pointy-top hexes, odd-r offset, 9 x 7 like the prototype. Pure SVG strings, no deps.
 (function () {
@@ -13050,7 +13272,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
 })();
 
 </script>
-<script>/* shadow-box sb.js — 0da6f6b — Brian Schneider, published with permission; separate terms */
+<script>/* shadow-box sb.js — b27b373 — Brian Schneider, published with permission; separate terms */
 // Warband · Shadow-Box prototype.
 // A new renderer over Frank's rules engine (upstream engine.js/core.js, untouched).
 // Every rule, move, forecast and bot decision comes from the engine:
@@ -13087,7 +13309,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
     SUP: ['ticks', 'pas', 'SUPPLY', '+1 deploy each turn while alive'],
   };
   const ABIL = {
-    brace: ['BRACE', 'no blow on it above 1'], anchor: ['ANCHOR', 'friends within 2: damage cap 3'],
+    brace: ['BRACE', 'this unit: damage cap 1 until your next turn'], anchor: ['ANCHOR', 'friends within 2: damage cap 3'],
     markshot: ['MARKING SHOT', 'your shots on it +1'], sunder: ['SUNDER', 'this blow ignores the damage cap'],
     rally: ['RALLY', 'two friends nearby move free'],
   };
@@ -13096,7 +13318,7 @@ if (typeof window !== 'undefined') Object.assign(window, {
     burnt_ground: 'Burnt Ground', fallen_banner: 'Fallen Banner', officers_cairn: "Officer's Cairn",
   };
   const TLINE = {
-    fallen_ranks: 'slows their enemies', barricade: 'a wall with cover', watch_fire: 'their enemies pay +1 to act there',
+    fallen_ranks: 'slows their enemies', barricade: 'a wall with cover', watch_fire: 'enemies here pay +1 to act',
     fallen_harness: 'a wall that blocks sight', burnt_ground: 'slow, no cover', fallen_banner: 'cover; +2 activation to its side',
     officers_cairn: 'cover; +1 damage beside it',
   };
@@ -13425,8 +13647,8 @@ if (typeof window !== 'undefined') Object.assign(window, {
     const lost = f ? f.points : 0;
     const hot = fx.passHot;
     s += `<g data-btn="pass" style="cursor:pointer"><rect x="1000" y="${by + 18}" width="304" height="90" rx="14" fill="${hot ? C.paper : '#2a231e'}" stroke="${C.paper}" stroke-width="3"/>`;
-    s += LT(1036, by + 78, 'PASS', 40, hot ? C.ink : C.paper);
-    for (let k = 0; k < Math.min(lost, 5); k++) s += coin(1170 + k * 28, by + 63, true);
+    s += LT(1026, by + 78, 'PASS', 40, hot ? C.ink : C.paper);
+    for (let k = 0; k < Math.min(lost, 7); k++) s += coin(1145 + k * 24, by + 63, true).replace(/r[xy]="12"/g, (m) => m.replace('12', '9'));
     s += '</g>';
     return s;
   }
@@ -14016,7 +14238,7 @@ function planFor(uid, target, kind) {
 
 // ---- drawing the live screen ----
 function abilityCard(abil, vm, u) {
-  const L = { brace: ['BRACE', 'no blow on it above 1'], anchor: ['ANCHOR', 'friends within 2: damage cap 3'], markshot: ['MARKING SHOT', 'your shots on it +1, then aim'], sunder: ['SUNDER', 'ignores the damage cap, then aim'], rally: ['RALLY', 'two friends nearby move free'] };
+  const L = { brace: ['BRACE', 'this unit: damage cap 1 until your next turn'], anchor: ['ANCHOR', 'friends within 2: damage cap 3'], markshot: ['MARKING SHOT', 'your shots on it +1, then aim'], sunder: ['SUNDER', 'ignores the damage cap, then aim'], rally: ['RALLY', 'two friends nearby move free'] };
   let s = `<rect x="1388" y="430" width="500" height="250" rx="16" fill="#201b17" stroke="#3a322b" stroke-width="3"/>`;
   if (!abil.length && P.aimKind === 'attack') return s + SB.T(1638, 566, 'no abilities ready', { s: 22, c: '#6b6158', a: 'middle' });
   const rows = abil.slice(0, 3);
@@ -14397,7 +14619,7 @@ window.SBUX = { HUMAN, hexAt, legal, selection, render, seed: SEED, seedAsked: S
 })();
 </script>
 
-<div id="sb-legal" hidden aria-hidden="true"><div id="sb-attrib" data-rules="eb49d71338e270efffa618ebadd8c31314aebeaa" data-renderer="0da6f6b2314122851acbbd819bd016573071498d" title="canonical rules eb49d71338e270efffa618ebadd8c31314aebeaa · shadow-box renderer 0da6f6b2314122851acbbd819bd016573071498d · rules proprietary — Limited Playtest License (Copyright © 2026 Frank Trevor Gilson. All rights reserved.) · renderer Brian Schneider, published with permission, under separate terms">rules eb49d71 · renderer 0da6f6b — rules proprietary — Limited Playtest License, © 2026 Frank Trevor Gilson. All rights reserved. · renderer © Brian Schneider, by permission</div><pre id="sb-licence-text">Warband — Limited Playtest License v0.1
+<div id="sb-legal" hidden aria-hidden="true"><div id="sb-attrib" data-rules="5bbcbcf1cc2ffa214ed296777b7b666271c66d07" data-renderer="b27b373899bb6358b533ab438d4a5117052e73aa" title="canonical rules 5bbcbcf1cc2ffa214ed296777b7b666271c66d07 · shadow-box renderer b27b373899bb6358b533ab438d4a5117052e73aa · rules proprietary — Limited Playtest License (Copyright © 2026 Frank Trevor Gilson. All rights reserved.) · renderer Brian Schneider, published with permission, under separate terms">rules 5bbcbcf · renderer b27b373 — rules proprietary — Limited Playtest License, © 2026 Frank Trevor Gilson. All rights reserved. · renderer © Brian Schneider, by permission</div><pre id="sb-licence-text">Warband — Limited Playtest License v0.1
 
 Copyright © 2026 Frank Trevor Gilson. All rights reserved.
 
@@ -14417,7 +14639,7 @@ No commercial rights are granted. Future commercial use, distribution, publishin
 
 This licence applies only to material the relevant copyright holders have authorized for distribution on these terms.
 </pre></div>
-<script>/* shadow-box i18n.js — 6b393e6 — the string lookup; no rules, no renderer */
+<script>/* shadow-box i18n.js — f7da7ee — the string lookup; no rules, no renderer */
 /* Warband · Shadow-Box — the string catalogue, and the one way text is looked up.
  *
  * WHY THIS EXISTS. Every player-facing sentence in this layer was a literal in the
@@ -15050,11 +15272,11 @@ This licence applies only to material the relevant copyright holders have author
 }));
 
 </script>
-<script>/* shadow-box locale catalogues — 6b393e6 — en */
+<script>/* shadow-box locale catalogues — f7da7ee — en */
 /* EMBEDDED, NOT FETCHED. This page makes no network request of any kind, so the
    catalogues travel inside it as JSON. A locale may be chosen with ?lang=xx and
    falls back to en, which is also the fallback for any id a locale is missing. */
-window.SBI18N.add("en", {"_about":{"locale":"en","note":"Player-facing text for the Shadow-Box explanatory layer and its opening notice. Plain text only: no markup, no HTML entities. Emphasis is applied by the code around a slot. Ids are stable; the English here is the source text and the fallback for every other locale.","excluded":"The canonical rules' own words are NOT here. Terrain and archetype descriptions, ability text and the keyword glossary come from config.json through the engine's helpers, and are read at runtime. See strings-inventory.json.","format":"A subset of ICU MessageFormat: {named} arguments and {count, plural, one {...} other {...}} with # for the count."},"control":{"mapKey":"Map key","credits":"Credits & licences","close":"Close","report":"Playtest report"},"notice":{"tag":"Experimental","title":"Shadow-Box — an experimental Warband playtest","solo":{"lead":"One human against the sparring bot.","rest":"You play Company A, in white; the engine's bot plays Company B, in gold."},"how":{"lead":"The board will explain itself.","rest":"Hover any hex, unit or symbol to see what it is. Click it to pin the explanation open, where it stays while the sparring bot takes its turn. Hold Alt and click to read something without acting on it."},"desktop":{"lead":"Made for a mouse, on a desktop screen.","rest":"There is no mobile layout: the board is one fixed canvas that scales to the window, so a small screen shrinks the text rather than rearranging it."},"goal":{"_about":"HP-002: the opening card said who plays and how to inspect, and never what the player was trying to do. THE TWO FIGURES ARE CHECKED AGAINST THE RULES, BOTH WAYS. The phrases 'two thirds' and 'turn 10' are win_condition.threshold_fraction and win_condition.max_turns in the rules commit the artifact carries, and build-shadowbox.mjs refuses to build if the rule and this sentence have parted company in either direction — a changed rule with this wording unchanged, or this wording changed away from the rule. That is not belt and braces: config.json records, against its own break_rule, that an out-of-date version of that field was quoted into a published video caption. What scores is stated without quantities, because those have no such guard. The last clause exists because core.js ships the proportional reading of the turn cap (WB.shareCmp), and its own note measures the absolute reading disagreeing with it on about one capped match in five.","lead":"The company that breaks first loses.","rest":"A company breaks when the victory points scored against it reach two thirds of what its own warband is worth, so the two break points are different numbers. Victory points are scored by defeating units, by felling the company's colours, and by holding more objectives than the other company at a Regroup. If neither company has broken by the end of turn 10 the field goes to whichever conceded the smaller SHARE of its own break point — which is not always the one with the larger total."},"stages":{"_about":"P1.C, in prose. The muster screen states the same three stages as three words; this is the sentence behind them. Deliberately says nothing about activation, damage caps, abilities or terrain.","lead":"Three stages, in this order.","rest":"You recruit a company a pack at a time, one pick each and the third card discarded; you choose which of your units carries the company's colours; then you deploy onto the map and fight. The map you will fight on is on the screen from the first moment, and so is everything the other company has taken."},"fallen":{"_about":"P1.D. The approved tagline is evocative and must not be read as resurrection: what persists is ground, not the unit. config.json's design_note is the source for the last clause.","lead":"The dead do not come back, and nothing is cleared away.","rest":"A unit that falls leaves its Last Stand on the hex it died on — a feature of the ground that keeps shaping the battle for the rest of the match, and that belongs to the company which lost the unit. It is why killing is priced rather than free."},"where":"{mapKey} and {credits} sit in the bottom-right corner, and stay there throughout.","licence":{"_about":"The playtest terms, on the opening card. The button opens the licence the build carries; the line under it states what playing means. Shown only on a build whose rules revision carries terms a player accepts.","button":"View Limited Playtest License","hide":"Hide the licence","accept":"By clicking Begin Playtest, you agree to the Limited Playtest License.","under":"Evaluation and playtesting only — no redistribution, no derivative works, no commercial use. Read it above before you begin; it stays available under Credits & licences."},"begin":"Begin Playtest"},"muster":{"_about":"HP-002: the opening screen's own words. `tagline` is drawn INSIDE the renderer's SVG by two named build substitutions, so the builder resolves these two values at build time and the artifact carries them as literals; a runtime locale change cannot reach them, which is why they are the only strings here the layer never looks up. They live here anyway because the approved copy has to be written in exactly one place. `goal` and `stages` are the layer's own two lines, in the band the panel leaves between the tagline and the map label.","tagline":{"one":"Recruit for battle.","two":"Even your dead will fight on for you."},"goal":"Break the opposing company before yours breaks.","stages":"Recruit → Choose your colours → Deploy and fight"},"next":{"_about":"HP-002: the one action available right now. NOT a tutorial — it scripts nothing, highlights nothing and recommends nothing; it names what the rules permit at this instant. Every branch is chosen from wbLegalMoves for the current selection, so no line here can invite a click the engine would refuse. The control names are the labels those controls actually carry in this build: RECRUIT during recruitment, ASSIGN COLOURS in the colours phase, BACK TO STRIKE to leave an aim, PASS on the bottom bar.","muster":"Press QUICK BATTLE to begin.","draft":{"none":"Select a recruit from the cards on the right.","picked":"Press RECRUIT to add this unit to your company.","bot":"The sparring bot is choosing a recruit."},"banner":{"none":"Choose who will carry your company's colours.","picked":"Press ASSIGN COLOURS to confirm your banner bearer.","bot":"The sparring bot is choosing its banner bearer."},"play":{"idle":{"both":"Select a waiting recruit to deploy, or a unit of yours on the field.","deployOnly":"Select a waiting recruit to deploy.","fieldOnly":"Select a unit of yours on the field."},"reserve":"Click a teal-marked hex to deploy this recruit.","reserveNone":"No open ground is left for this recruit. Select another, or a unit of yours on the field.","reserveCost":"{why}. Select another recruit, or a unit of yours on the field.","unit":{"both":"Teal marks legal moves; orange marks available attacks.","move":"Teal marks where this unit can move. It has no attack available.","attack":"Orange marks who this unit can strike. It has nowhere to move.","aiming":"Orange marks what this ability can be aimed at. Click one, or press BACK TO STRIKE.","aimNone":"Nothing can be aimed at from here. Press BACK TO STRIKE.","abilityOnly":"This unit cannot move or strike from here. Its abilities are listed on the right.","cannotAfford":"{why}. Select another unit, or PASS.","nothing":"This unit has nowhere to move and nothing it can strike. Select another, or PASS."},"rally":{"pick":"The rally is open. Click a friend in a dashed teal ring.","move":"Click a teal-marked hex to move that friend for free."},"passOnly":"No affordable action remains. PASS ends your company's part in this turn.","bot":"The sparring bot is taking its action."}},"held":{"_about":"UX-03.4b: how many objectives each company controls, in the status row's own empty end, and what the Regroup paid for them. The count is the ENGINE's -- core.js objectiveScore -- so it cannot disagree with the payment. The words are CONTEXT.md's: an objective is one of the five hexes that score at Regroup, Regroup is the end-of-turn checkpoint, and victory points are never abbreviated to a bare \"points\".","label":"Objectives held","seatA":"A","seatB":"B","lead":"{company} leads","tied":"Tied","regroup":"Regroup · turn {turn}","scoredTo":"{company} +{points} VP","scoredNone":"Tied · no victory points"},"hint":{"_about":"UX-03.3b: what the thing under the pointer will do if it is clicked. These replace one sentence that branched only on whether ANYTHING was selected, and so invited the player to \"act here\" over enemies the engine offered no move against -- a click there does not act and does not refuse, it clears the selection. Every branch here is read from SBUX.selection(), which is the renderer's own read of wbLegalMoves for the selected unit under the current aim; this layer computes no range, no reach, no cost and no legality. `strike` takes the verb from the aim in force, so marking and sundering are not described as striking. The two `noAct` lines state only what the engine's list does not contain -- they name no cause, because the engine exposes no per-target refusal reason and inventing one would be a second legality model. Both keep the reading route, which still works.","read":"Click to read all of it","act":{"strike":"Click to {verb} it · Alt-click to read it instead","move":"Click to move here · Alt-click to read it instead","deploy":"Click to deploy here · Alt-click to read it instead","rallyPick":"Click to rally it · Alt-click to read it instead","rallyMove":"Click to send it here · Alt-click to read it instead"},"_aboutRefused":"UX-03.3c: what a click on an enemy the engine offers no action against actually did. It did nothing to the match -- measured: no activation spent, no turn taken, no blow landed -- and it used to also clear the selection, which is the part that was corrected. This line states that no action occurred and that the unit is still chosen. It names NO cause: the engine publishes no per-target refusal reason, and claiming the target was out of range or unaffordable would be a guess presented as an answer.","refused":"No action taken · {unit} is still selected","noAct":{"unit":"Not something {unit} can act on · click to read it","hex":"Not somewhere {unit} can go · click to read it"}},"commit":{"_about":"UX-03.2: the commit control's three states in one place. `take` and `colours` are the labels the renderer's own button carries in this build — UX-03.2c renamed the recruitment one from TAKE to RECRUIT, and the ID stayed `take` on purpose: it is not a player-facing word, it matches the renderer's own [data-btn=\"take\"] hit target and the canonical move vocabulary, and churning it would move 1 of 315 player-facing strings for no reader's benefit — repeated in the unarmed state so the control can be found before a selection arms it. `took` and `bearer` report a commitment the ENGINE accepted, naming the unit read back out of canonical state. Neither is guidance: one is a control's name, the other is a statement of what has just happened.","take":"RECRUIT","colours":"ASSIGN COLOURS","took":"Recruited {unit}","bearer":"{unit} bears the colours","why":{"_about":"UX-03.3a.1: what pressing the commitment will COMMIT, and what is missing when it cannot be pressed. The control is absent until a selection arms it, so the state a player is most likely to be puzzled in is the one with nothing on the screen to hover -- `recruitNone` and `coloursNone` answer for the empty slot, and `recruitBot` and `coloursBot` for the decision that is not theirs. The titles are `commit.take` and `commit.colours` above rather than copies: a tooltip naming a control differently from the control would be its own finding. The numbers are the archetype's own deployment cost and victory value, read through the engine; the 2 for felling a banner bearer is the canonical scoring rule and not this layer's arithmetic.","recruitReady":"Takes {unit} into your company. Bringing it onto the field later costs {cost} DEPLOYMENT, and it is worth {vp} to your opponent if it falls.","recruitNone":"Nothing is selected yet. Choose one of the three cards: the sparring bot takes one of the two left, and the last is discarded.","recruitBot":"Not your pick. The sparring bot is choosing from this pack.","coloursReady":"Gives your colours to {unit}. It becomes your banner bearer, and felling it is worth 2 victory points to your opponent beyond its own value.","coloursNone":"Nothing is selected yet. Choose the unit from your company that will carry your colours.","coloursBot":"Not your company. The sparring bot is assigning its own colours."}},"answer":{"_about":"UX-03.3a.1: the teal capsule on the chosen recruit's card. The renderer draws a struck-through Heavy class mark and a pale bar there with a number against each -- classMark takes the class as a SHAPE selector and not as a letter, so there is no H on the screen to call it by, and a designer inspecting the accepted build could not tell what any of it meant -- the hover answered with the ordinary archetype card instead. These name the two symbols and state the counts. The counts come from the renderer's own classOverlay, which is the function that marks those same hexes on the map, so the words and the marks cannot drift apart. What Marsh and Forest DO is the rules' arithmetic, reached through that function and never recomputed here; these sentences only count and name.","title":"This recruit's weight, against this battlefield","light":"Light. Nothing on this map is closed to it, and nothing on it halts a march.","medium":"Medium. {stops, plural, one {# Forest hex} other {# Forest hexes}} on this map would halt it the moment it entered. No ground here is closed to it.","heavy":"Heavy. {barred, plural, one {# Marsh hex} other {# Marsh hexes}} on this map are closed to it, and {stops, plural, one {# Forest hex} other {# Forest hexes}} would halt it on entry.","marks":"The struck-through Heavy mark counts the ground closed to a Heavy unit, and the pale bar the ground that halts a Medium or Heavy one. Both are marked on the map while this card is chosen."},"company":{"_about":"UX-03.2b: the company tray under the board on the two setup screens. `count` states how many of a company's slots are filled; the total is the rules' own stable size, read through core().STABLE. `countOnly` is the form used when that total is not exposed — it states what is there and claims no total. `you` marks the human's own row. Neither is guidance: a count and a label.","count":"{n} of {of}","countOnly":"{n} recruited","you":"you"},"act":{"who":{"over":"MATCH OVER","yours":"YOUR MOVE","bot":"SPARRING BOT’S MOVE","botThinking":"SPARRING BOT IS DECIDING"},"screen":{"muster":"Muster","draft":"Recruitment","banner":"The colours","play":"Battle","over":"The Chronicle"},"turn":"Turn {turn} of {max}","pack":"Pack {pack} of {max}","sub":{"play":"{screen} · the turn is shared, one action at a time","over":"{screen}","draft":"Recruitment · one pick each, then the third is discarded","banner":"Who carries the colours","shared":"the turn is shared, one action at a time"},"pool":{"label":"Activation","line":"{label} — {left} left of {start}, {spent} spent","passed":"passed","circles":"the circles above are this pool: filled unspent, hollow spent"},"next":"{name}’s next action: {cost, plural, one {# activation} other {# activations}}","cannot":"{name} cannot act again this turn ({cost} needed)","hint":{"over":"Inspection stays live — hover or click anything on the field.","setup":"Hover a card for its statistics, click it to read all of them."}},"deploy":{"exact":"Deployment this turn: base {base} + Supply {supply} = {granted} · {left} left","exactNoSupply":"Deployment this turn: base {base}, no Supply · {left} left","unknown":"Deployment: {left} left · base ramp {base} · this turn’s total was not recorded","unknownNoRamp":"Deployment: {left} left · this turn’s total was not recorded"},"pass":{"none":"Passing forfeits no deployment.","forfeits":"Passing forfeits {points} deployment — enough to field {fits} of your {units, plural, one {# waiting recruit} other {# waiting recruits}}.","over":"{points} deployment forfeited","confirm":{"title":"Pass, and forfeit {points} deployment?","hold":"You hold {points} deployment this turn. Deployment never carries over, so passing now throws all of it away.","enough":"It is enough to field {fits} of your {units, plural, one {# waiting recruit} other {# waiting recruits}}: {list}.","deploy":"Deploy instead","go":"Pass and forfeit it"}},"inspect":{"section":{"terrain":"The ground","unit":"The unit standing here"},"side":{"friendly":"Yours","enemy":"Enemy"},"identity":"{name} — {company} · {side}","owner":{"yours":"yours","bot":"the sparring bot’s","line":"{company} — {whose}"},"bearer":"carries the colours","reserve":"recruited, not yet deployed ({cost} deployment)","fallen":"fallen","acted":"Has acted {n, plural, one {# time} other {# times}} this turn.","notActed":"Has not acted this turn.","next":"Its next action costs {cost} activation, and {company} holds {pool}.","cannot":"It cannot act again this turn — its next action costs {cost} and {company} holds {pool}{passed}.","cannotPassed":", and that company has passed","marked":"Marked by {company} — that company’s ranged attacks on it do +1 until Regroup.","anchored":"Anchored: it cannot move for the rest of this turn.","objective":{"lead":"Objective hex. Control flips the moment a unit enters and persists after it leaves; holding more of them than your opponent scores at Regroup.","none":"Nobody holds it.","held":"Held by {company}."},"withSelected":"With {name} selected: {fact}.","heading":{"ability":"Ability","lastStand":"Last Stand"},"lastStand":"leaves {zone} where it falls.","ability":{"_about":"UX-03.2c: a unit's ability on its card during the battle, which had no ability line at all. The canonical interface's own rule, written beside WB_ACTIVE: an ability that renders only when it can be used is an ability the player never learns about. So the name and the cost are stated for ANY inspectable unit of EITHER company, and whether it could be used right now is a separate sentence. THE EFFECT IS NOT HERE: that prose is config's own `ab` string, read through core, exactly as the recruitment card reads it. `named` prints ACTIVATION and never a bare “points”, per config's _resource_names.display_rule, because the cost in the rules prose is counted in ACTIONS and the two are different economies. Nothing in this block is pressable, for any unit.","named":"{name} · {cost} activation","passive":"Passive — it costs no activation and is always in effect.","ready":"Ready now — {company} holds {pool} activation.","blocked":"Not available — {why}.","offTurn":"Not while {company} is on the clock.","reserve":"Not until it is on the field.","beforeBattle":"Not before the battle begins.","enemyRead":"You can read it here; only {company} can use it.","shortReady":"{name} ready","shortNo":"{name} unavailable"},"vpHelp":{"title":"Victory value","body":"What your opponent scores for killing that unit. A company breaks when the victory points scored against it reach {fraction} of that company’s own total value — so a company of expensive units breaks at a higher number than a cheap one.","alsoBreakLine":"The same skull marks the break line on each damage track."},"hex":{"head":"{zone} · hex {key}","headOwned":"{zone} — left by {company} · hex {key}"},"noArchetype":"No archetype by that name."},"crowns":{"headline":"{company} holds the crowns","sub":"+{points} victory {points, plural, one {point} other {points}} at Regroup","seizeHeadline":"{company} seizes the ground","seizeSub":"+{points} victory {points, plural, one {point} other {points}} for taking hex {hex}"},"result":{"_about":"The match result and where the points came from, drawn from the certified battle record. The outcome itself is the matchEnd event's; nothing here decides a rule.","heading":"Where the points came from","outcome":{"victory":"Victory","defeat":"Defeat","draw":"A draw","unknown":"The match is over"},"held":"{company} holds the field","drawn":"Neither company holds the field","unknown":"No winner can be shown","how":{"break":"{company} broke on turn {turn} of {max}","bothBroke":"Both companies broke on turn {turn} of {max}","turnLimit":"The turns ran out on turn {turn} of {max}","concession":"{company} left the field on turn {turn} of {max}","unknown":"Turn {turn} of {max}, by an ending this record cannot classify","noRecord":"Turn {turn} of {max}","stale":"Turn {turn} of {max} — this record no longer matches the finished match"},"conceded":{"label":"conceded","of":"{against} of {breakAt}","pct":"{pct}% of its own break point"},"further":"Further from breaking","why":{"turnLimit":"Nobody broke, so the field goes to the company that conceded the smaller SHARE of its own break point. Where the two break points differ, the raw totals can point the other way.","break":"A company breaks when the points it has conceded reach its own break threshold.","concession":"Leaving the field concedes whatever is still needed to reach that company's own break threshold.","bothBroke":"Both companies reached their own break thresholds on the same action, which is a draw.","drawTurnLimit":"Both companies conceded exactly the same share of their own break points, which is a draw rather than a verdict too close to call."},"hint":"Inspection stays live — hover or click anything on the field.","src":{"kill":"Units defeated","banner":"Colours taken, on top of the unit","seizure":"Ground seized by Light units","majority":"Objective majority at Regroup","concession":"Left the field"},"earned":"Earned","concededTotal":"Conceded","earnedNote":"Earned is what a company took from the other one. Conceded is what it gave up, counted against its own break threshold — so each company's conceded total is the other one's earned total.","toObjectives":"Where the ground changed hands","majorityNote":"An objective-majority award is paid for holding more objectives than the other company across the whole battlefield. It is never attributed to one objective hex.","reconciled":"Every point above is accounted for against the engine's own totals.","incomplete":{"title":"The detailed history is incomplete","body":"The engine's own totals below are authoritative and are shown in full. The point-by-point breakdown is not shown, because this record cannot account for every point and a breakdown that looked certified would be worse than none.","totals":"These are the engine's figures, read from the finished match."},"engine":{"killPoints":"From units defeated","objPoints":"From ground","against":"Conceded, against its break point"},"diag":{"show":"{n, plural, one {Show the # attribution problem} other {Show the # attribution problems}}","hide":"Hide the attribution problems","note":"For whoever is building this. The wording below comes from the record's own reconciliation and is not translated."},"bar":{"score":"Where the points came from","chronicle":"The Chronicle"}},"chron":{"_about":"The Chronicle of the fallen, built from the certified casualty events. Every number here is a display position in the record's own order, never a hit point and never a hex.","heading":"The Chronicle","count":"{n, plural, one {# unit fell} other {# units fell}}","none":"No unit fell in this battle, so the Chronicle is empty. That is the record saying nothing happened, not a record that is missing.","row":{"who":"{unit}, {company}","turn":"Turn {turn}","at":"on {hex}","points":"{n, plural, one {# point} other {# points}} to {company}","noPoints":"worth no points"},"det":{"killer":"Killed by {unit} of {company}, which struck from {hex}.","killerNoHex":"Killed by {unit} of {company}. The record does not hold the hex it struck from, so no line is drawn.","noKiller":"No killer is recorded for this death, so no line is drawn.","unitPoints":"{n, plural, one {# point} other {# points}} for the unit itself","bannerPoints":"{n, plural, one {# point} other {# points}} more for the colours it carried","worthNothing":"No points were paid for this death.","leaves":"It left {terrain} on that hex.","shared":"{n} units fell on this one action. The record orders them by unit id, which is settled and repeatable; it does not say which of them fell first.","sameHex":"{n, plural, one {# other unit fell on {hex}: number {numbers}.} other {# other units fell on {hex}: numbers {numbers}.}}","line":"The line on the board runs from the hex the killer struck from to the hex this unit died on."},"marker":{"label":"Casualty {n}: {unit} of {company}, turn {turn}","alsoHere":"{n, plural, one {# more fell on this hex} other {# more fell on this hex}}","more":"×{n}"},"unverified":{"title":"These points have not been reconciled","body":"Every death below is on record, and so is what the engine paid for it. What is not certified is the arithmetic over them: the record and the engine's own totals disagree, so the breakdown under Where the points came from has been withdrawn and the figures here do not add up to a checked total."},"hex":{"section":"What fell here","lead":"{n, plural, one {# unit died on {hex}.} other {# units died on {hex}, and each one is its own entry.}}","row":"{unit}, {company}, turn {turn}"}},"tab":{"_about":"The three views of a finished match, named short enough for a strip of three buttons across 500 units.","score":"Points","chron":"Chronicle","obj":"The ground"},"obj":{"_about":"The objective history: changes of control, the one-time seizure bonus a Light unit earns on a hex, and Regroup. A Regroup is never attributed to a hex — it is the count across the whole battlefield — and no string here may say otherwise.","heading":"The ground","count":"{changes, plural, one {# change of control} other {# changes of control}} · {regroups, plural, one {# Regroup} other {# Regroups}}","countUnmatched":"{n, plural, one {# seizure award with no recorded change of control} other {# seizure awards with no recorded change of control}}","none":"No objective changed hands and no Regroup was recorded in this battle.","sums":"Seized: {companyA} {seizeA}, {companyB} {seizeB} · Majority: {companyA} {majA}, {companyB} {majB}","glyph":{"hex":"⬡","regroup":"⚖"},"row":{"taken":"{hex} taken by {company}","turned":"{hex} taken from {from} by {company}","seizureUnmatched":"{hex}: seizure award to {company}, with no recorded change of control","regroup":"Regroup, end of turn {turn} — {a} against {b}"},"sub":{"turn":"Turn {turn}","seized":"{n, plural, one {# point} other {# points}} to {company} for seizing it","nothing":"no points at the time","majority":"{n, plural, one {# point} other {# points}} to {company} for holding more","tied":"equal counts, so no majority award","noAward":"no majority award"},"det":{"firstTaken":"{company} took {hex}. The record holds no earlier owner for it.","turnedOver":"{hex} passed from {from} to {company}.","by":"Taken by {unit} of {company}.","noUnit":"The record does not name a unit for this change.","seizure":"{n, plural, one {# point} other {# points}} to {company} for seizing {hex} — a Light unit’s one-time bonus for that hex.","paidNothing":"No points were paid for this change of control. Holding ground is counted at Regroup, not when it changes hands.","majorityLater":"Holding this hex counted toward the objective majority at the end of each turn, which is scored across the whole battlefield and not here.","unmatched":"The change of control for this award is not in the record.","unmatchedIs":"The record holds {n, plural, one {# point} other {# points}} awarded to {company} for seizing {hex}. The objective-control event that belongs with it, in the same action, was not found — so this entry is the award, and nothing else.","unmatchedNotA":"It does not establish a capture, who held {hex} before it, or that control stayed where it was. None of those is said here, because none of them is on record.","unmatchedNotCounted":"It is not counted as a change of control: the tally above counts recorded changes of control only.","unmatchedBy":"The award names {unit} of {company} as the unit that acted.","counted":"At the end of turn {turn} the objectives were counted across the whole battlefield: {companyA} held {a}, {companyB} held {b}.","awarded":"{n, plural, one {# point} other {# points}} to {company} for holding more objectives than the other company.","noAward":"No majority award: neither company held more than the other.","tiedAward":"Equal counts, so no majority award was paid.","notAHex":"A Regroup belongs to the whole battlefield. It is not attributed to any one objective, and nothing is marked on the board for it."},"hex":{"section":"The ground’s history","lead":"{n, plural, one {# recorded change of control on {hex}.} other {# recorded changes of control on {hex}, in the order they happened.}}","noChangesButAwards":"No change of control is on record for {hex}. The record holds changes, not an opening roll, so this says nothing about who held it first.","awards":"{n, plural, one {# seizure award on this hex could not be joined to a recorded change of control.} other {# seizure awards on this hex could not be joined to recorded changes of control.}} They are listed below as awards and are not counted among the changes.","noChanges":"No change of control is on record for this hex. The record holds changes, not an opening roll, so this says nothing about who held it first.","butRegroups":"{n, plural, one {# Regroup was recorded in this battle} other {# Regroups were recorded in this battle}}, counted across the whole battlefield. Whether this hex was held at any of them is not something the record holds hex by hex.","notMajority":"Regroup awards are not listed here: they are paid for the count across the whole battlefield and belong to no single hex."},"unverified":{"title":"These points have not been reconciled","body":"Every change and every Regroup below is on record. What is not certified is the arithmetic over them: the record and the engine’s own totals disagree, so the breakdown under Where the points came from has been withdrawn and the figures here do not add up to a checked total."}},"key":{"_about":"The map key's entries for the two marks this layer draws on a finished battlefield.","fallen":{"marker":{"title":"A numbered paper disc","body":"Where a unit died. The number is its place in the Chronicle — 1 fell first — and is NOT hit points: the large number on a living unit's token is its hit points, this is a position in a list. A teal ×n badge means more than one unit died on that hex; select the disc and the inspector lists every one of them."},"line":{"title":"A paper-and-ink arrow","body":"Drawn for the one casualty you have selected, from the hex its killer struck from to the hex it died on. It is a record of something that already happened: not a legal move, which is teal, and not a strike forecast, which is orange. A casualty with no recorded killer, or no recorded hex to run from, is given no arrow at all."}}},"event":{"_about":"How a recorded battle event is described. An event itself holds no prose: these are rendered from its fields, and events-schema.json names the id for each type.","casualty":"{unit} of {company} falls — {zone} remains","casualty.killed":"{killer} kills {unit} of {company} — {zone} remains","score":{"kill":"+{points} to {company} for {unit}","banner":"+{points} to {company} for the colours {unit} carried","seizure":"+{points} to {company} — {unit} seized hex {hex}","majority":"+{points} to {company} for holding {held} objectives to {other}","concession":"+{points} to {company} — the other company left the field"},"objectiveControl":"{company} takes hex {hex}, which nobody held","objectiveControl.taken":"{company} takes hex {hex} from {fromCompany}","regroup":"Turn {turn} ends — {held} objectives to {other}","regroup.tied":"Turn {turn} ends — {held} objectives each, so the field pays nothing","matchEnd":"The match is over — {company} holds the field"},"stat":{"hp":"{n} hp","hpOfMax":"{n}/{max} hp","attack":"{n} attack","range":"range {n}","move":"move {n}","cap":"damage cap {n}","capRaised":"damage cap {n} (raised)","capNone":"no damage cap","cost":"{n} deployment","vp":"{n} victory value"},"unitClass":{"light":"Light","medium":"Medium","heavy":"Heavy"},"howto":{"_about":"UX-02: optional instructions. Basic interaction and the sequence of play, and deliberately NOT a rulebook and NOT a tutorial: it is opened by choice, blocks nothing, and names no strategy. The pip legend here was MOVED out of the activation panel, where it sat on screen permanently to explain a marking drawn elsewhere.","open":"How to play","title":"How to play","lede":"The shape of a match, and how to work the screen. Close this whenever you like.","seq":"The sequence of play","seq1":"Recruitment. A pack of three recruits is revealed and both companies see all of it. Each takes one, and the third is discarded. {packs} packs, in alternation.","seq2":"The colours. You choose which of your recruits carries the company’s colours.","seq3":"Battle. {turns} turns. A turn is shared: the two companies take single actions in alternation, each paid for out of its own activation pool.","seq4":"The chronicle. What the match came to, and how it got there.","work":"Working the screen","work1":"Select, then commit. Clicking a card or a unit selects it and nothing more. The button that commits the decision appears once something is selected.","work2":"The line across the top of the screen always names the one action available now.","work3":"Hover anything on the field or in a column for its statistics. Click it to pin the full explanation, and press Escape to close it.","work4":"With a unit of yours selected, teal marks where it can go and orange marks what it can strike.","work5":"The circles beside the activation figure are that pool: filled unspent, hollow spent.","work6":"PASS ends your company’s part in the current turn. What it gives up is spelled out above the button before you press it.","more":"Map key lists the ground and what it does. Credits names whose work this is."},"feedback":{"_about":"UX-02: the informal feedback route. There is no backend and no network call anywhere in this page: the note is assembled in the browser, shown in full before anything happens, and copied only when the player presses the button. Available in every phase, because the existing Playtest report appears only once a match has ended and most informal testers will not finish one.","open":"Feedback","title":"Send feedback","lede":"Anything at all: what you were trying to do, what you expected, what happened, what was confusing. Half a sentence is worth having.","privacy":"Nothing is sent from this page. The note below is assembled here in your browser; copying it and sending it on are yours to do.","ask":"What were you doing, and what happened?","out":"What you will be sending","where":"Paste it wherever you were asked to send it.","copy":"Copy","close":"Close","empty":"(nothing written yet)","head":"Warband Shadow-Box · informal feedback"},"copy":{"_about":"UX-02: the clipboard, which has three outcomes and not one. Sending resolve and reject to a single handler said \"Copied\" when the browser had refused -- the one message that makes a player close the page believing they hold a report they do not have. These are the words the playtest report already used; they moved here when the feedback box needed the same three answers and a second copy of the logic would have been a second chance to get it wrong.","ok":"Copied to your clipboard.","manual":"The text above is selected — press Ctrl+C to copy it.","noClipboard":"This browser gives the page no clipboard.","refused":"Automatic copying was refused","failed":"Automatic copying failed"}});
+window.SBI18N.add("en", {"_about":{"locale":"en","note":"Player-facing text for the Shadow-Box explanatory layer and its opening notice. Plain text only: no markup, no HTML entities. Emphasis is applied by the code around a slot. Ids are stable; the English here is the source text and the fallback for every other locale.","excluded":"The canonical rules' own words are NOT here. Terrain and archetype descriptions, ability text and the keyword glossary come from config.json through the engine's helpers, and are read at runtime. See strings-inventory.json.","format":"A subset of ICU MessageFormat: {named} arguments and {count, plural, one {...} other {...}} with # for the count."},"control":{"mapKey":"Map key","credits":"Credits & licences","close":"Close","report":"Playtest report"},"notice":{"tag":"Experimental","title":"Shadow-Box — an experimental Warband playtest","solo":{"lead":"One human against the sparring bot.","rest":"You play Company A, in white; the engine's bot plays Company B, in gold."},"how":{"lead":"The board will explain itself.","rest":"Hover any hex, unit or symbol to see what it is. Click it to pin the explanation open, where it stays while the sparring bot takes its turn. Hold Alt and click to read something without acting on it."},"desktop":{"lead":"Made for a mouse, on a desktop screen.","rest":"There is no mobile layout: the board is one fixed canvas that scales to the window, so a small screen shrinks the text rather than rearranging it."},"goal":{"_about":"HP-002: the opening card said who plays and how to inspect, and never what the player was trying to do. THE TWO FIGURES ARE CHECKED AGAINST THE RULES, BOTH WAYS. The phrases 'two thirds' and 'turn 10' are win_condition.threshold_fraction and win_condition.max_turns in the rules commit the artifact carries, and build-shadowbox.mjs refuses to build if the rule and this sentence have parted company in either direction — a changed rule with this wording unchanged, or this wording changed away from the rule. That is not belt and braces: config.json records, against its own break_rule, that an out-of-date version of that field was quoted into a published video caption. What scores is stated without quantities, because those have no such guard. The last clause exists because core.js ships the proportional reading of the turn cap (WB.shareCmp), and its own note measures the absolute reading disagreeing with it on about one capped match in five.","lead":"The company that breaks first loses.","rest":"A company breaks when the victory points scored against it reach two thirds of what its own warband is worth, so the two break points are different numbers. Victory points are scored by defeating units, by felling the company's colours, and by holding more objectives than the other company at a Regroup. If neither company has broken by the end of turn 10 the field goes to whichever conceded the smaller SHARE of its own break point — which is not always the one with the larger total."},"stages":{"_about":"P1.C, in prose. The muster screen states the same three stages as three words; this is the sentence behind them. Deliberately says nothing about activation, damage caps, abilities or terrain.","lead":"Three stages, in this order.","rest":"You recruit a company a pack at a time, one pick each and the third card discarded; you choose which of your units carries the company's colours; then you deploy onto the map and fight. The map you will fight on is on the screen from the first moment, and so is everything the other company has taken."},"fallen":{"_about":"P1.D. The approved tagline is evocative and must not be read as resurrection: what persists is ground, not the unit. config.json's design_note is the source for the last clause.","lead":"The dead do not come back, and nothing is cleared away.","rest":"A unit that falls leaves its Last Stand on the hex it died on — a feature of the ground that keeps shaping the battle for the rest of the match, and that belongs to the company which lost the unit. It is why killing is priced rather than free."},"where":"{mapKey} and {credits} sit in the bottom-right corner, and stay there throughout.","licence":{"_about":"The playtest terms, on the opening card. The button opens the licence the build carries; the line under it states what playing means. Shown only on a build whose rules revision carries terms a player accepts.","button":"View Limited Playtest License","hide":"Hide the licence","accept":"By clicking Begin Playtest, you agree to the Limited Playtest License.","under":"Evaluation and playtesting only — no redistribution, no derivative works, no commercial use. Read it above before you begin; it stays available under Credits & licences."},"begin":"Begin Playtest"},"muster":{"_about":"HP-002: the opening screen's own words. `tagline` is drawn INSIDE the renderer's SVG by two named build substitutions, so the builder resolves these two values at build time and the artifact carries them as literals; a runtime locale change cannot reach them, which is why they are the only strings here the layer never looks up. They live here anyway because the approved copy has to be written in exactly one place. `goal` and `stages` are the layer's own two lines, in the band the panel leaves between the tagline and the map label.","tagline":{"one":"Recruit for battle.","two":"Even your dead will fight on for you."},"goal":"Break the opposing company before yours breaks.","stages":"Recruit → Choose your colours → Deploy and fight"},"next":{"_about":"HP-002: the one action available right now. NOT a tutorial — it scripts nothing, highlights nothing and recommends nothing; it names what the rules permit at this instant. Every branch is chosen from wbLegalMoves for the current selection, so no line here can invite a click the engine would refuse. The control names are the labels those controls actually carry in this build: RECRUIT during recruitment, ASSIGN COLOURS in the colours phase, BACK TO STRIKE to leave an aim, PASS on the bottom bar.","muster":"Press QUICK BATTLE to begin.","draft":{"none":"Select a recruit from the cards on the right.","picked":"Press RECRUIT to add this unit to your company.","bot":"The sparring bot is choosing a recruit."},"banner":{"none":"Choose who will carry your company's colours.","picked":"Press ASSIGN COLOURS to confirm your banner bearer.","bot":"The sparring bot is choosing its banner bearer."},"play":{"idle":{"both":"Select a waiting recruit to deploy, or a unit of yours on the field.","deployOnly":"Select a waiting recruit to deploy.","fieldOnly":"Select a unit of yours on the field."},"reserve":"Click a teal-marked hex to deploy this recruit.","reserveNone":"No open ground is left for this recruit. Select another, or a unit of yours on the field.","reserveCost":"{why}. Select another recruit, or a unit of yours on the field.","unit":{"both":"Teal marks legal moves; orange marks available attacks.","move":"Teal marks where this unit can move. It has no attack available.","attack":"Orange marks who this unit can strike. It has nowhere to move.","aiming":"Orange marks what this ability can be aimed at. Click one, or press BACK TO STRIKE.","aimNone":"Nothing can be aimed at from here. Press BACK TO STRIKE.","abilityOnly":"This unit cannot move or strike from here. Its abilities are listed on the right.","cannotAfford":"{why}. Select another unit, or PASS.","nothing":"This unit has nowhere to move and nothing it can strike. Select another, or PASS."},"rally":{"pick":"The rally is open. Click a friend in a dashed teal ring.","move":"Click a teal-marked hex to move that friend for free."},"passOnly":"No affordable action remains. PASS ends your company's part in this turn.","bot":"The sparring bot is taking its action."}},"held":{"_about":"UX-03.4b: how many objectives each company controls, in the status row's own empty end, and what the Regroup paid for them. The count is the ENGINE's -- core.js objectiveScore -- so it cannot disagree with the payment. The words are CONTEXT.md's: an objective is one of the five hexes that score at Regroup, Regroup is the end-of-turn checkpoint, and victory points are never abbreviated to a bare \"points\".","label":"Objectives held","seatA":"A","seatB":"B","lead":"{company} leads","tied":"Tied","regroup":"Regroup · turn {turn}","scoredTo":"{company} +{points} VP","scoredNone":"Tied · no victory points"},"lastStand":{"_about":"UX-03.4c.1: the live Last Stand notice, shown beside the hex when a unit falls. THE RULES' OWN WORDS ARE NOT HERE. The terrain's name comes from WB.ZONES and its effect from wbGroundFacts, both read through the engine at render time, so this group carries only the frame around them -- exactly as the pinned inspector does with inspect.lastStand. 'Last Stand' is the heading the inspector already uses for the same ground. Victory points are never a bare 'points': CONTEXT.md reserves that word for four separate resources, and activation, deployment and movement are the other three.","tag":"Last Stand","dismiss":{"label":"Dismiss this notice","x":"×"},"fell":"{unit} of {company} falls","remains":"{zone} remains","remainsOwned":"{zone} remains, left by {company}","at":"hex {key}","atObjective":"hex {key} · objective","unnamedGround":"the record does not name the ground it left","alsoFell":"{n, plural, one {and # more unit fell in the same action} other {and # more units fell in the same action}}","vp":"{n, plural, one {# victory point} other {# victory points}} to {company}"},"hint":{"_about":"UX-03.3b: what the thing under the pointer will do if it is clicked. These replace one sentence that branched only on whether ANYTHING was selected, and so invited the player to \"act here\" over enemies the engine offered no move against -- a click there does not act and does not refuse, it clears the selection. Every branch here is read from SBUX.selection(), which is the renderer's own read of wbLegalMoves for the selected unit under the current aim; this layer computes no range, no reach, no cost and no legality. `strike` takes the verb from the aim in force, so marking and sundering are not described as striking. The two `noAct` lines state only what the engine's list does not contain -- they name no cause, because the engine exposes no per-target refusal reason and inventing one would be a second legality model. Both keep the reading route, which still works.","read":"Click to read all of it","act":{"strike":"Click to {verb} it · Alt-click to read it instead","move":"Click to move here · Alt-click to read it instead","deploy":"Click to deploy here · Alt-click to read it instead","rallyPick":"Click to rally it · Alt-click to read it instead","rallyMove":"Click to send it here · Alt-click to read it instead"},"_aboutRefused":"UX-03.3c: what a click on an enemy the engine offers no action against actually did. It did nothing to the match -- measured: no activation spent, no turn taken, no blow landed -- and it used to also clear the selection, which is the part that was corrected. This line states that no action occurred and that the unit is still chosen. It names NO cause: the engine publishes no per-target refusal reason, and claiming the target was out of range or unaffordable would be a guess presented as an answer.","refused":"No action taken · {unit} is still selected","noAct":{"unit":"Not something {unit} can act on · click to read it","hex":"Not somewhere {unit} can go · click to read it"}},"commit":{"_about":"UX-03.2: the commit control's three states in one place. `take` and `colours` are the labels the renderer's own button carries in this build — UX-03.2c renamed the recruitment one from TAKE to RECRUIT, and the ID stayed `take` on purpose: it is not a player-facing word, it matches the renderer's own [data-btn=\"take\"] hit target and the canonical move vocabulary, and churning it would move 1 of 315 player-facing strings for no reader's benefit — repeated in the unarmed state so the control can be found before a selection arms it. `took` and `bearer` report a commitment the ENGINE accepted, naming the unit read back out of canonical state. Neither is guidance: one is a control's name, the other is a statement of what has just happened.","take":"RECRUIT","colours":"ASSIGN COLOURS","took":"Recruited {unit}","bearer":"{unit} bears the colours","why":{"_about":"UX-03.3a.1: what pressing the commitment will COMMIT, and what is missing when it cannot be pressed. The control is absent until a selection arms it, so the state a player is most likely to be puzzled in is the one with nothing on the screen to hover -- `recruitNone` and `coloursNone` answer for the empty slot, and `recruitBot` and `coloursBot` for the decision that is not theirs. The titles are `commit.take` and `commit.colours` above rather than copies: a tooltip naming a control differently from the control would be its own finding. The numbers are the archetype's own deployment cost and victory value, read through the engine; the 2 for felling a banner bearer is the canonical scoring rule and not this layer's arithmetic.","recruitReady":"Takes {unit} into your company. Bringing it onto the field later costs {cost} DEPLOYMENT, and it is worth {vp} to your opponent if it falls.","recruitNone":"Nothing is selected yet. Choose one of the three cards: the sparring bot takes one of the two left, and the last is discarded.","recruitBot":"Not your pick. The sparring bot is choosing from this pack.","coloursReady":"Gives your colours to {unit}. It becomes your banner bearer, and felling it is worth 2 victory points to your opponent beyond its own value.","coloursNone":"Nothing is selected yet. Choose the unit from your company that will carry your colours.","coloursBot":"Not your company. The sparring bot is assigning its own colours."}},"answer":{"_about":"UX-03.3a.1: the teal capsule on the chosen recruit's card. The renderer draws a struck-through Heavy class mark and a pale bar there with a number against each -- classMark takes the class as a SHAPE selector and not as a letter, so there is no H on the screen to call it by, and a designer inspecting the accepted build could not tell what any of it meant -- the hover answered with the ordinary archetype card instead. These name the two symbols and state the counts. The counts come from the renderer's own classOverlay, which is the function that marks those same hexes on the map, so the words and the marks cannot drift apart. What Marsh and Forest DO is the rules' arithmetic, reached through that function and never recomputed here; these sentences only count and name.","title":"This recruit's weight, against this battlefield","light":"Light. Nothing on this map is closed to it, and nothing on it halts a march.","medium":"Medium. {stops, plural, one {# Forest hex} other {# Forest hexes}} on this map would halt it the moment it entered. No ground here is closed to it.","heavy":"Heavy. {barred, plural, one {# Marsh hex} other {# Marsh hexes}} on this map are closed to it, and {stops, plural, one {# Forest hex} other {# Forest hexes}} would halt it on entry.","marks":"The struck-through Heavy mark counts the ground closed to a Heavy unit, and the pale bar the ground that halts a Medium or Heavy one. Both are marked on the map while this card is chosen."},"company":{"_about":"UX-03.2b: the company tray under the board on the two setup screens. `count` states how many of a company's slots are filled; the total is the rules' own stable size, read through core().STABLE. `countOnly` is the form used when that total is not exposed — it states what is there and claims no total. `you` marks the human's own row. Neither is guidance: a count and a label.","count":"{n} of {of}","countOnly":"{n} recruited","you":"you"},"act":{"who":{"over":"MATCH OVER","yours":"YOUR MOVE","bot":"SPARRING BOT’S MOVE","botThinking":"SPARRING BOT IS DECIDING"},"screen":{"muster":"Muster","draft":"Recruitment","banner":"The colours","play":"Battle","over":"The Chronicle"},"turn":"Turn {turn} of {max}","pack":"Pack {pack} of {max}","sub":{"play":"{screen} · the turn is shared, one action at a time","over":"{screen}","draft":"Recruitment · one pick each, then the third is discarded","banner":"Who carries the colours","shared":"the turn is shared, one action at a time"},"pool":{"label":"Activation","line":"{label} — {left} left of {start}, {spent} spent","passed":"passed","circles":"the circles above are this pool: filled unspent, hollow spent"},"next":"{name}’s next action: {cost, plural, one {# activation} other {# activations}}","cannot":"{name} cannot act again this turn ({cost} needed)","hint":{"over":"Inspection stays live — hover or click anything on the field.","setup":"Hover a card for its statistics, click it to read all of them."}},"deploy":{"exact":"Deployment this turn: base {base} + Supply {supply} = {granted} · {left} left","exactNoSupply":"Deployment this turn: base {base}, no Supply · {left} left","unknown":"Deployment: {left} left · base ramp {base} · this turn’s total was not recorded","unknownNoRamp":"Deployment: {left} left · this turn’s total was not recorded"},"pass":{"none":"Passing forfeits no deployment.","forfeits":"Passing forfeits {points} deployment — enough to field {fits} of your {units, plural, one {# waiting recruit} other {# waiting recruits}}.","over":"{points} deployment forfeited","confirm":{"title":"Pass, and forfeit {points} deployment?","hold":"You hold {points} deployment this turn. Deployment never carries over, so passing now throws all of it away.","enough":"It is enough to field {fits} of your {units, plural, one {# waiting recruit} other {# waiting recruits}}: {list}.","deploy":"Deploy instead","go":"Pass and forfeit it","idleTitle":"Pass without acting this turn?","idleHold":"You have not acted this turn. You hold {points} activation, and activation never carries over — passing now ends your turn without spending any of it.","idleAct":"Act instead","idleGo":"Pass without acting","bothTitle":"Pass without acting, and forfeit {points} deployment?","bothGo":"Pass anyway"}},"inspect":{"section":{"terrain":"The ground","unit":"The unit standing here"},"side":{"friendly":"Yours","enemy":"Enemy"},"identity":"{name} — {company} · {side}","owner":{"yours":"yours","bot":"the sparring bot’s","line":"{company} — {whose}"},"bearer":"carries the colours","reserve":"recruited, not yet deployed ({cost} deployment)","fallen":"fallen","acted":"Has acted {n, plural, one {# time} other {# times}} this turn.","notActed":"Has not acted this turn.","next":"Its next action costs {cost} activation, and {company} holds {pool}.","cannot":"It cannot act again this turn — its next action costs {cost} and {company} holds {pool}{passed}.","cannotPassed":", and that company has passed","marked":"Marked by {company} — that company’s ranged attacks on it do +1 until Regroup.","anchored":"Anchored: it cannot move for the rest of this turn.","objective":{"lead":"Objective hex. Control flips the moment a unit enters and persists after it leaves; holding more of them than your opponent scores at Regroup.","none":"Nobody holds it.","held":"Held by {company}."},"withSelected":"With {name} selected: {fact}.","heading":{"ability":"Ability","lastStand":"Last Stand"},"lastStand":"leaves {zone} where it falls.","ability":{"_about":"UX-03.2c: a unit's ability on its card during the battle, which had no ability line at all. The canonical interface's own rule, written beside WB_ACTIVE: an ability that renders only when it can be used is an ability the player never learns about. So the name and the cost are stated for ANY inspectable unit of EITHER company, and whether it could be used right now is a separate sentence. THE EFFECT IS NOT HERE: that prose is config's own `ab` string, read through core, exactly as the recruitment card reads it. `named` prints ACTIVATION and never a bare “points”, per config's _resource_names.display_rule, because the cost in the rules prose is counted in ACTIONS and the two are different economies. Nothing in this block is pressable, for any unit.","named":"{name} · {cost} activation","passive":"Passive — it costs no activation and is always in effect.","ready":"Ready now — {company} holds {pool} activation.","blocked":"Not available — {why}.","offTurn":"Not while {company} is on the clock.","reserve":"Not until it is on the field.","beforeBattle":"Not before the battle begins.","enemyRead":"You can read it here; only {company} can use it.","shortReady":"{name} ready","shortNo":"{name} unavailable"},"vpHelp":{"title":"Victory value","body":"What your opponent scores for killing that unit. A company breaks when the victory points scored against it reach {fraction} of that company’s own total value — so a company of expensive units breaks at a higher number than a cheap one.","alsoBreakLine":"The same skull marks the break line on each damage track."},"hex":{"head":"{zone} · hex {key}","headOwned":"{zone} — left by {company} · hex {key}"},"noArchetype":"No archetype by that name."},"crowns":{"headline":"{company} holds the crowns","sub":"+{points} victory {points, plural, one {point} other {points}} at Regroup","seizeHeadline":"{company} seizes the ground","seizeSub":"+{points} victory {points, plural, one {point} other {points}} for taking hex {hex}"},"result":{"_about":"The match result and where the points came from, drawn from the certified battle record. The outcome itself is the matchEnd event's; nothing here decides a rule.","heading":"Where the points came from","outcome":{"victory":"Victory","defeat":"Defeat","draw":"A draw","unknown":"The match is over"},"held":"{company} holds the field","drawn":"Neither company holds the field","unknown":"No winner can be shown","how":{"break":"{company} broke on turn {turn} of {max}","bothBroke":"Both companies broke on turn {turn} of {max}","turnLimit":"The turns ran out on turn {turn} of {max}","concession":"{company} left the field on turn {turn} of {max}","unknown":"Turn {turn} of {max}, by an ending this record cannot classify","noRecord":"Turn {turn} of {max}","stale":"Turn {turn} of {max} — this record no longer matches the finished match"},"conceded":{"label":"conceded","of":"{against} of {breakAt}","pct":"{pct}% of its own break point"},"further":"Further from breaking","why":{"turnLimit":"Nobody broke, so the field goes to the company that conceded the smaller SHARE of its own break point. Where the two break points differ, the raw totals can point the other way.","break":"A company breaks when the points it has conceded reach its own break threshold.","concession":"Leaving the field concedes whatever is still needed to reach that company's own break threshold.","bothBroke":"Both companies reached their own break thresholds on the same action, which is a draw.","drawTurnLimit":"Both companies conceded exactly the same share of their own break points, which is a draw rather than a verdict too close to call."},"hint":"Inspection stays live — hover or click anything on the field.","src":{"kill":"Victory points: defeated units","banner":"Colours taken, on top of the unit","seizure":"Ground seized by Light units","majority":"Objective majority at Regroup","concession":"Victory points: opponent conceded"},"earned":"Earned","concededTotal":"Conceded","earnedNote":"Earned is what a company took from the other one. Conceded is what it gave up, counted against its own break threshold — so each company's conceded total is the other one's earned total.","toObjectives":"Where the ground changed hands","majorityNote":"An objective-majority award is paid for holding more objectives than the other company across the whole battlefield. It is never attributed to one objective hex.","reconciled":"Every point above is accounted for against the engine's own totals.","incomplete":{"title":"The detailed history is incomplete","body":"The engine's own totals below are authoritative and are shown in full. The point-by-point breakdown is not shown, because this record cannot account for every point and a breakdown that looked certified would be worse than none.","totals":"These are the engine's figures, read from the finished match."},"engine":{"killPoints":"From units defeated","objPoints":"From ground","against":"Conceded, against its break point"},"diag":{"show":"{n, plural, one {Show the # attribution problem} other {Show the # attribution problems}}","hide":"Hide the attribution problems","note":"For whoever is building this. The wording below comes from the record's own reconciliation and is not translated."}},"chron":{"_about":"The Chronicle of the fallen, built from the certified casualty events. Every number here is a display position in the record's own order, never a hit point and never a hex.","heading":"The Chronicle","count":"{n, plural, one {# unit fell} other {# units fell}}","none":"No unit fell in this battle, so the Chronicle is empty. That is the record saying nothing happened, not a record that is missing.","row":{"who":"{unit}, {company}","turn":"Turn {turn}","at":"on {hex}","points":"{n, plural, one {# point} other {# points}} to {company}","noPoints":"worth no points"},"det":{"killer":"Killed by {unit} of {company}, which struck from {hex}.","killerNoHex":"Killed by {unit} of {company}. The record does not hold the hex it struck from, so no line is drawn.","noKiller":"No killer is recorded for this death, so no line is drawn.","unitPoints":"{n, plural, one {# point} other {# points}} for the unit itself","bannerPoints":"{n, plural, one {# point} other {# points}} more for the colours it carried","worthNothing":"No points were paid for this death.","leaves":"It left {terrain} on that hex.","shared":"{n} units fell on this one action. The record orders them by unit id, which is settled and repeatable; it does not say which of them fell first.","sameHex":"{n, plural, one {# other unit fell on {hex}: number {numbers}.} other {# other units fell on {hex}: numbers {numbers}.}}","line":"The line on the board runs from the hex the killer struck from to the hex this unit died on."},"marker":{"label":"Casualty {n}: {unit} of {company}, turn {turn}","alsoHere":"{n, plural, one {# more fell on this hex} other {# more fell on this hex}}","more":"×{n}"},"unverified":{"title":"These points have not been reconciled","body":"Every death below is on record, and so is what the engine paid for it. What is not certified is the arithmetic over them: the record and the engine's own totals disagree, so the breakdown under Where the points came from has been withdrawn and the figures here do not add up to a checked total."},"hex":{"section":"What fell here","lead":"{n, plural, one {# unit died on {hex}.} other {# units died on {hex}, and each one is its own entry.}}","row":"{unit}, {company}, turn {turn}"}},"tab":{"_about":"The three views of a finished match, named short enough for a strip of three buttons across 500 units.","score":"Points","chron":"Chronicle","obj":"The ground"},"obj":{"_about":"The objective history: changes of control, the one-time seizure bonus a Light unit earns on a hex, and Regroup. A Regroup is never attributed to a hex — it is the count across the whole battlefield — and no string here may say otherwise.","heading":"The ground","count":"{changes, plural, one {# change of control} other {# changes of control}} · {regroups, plural, one {# Regroup} other {# Regroups}}","countUnmatched":"{n, plural, one {# seizure award with no recorded change of control} other {# seizure awards with no recorded change of control}}","none":"No objective changed hands and no Regroup was recorded in this battle.","sums":"Seized: {companyA} {seizeA}, {companyB} {seizeB} · Majority: {companyA} {majA}, {companyB} {majB}","glyph":{"hex":"⬡","regroup":"⚖"},"row":{"taken":"{hex} taken by {company}","turned":"{hex} taken from {from} by {company}","seizureUnmatched":"{hex}: seizure award to {company}, with no recorded change of control","regroup":"Regroup, end of turn {turn} — {a} against {b}"},"sub":{"turn":"Turn {turn}","seized":"{n, plural, one {# point} other {# points}} to {company} for seizing it","nothing":"no points at the time","majority":"{n, plural, one {# point} other {# points}} to {company} for holding more","tied":"equal counts, so no majority award","noAward":"no majority award"},"det":{"firstTaken":"{company} took {hex}. The record holds no earlier owner for it.","turnedOver":"{hex} passed from {from} to {company}.","by":"Taken by {unit} of {company}.","noUnit":"The record does not name a unit for this change.","seizure":"{n, plural, one {# point} other {# points}} to {company} for seizing {hex} — a Light unit’s one-time bonus for that hex.","paidNothing":"No points were paid for this change of control. Holding ground is counted at Regroup, not when it changes hands.","majorityLater":"Holding this hex counted toward the objective majority at the end of each turn, which is scored across the whole battlefield and not here.","unmatched":"The change of control for this award is not in the record.","unmatchedIs":"The record holds {n, plural, one {# point} other {# points}} awarded to {company} for seizing {hex}. The objective-control event that belongs with it, in the same action, was not found — so this entry is the award, and nothing else.","unmatchedNotA":"It does not establish a capture, who held {hex} before it, or that control stayed where it was. None of those is said here, because none of them is on record.","unmatchedNotCounted":"It is not counted as a change of control: the tally above counts recorded changes of control only.","unmatchedBy":"The award names {unit} of {company} as the unit that acted.","counted":"At the end of turn {turn} the objectives were counted across the whole battlefield: {companyA} held {a}, {companyB} held {b}.","awarded":"{n, plural, one {# point} other {# points}} to {company} for holding more objectives than the other company.","noAward":"No majority award: neither company held more than the other.","tiedAward":"Equal counts, so no majority award was paid.","notAHex":"A Regroup belongs to the whole battlefield. It is not attributed to any one objective, and nothing is marked on the board for it."},"hex":{"section":"The ground’s history","lead":"{n, plural, one {# recorded change of control on {hex}.} other {# recorded changes of control on {hex}, in the order they happened.}}","noChangesButAwards":"No change of control is on record for {hex}. The record holds changes, not an opening roll, so this says nothing about who held it first.","awards":"{n, plural, one {# seizure award on this hex could not be joined to a recorded change of control.} other {# seizure awards on this hex could not be joined to recorded changes of control.}} They are listed below as awards and are not counted among the changes.","noChanges":"No change of control is on record for this hex. The record holds changes, not an opening roll, so this says nothing about who held it first.","butRegroups":"{n, plural, one {# Regroup was recorded in this battle} other {# Regroups were recorded in this battle}}, counted across the whole battlefield. Whether this hex was held at any of them is not something the record holds hex by hex.","notMajority":"Regroup awards are not listed here: they are paid for the count across the whole battlefield and belong to no single hex."},"unverified":{"title":"These points have not been reconciled","body":"Every change and every Regroup below is on record. What is not certified is the arithmetic over them: the record and the engine’s own totals disagree, so the breakdown under Where the points came from has been withdrawn and the figures here do not add up to a checked total."}},"key":{"_about":"The map key's entries for the two marks this layer draws on a finished battlefield.","fallen":{"marker":{"title":"A numbered paper disc","body":"Where a unit died. The number is its place in the Chronicle — 1 fell first — and is NOT hit points: the large number on a living unit's token is its hit points, this is a position in a list. A teal ×n badge means more than one unit died on that hex; select the disc and the inspector lists every one of them."},"line":{"title":"A paper-and-ink arrow","body":"Drawn for the one casualty you have selected, from the hex its killer struck from to the hex it died on. It is a record of something that already happened: not a legal move, which is teal, and not a strike forecast, which is orange. A casualty with no recorded killer, or no recorded hex to run from, is given no arrow at all."}}},"event":{"_about":"How a recorded battle event is described. An event itself holds no prose: these are rendered from its fields, and events-schema.json names the id for each type.","casualty":"{unit} of {company} falls — {zone} remains","casualty.killed":"{killer} kills {unit} of {company} — {zone} remains","score":{"kill":"+{points} to {company} for {unit}","banner":"+{points} to {company} for the colours {unit} carried","seizure":"+{points} to {company} — {unit} seized hex {hex}","majority":"+{points} to {company} for holding {held} objectives to {other}","concession":"+{points} to {company} — the other company left the field"},"objectiveControl":"{company} takes hex {hex}, which nobody held","objectiveControl.taken":"{company} takes hex {hex} from {fromCompany}","regroup":"Turn {turn} ends — {held} objectives to {other}","regroup.tied":"Turn {turn} ends — {held} objectives each, so the field pays nothing","matchEnd":"The match is over — {company} holds the field"},"stat":{"hp":"{n} hp","hpOfMax":"{n}/{max} hp","attack":"{n} attack","range":"range {n}","move":"move {n}","cap":"damage cap {n}","capRaised":"damage cap {n} (raised)","capNone":"no damage cap","cost":"{n} deployment","vp":"{n} victory value"},"unitClass":{"light":"Light","medium":"Medium","heavy":"Heavy"},"howto":{"_about":"UX-02: optional instructions. Basic interaction and the sequence of play, and deliberately NOT a rulebook and NOT a tutorial: it is opened by choice, blocks nothing, and names no strategy. The pip legend here was MOVED out of the activation panel, where it sat on screen permanently to explain a marking drawn elsewhere. UX-03.5 C revised `work1` and `work3`, which were written here at UX-02 and were never revisited when UX-03.3b put a per-target hint under the pointer and UX-03.3c changed what an illegal click DOES. Measured on the accepted UX-03.4c.1 Round 2 artifact, seed 1: clicking a unit of yours moves the inspector from shut to open, so \"selects it and nothing more\" was false; clicking a target the engine offers no action against left P.sel unchanged and the hint read \"No action taken · Vanguard is still selected\", which no instruction mentioned; and with a unit selected, a click on a legal destination MOVED it (3,2 to 4,2) rather than pinning an explanation, which is what `work3` promised without qualification. The three are stated here because this panel is where a confused player looks, and the hint under the pointer is not somewhere they can read ahead.","open":"How to play","title":"How to play","lede":"The shape of a match, and how to work the screen. Close this whenever you like.","seq":"The sequence of play","seq1":"Recruitment. A pack of three recruits is revealed and both companies see all of it. Each takes one, and the third is discarded. {packs} packs, in alternation.","seq2":"The colours. You choose which of your recruits carries the company’s colours.","seq3":"Battle. {turns} turns. A turn is shared: the two companies take single actions in alternation, each paid for out of its own activation pool.","seq4":"The chronicle. What the match came to, and how it got there.","work":"Working the screen","work1":"Select, then commit. Clicking a card or a unit of yours selects it and opens its full explanation — it commits nothing. Clicking something that unit cannot act on takes no action either, and leaves it selected. The button that commits the decision appears once something is selected.","work2":"The line across the top of the screen always names the one action available now.","work3":"Hover anything on the field or in a column for its statistics. Click it to pin the full explanation, and press Escape to close it. With a unit of yours selected, a click on a teal or orange mark takes that action instead — hold Alt to read without acting.","work4":"With a unit of yours selected, teal marks where it can go and orange marks what it can strike.","work5":"The circles beside the activation figure are that pool: filled unspent, hollow spent.","work6":"PASS ends your company’s part in the current turn. What it gives up is spelled out above the button before you press it.","more":"Map key lists the ground and what it does. Credits names whose work this is."},"feedback":{"_about":"UX-02: the informal feedback route. There is no backend and no network call anywhere in this page: the note is assembled in the browser, shown in full before anything happens, and copied only when the player presses the button. Available in every phase, because the existing Playtest report appears only once a match has ended and most informal testers will not finish one.","open":"Feedback","title":"Send feedback","lede":"Anything at all: what you were trying to do, what you expected, what happened, what was confusing. Half a sentence is worth having.","privacy":"Nothing is sent from this page. The note below is assembled here in your browser; copying it and sending it on are yours to do.","ask":"What were you doing, and what happened?","out":"What you will be sending","where":"Paste it wherever you were asked to send it.","copy":"Copy","close":"Close","empty":"(nothing written yet)","head":"Warband Shadow-Box · informal feedback"},"copy":{"_about":"UX-02: the clipboard, which has three outcomes and not one. Sending resolve and reject to a single handler said \"Copied\" when the browser had refused -- the one message that makes a player close the page believing they hold a report they do not have. These are the words the playtest report already used; they moved here when the feedback box needed the same three answers and a second copy of the logic would have been a second chance to get it wrong.","ok":"Copied to your clipboard.","manual":"The text above is selected — press Ctrl+C to copy it.","noClipboard":"This browser gives the page no clipboard.","refused":"Automatic copying was refused","failed":"Automatic copying failed"}});
 (() => {
   const want = new URLSearchParams(location.search).get('lang');
   if (!want) return;
@@ -15067,7 +15289,7 @@ window.SBI18N.add("en", {"_about":{"locale":"en","note":"Player-facing text for 
   else refill();
 })();
 </script>
-<script>/* shadow-box history.js — 6b393e6 — the battle record; reads state, decides nothing */
+<script>/* shadow-box history.js — f7da7ee — the battle record; reads state, decides nothing */
 // history.js — the authoritative battle record, captured at the action boundary.
 //
 // WHAT THIS IS FOR. The Chronicle and the victory screen currently describe a
@@ -15780,8 +16002,8 @@ window.SBI18N.add("en", {"_about":{"locale":"en","note":"Player-facing text for 
 }());
 
 </script>
-<script>/* shadow-box ux.js — 6b393e6 — the explanatory layer; neither the rules nor the renderer */
-window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","renderer":"0da6f6b2314122851acbbd819bd016573071498d","ux":"6b393e63f3a5ffb755b394bc6795d3d5357b7417","copyright":"Copyright © 2026 Frank Trevor Gilson. All rights reserved.","renderer_author":"Brian Schneider (@brianhschneider)","licence_kind":"playtest","licence_name":"Limited Playtest License","built":"2026-10-28"};
+<script>/* shadow-box ux.js — f7da7ee — the explanatory layer; neither the rules nor the renderer */
+window.SBUX_BUILD = {"rules":"5bbcbcf1cc2ffa214ed296777b7b666271c66d07","renderer":"b27b373899bb6358b533ab438d4a5117052e73aa","ux":"f7da7eead0e96c02120894c86ba6a49bdfe5672b","copyright":"Copyright © 2026 Frank Trevor Gilson. All rights reserved.","renderer_author":"Brian Schneider (@brianhschneider)","licence_kind":"playtest","licence_name":"Limited Playtest License","built":"2026-11-01"};
 // Warband · Shadow-Box — the explanatory layer.
 //
 // WHY THIS IS A SEPARATE LAYER, IN HTML, OVER THE SVG.
@@ -16020,6 +16242,39 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     '  </div>',
     '  <div class="vd"></div>',
     '</div>',
+    // UX-03.4c.1: the Last Stand notice, beside the hex a unit fell on. Like
+    // #sbux-held it is structure once and textContent after, because every line
+    // of it interpolates a unit name, a company name or a zone name out of
+    // canonical state. NO `.hit`: #sbux-stage gives it pointer-events:none and
+    // nothing in it is pressable, so it cannot take a click off the board
+    // underneath it. role=status, because the information must survive a player
+    // who was not watching the animation.
+    // UX-03.6 C: THE NOTICE CAN BE PUT DOWN. It used to be readable for seven
+    // seconds and dismissable for none of them; it is now about three, with an
+    // explicit control for a player who has already read it.
+    //
+    // THE BUTTON IS THE ONLY PART THAT TAKES A POINTER EVENT, and the box
+    // itself takes none. `.hit` goes on the control and on nothing else, which
+    // is the idiom the whole layer uses: #sbux-stage is pointer-events:none and
+    // hands it back one element at a time.
+    //
+    // UX-03.6r: `class="hit"` WAS ON THE BOX, AND THAT WAS A DEFECT. It made
+    // the entire notice solid, and the notice is placed beside the hex that
+    // just died -- so it sat over playable ground, and a click on a legal
+    // target underneath its body was consumed by the notice. The attack did not
+    // happen, nothing was spent, the selection stayed put and the player was
+    // told nothing. A notice is a statement of fact beside the board; it must
+    // never be able to take an order away from the board.
+    '<div id="sbux-last" hidden role="status" aria-live="polite">',
+    '  <button type="button" class="x hit" tabindex="0"></button>',
+    '  <div class="tag"></div>',
+    '  <div class="who"></div>',
+    '  <div class="ground"></div>',
+    '  <div class="where"></div>',
+    '  <div class="why"></div>',
+    '  <div class="vp"></div>',
+    '  <div class="more"></div>',
+    '</div>',
     '<div id="sbux-brief" hidden><b></b><i></i></div>',
     '<div id="sbux-seed" hidden>',
     '  <input class="hit" id="sbux-seed-in" type="text" inputmode="numeric" autocomplete="off"',
@@ -16031,7 +16286,12 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     '  </div>',
     '</div>',
     '<div id="sbux-bar">',
-    '  <button type="button" class="hit" id="sbux-b-score" hidden></button>',
+    // UX-03.6 E: THE DYNAMIC SWITCHER IS GONE. It appeared only on the ending
+    // screen and swapped the breakdown for the Chronicle, renaming itself each
+    // time -- so the footer's one unstable control sat in a row of four stable
+    // ones, and it named a destination the three tabs above already name
+    // outright. #sbux-tabs offers all three views at once, including the ground,
+    // which the switcher could never reach. The footer is utilities only now.
     // UX-02: two controls added to the bar that already exists, rather than two
     // new surfaces. The bar is the page's one place for things you open on
     // purpose, and both of these are that: optional instructions, and a way to
@@ -16087,6 +16347,13 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     // in the renderer's own viewBox units, over a surface that takes no pointer
     // events, so it cannot intercept a click meant for a hex.
     '<svg id="sbux-idle" viewBox="0 0 1920 1080" aria-hidden="true" hidden></svg>',
+    // UX-03.6 C: WHERE IT HAPPENED, while the notice says what happened. The
+    // notice names the hex in words ("WHERE") and a player reading it had to
+    // find that hex by eye on a board of sixty. One ring, in the renderer's own
+    // viewBox units off its own hexPx, on its own surface so it cannot be
+    // entangled with the endgame's killing line -- and taking no pointer events,
+    // so it cannot stand between the player and the hex it is drawn on.
+    '<svg id="sbux-fellnow" viewBox="0 0 1920 1080" aria-hidden="true" hidden></svg>',
     // The numbered markers and the killing line, on the board rather than in it.
     // Brian\'s are suppressed by a named build substitution; these are positioned
     // from his own hexPx, in his own viewBox units.
@@ -16111,7 +16378,7 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
   const modal = el('#sbux-modal'), sheet = modal.querySelector('.sheet');
   const modalHead = modal.querySelector('h2');
   const modalBody = modal.querySelector('.scroll'), modalFoot = modal.querySelector('.foot');
-  const btnReport = el('#sbux-b-report'), btnScore = el('#sbux-b-score');
+  const btnReport = el('#sbux-b-report');
   const resultBox = el('#sbux-result'), scoreBox = el('#sbux-score');
   const chronBox = el('#sbux-chron'), casBox = el('#sbux-cas'), traceBox = el('#sbux-trace');
   const objBox = el('#sbux-obj'), ringBox = el('#sbux-ring'), tabsBox = el('#sbux-tabs');
@@ -16122,6 +16389,17 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
   const heldBox = el('#sbux-held');
   const heldLbl = heldBox.querySelector('.lbl'), heldVd = heldBox.querySelector('.vd');
   const heldA = heldBox.querySelector('.ct.a'), heldB = heldBox.querySelector('.ct.b');
+  const lastBox = el('#sbux-last'), fellNow = el('#sbux-fellnow');
+  const lastParts = {
+    x: lastBox.querySelector('button.x'),
+    tag: lastBox.querySelector('.tag'),
+    who: lastBox.querySelector('.who'),
+    ground: lastBox.querySelector('.ground'),
+    where: lastBox.querySelector('.where'),
+    why: lastBox.querySelector('.why'),
+    vp: lastBox.querySelector('.vp'),
+    more: lastBox.querySelector('.more'),
+  };
 
   // ── the stage is pinned to the SVG's rendered box ───────────────────────────
   // getScreenCTM is the renderer's own answer to "where did this viewBox land" —
@@ -16206,7 +16484,7 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     bench: ['Your recruits, not yet on the field',
       'Units you have recruited but not deployed. The coins under each are what it costs in deployment to bring it on, and a dimmed one is more than this turn’s deployment will cover. Click one, then a lit hex near your own edge.'],
     pass: ['PASS',
-      'Ends your part in this turn. Cracked coins show deployment you would throw away by passing now, because deployment never carries over to the next turn. THE ROW OF COINS STOPS AT FIVE, because a sixth would not fit on the button: when more than five would be forfeited, the exact total is stated in words across the top of the button, and that figure is the one to read.'],
+      'Ends your part in this turn. Each cracked coin represents one deployment point you would forfeit. Unused deployment does not carry over. When more than seven points would be lost, the exact total appears on the button.'],
     unitcard: ['The selected unit',
       'Attack, movement, range and damage cap, its signature keyword, and the ground it leaves behind when it falls.'],
     log: ['What just happened', 'The last three actions, either company’s.'],
@@ -16904,18 +17182,38 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     return r.key === s.key;
   };
 
+  /**
+   * UX-03.5 C: WHETHER THIS SUBJECT IS ALREADY OPEN IN THE INSPECTOR.
+   *
+   * `hint.read` invites a click that would read the thing under the pointer. On
+   * the hex whose card is already pinned open, that click has nothing to do: the
+   * full explanation is on screen, the tooltip is quoting its own opening lines
+   * back at the reader, and the sentence underneath says to click for what they
+   * can already see. Measured on the accepted Round 2 artifact: pinned true,
+   * markedKey "3,2", the panel open on that hex, and tipFor({kind:'hex',
+   * key:'3,2'}).hint still "Click to read all of it".
+   *
+   * It compares SUBJECTS, through the same subjectSig the panel uses to tell a
+   * change of subject from a redraw, so "already open" means the same thing to
+   * both. Only the bare read invitation is withdrawn. An ACTION hint still
+   * appears over a pinned subject, because that click still acts; so does
+   * `hint.refused`, because that one reports something that just happened.
+   */
+  const alreadyOpen = (s) => !!(pinned && s && subjectSig(s) === subjectSig(pinned));
+
   const readHint = (s) => {
     if (refusedAt(s)) {
       const whoR = armedName();
       if (whoR) return th('hint.refused', { unit: whoR });
     }
     const a = actionAt(s);
-    if (!a) return th('hint.read');
+    if (!a) return alreadyOpen(s) ? null : th('hint.read');
     if (a.can) return th(a.id, a.args);
     // ARMED, AND THIS IS NOT ON THE LIST. No action is offered and none is
-    // implied; the reading route is the one that still works.
+    // implied; the reading route is the one that still works -- unless it has
+    // already been taken, and the card is open.
     const who = armedName();
-    if (!who) return th('hint.read');
+    if (!who) return alreadyOpen(s) ? null : th('hint.read');
     return th(a.uid != null ? 'hint.noAct.unit' : 'hint.noAct.hex', { unit: who });
   };
 
@@ -17560,6 +17858,16 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
         bearers: [bearerOf(S0, 0), bearerOf(S0, 1)],
       } : null;
       const was = pre ? pre.turn : null;
+      // UX-03.4c.1: THE WATERMARK IS TAKEN BEFORE THE ACTION, so that what the
+      // action produced can be asked for by seq rather than guessed at by count.
+      // A read, and its own: the Regroup announcement's watermark is a different
+      // number that it advances for itself.
+      const preSeq = safely('SBHIST.count', () => {
+        const R = hist();
+        if (!R || typeof R.count !== 'function' || typeof R.events !== 'function') return 0;
+        const n = R.count();
+        return n ? R.events()[n - 1].seq : 0;
+      }, 0);
       const out = real.apply(this, arguments);
       const S = st();
       if (S && S.phase === 'play' && Array.isArray(S.dp) && S.turn !== was) {
@@ -17569,6 +17877,10 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
       // A throw in an observation must not take the move with it: the engine has
       // already applied it and the renderer is waiting for its beats.
       safely('noteCommit', () => { noteCommit(pre, S, out); return null; }, null);
+      // AND THE SAME PROTECTION. This reads the record and puts one beat into a
+      // queue; if it throws, the move has still happened and the renderer is
+      // still waiting for its beats, so the throw is recorded and swallowed.
+      safely('noteLastStand', () => { noteLastStand(preSeq, out); return null; }, null);
       return out;
     };
   }());
@@ -18308,35 +18620,611 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
       : th('held.lead', { company: companyName(S, show[0] > show[1] ? 0 : 1) });
   }
 
+  // ── UX-03.4c.1: the Last Stand notice ──────────────────────────────────────
+  //
+  // WHAT THE PLAYER COULD NOT GET. The renderer animates the blow, the fall and
+  // the terrain stamp, and then the board simply holds a new colour on one hex.
+  // Which unit that was, whose it was, what the ground now is and what the
+  // ground now does were all answerable only at the end of the match, in the
+  // endgame inspector. This says it when it happens.
+  //
+  // THE TWO SEAMS ARE DIFFERENT SEAMS, AND THAT IS THE WHOLE DESIGN.
+  //
+  //   CAPTURE is the action boundary. SB.step applies the move synchronously and
+  //   history.js's own wrapper -- which is inside this one, because ux.js wraps
+  //   last -- has already emitted this action's events by the time our wrapper
+  //   sees the return value. So the facts exist, complete and identified, before
+  //   a single frame of the animation has run.
+  //
+  //   DELIVERY is an animation boundary, and it must not be the capture one. The
+  //   events are available while the strike is still a forecast; showing them
+  //   there would caption a death the player has not been shown yet.
+  //
+  // WHY THE RENDERER'S OWN HOOK IS THE WRONG ONE. sb.js marks the strike beat
+  // `landing: true` and hangs its own chronicle off `land.enter`, under the
+  // comment "the log and the chronicle learn of a blow when it lands, not when
+  // it is aimed". But playBeats calls `enter` at the START of a beat, and on a
+  // lethal attack the beats are
+  //
+  //     select 0.4 · aim 1.25 · strike 0.65 [landing] · fall+stamp 0.85 · band 1.0
+  //
+  // -- measured on the accepted UX-03.4b artifact, not read off the source --
+  // so `land.enter` fires 0.85s BEFORE the unit has finished tipping over and
+  // its ground has finished being stamped. That is one of the four things the
+  // notice is forbidden to do.
+  //
+  // SO DELIVERY IS A BEAT OF OUR OWN, INSERTED AFTER THE GROUND. playBeats calls
+  // `enter` on any beat that has one, and the queue it walks is the array SB.step
+  // returned to its caller -- the array this wrapper is holding. Putting one more
+  // beat into it directly after the fall-and-stamp beat buys an exact animation
+  // boundary with no edit to Brian's file and no build-time substitution: the
+  // renderer's beat contract is doing the work, through its own front door.
+  //
+  // NOTHING IS RE-READ AT DRAW TIME. The payload is frozen at capture, for the
+  // reason the Regroup announcement states two blocks up: the sparring bot can
+  // act during the dwell, and a board re-read when the notice is drawn would
+  // describe ground that this death did not leave.
+  // UX-03.6 C: ABOUT THREE SECONDS, NOT SEVEN.
+  //
+  // MEASURED BEFORE IT WAS CHANGED, on the accepted UX-03.5+Guard artifact,
+  // through the page's own delivery rather than off this constant: an ordinary
+  // notice stood for 7,086ms and a two-casualty sweep -- one action, one notice,
+  // naming the second death in its `more` line -- for 7,085ms. Seven seconds is
+  // long enough that the battle visibly waits on it, and designer inspection
+  // asked for the notice to be shorter and dismissable rather than for less of
+  // it to be said.
+  //
+  // 2,800ms is the band's middle. The notice is six short lines; it is also now
+  // dismissable at once by its own control, and the board keeps its ring for as
+  // long as the notice stands, so the information has two ways to be had rather
+  // than one long one.
+  const LS_DWELL = 2800;
+  // AND THE TERMINAL NOTICE KEEPS THE HOLD IT WAS GIVEN, which this constant
+  // exists to stop the shortened dwell from eating.
+  //
+  // A terminal notice is taken down by its own closing beat, 1.4s of break
+  // stinger plus LS_HOLD after delivery -- measured on the same artifact as a
+  // queue of 0.4, 1.25, 0.65 (landing), 0.85, 0.001 (delivery), 1.4, 4.0 and
+  // 0.001 (closer): 8.552s of animation with the notice up for the last 5.4 of
+  // it. The dwell is only a backstop for a queue that never finishes. At 7,000
+  // it sat safely outside that 5.4s; at 2,800 it would fire INSIDE the hold and
+  // take the notice down at 2.8s, shortening the one pause this correction was
+  // told to preserve. So the terminal case keeps a dwell longer than the hold it
+  // is backing, and the hold remains the thing that ends it.
+  const LS_DWELL_TERMINAL = 9000;
+  const LS_W = 452;
+  // THE BAND THE BOARD OWNS, in the renderer's viewBox units, taken from the
+  // REGIONS table above rather than guessed: the gauges end at x 210, the unit
+  // card and the combat log begin at x 1388, the company plates end at y 88 and
+  // the deployment ramp, the bench and PASS begin at y 938. The objective
+  // counter is at 1688,14 and the result column beyond x 1388, so both are
+  // outside this box by construction.
+  // MEASURED OFF THE LIVE LAYOUT, not guessed, and the first guess was wrong in
+  // a way only a screenshot showed: at y1 100 the notice for a casualty on the
+  // top row sat squarely across #sbux-next, the guidance strip, which occupies
+  // y 89..113 and is where this screen says what the player should do next.
+  // #sbux-company, the turn panel, starts at y 848. The band now stops clear of
+  // both, and the suite asserts it against those two elements' own rectangles
+  // read from the page rather than against a copy of these numbers.
+  const LS_BAND = { x1: 222, y1: 122, x2: 1380, y2: 840 };
+  // AND THE ONE RECTANGLE INSIDE THAT BAND WHICH IS NOT OURS. stinger() draws
+  // the BREAKS and pressure-band plate at x 489, y 400, 580 x 150, dead centre,
+  // and on a killing blow that crosses a band it is the beat immediately after
+  // the ground. A notice sitting on top of a break notification is the defect
+  // this dodge exists to prevent.
+  const LS_STINGER = { x1: 489, y1: 400, x2: 1069, y2: 550 };
+  // HOW LONG THE BOARD IS HELD OPEN WHEN THE CASUALTY ENDED THE MATCH, in the
+  // renderer's own beat units, which are seconds.
+  //
+  // WHY A HOLD AT ALL, AND WHY THIS IS NOT THE DWELL. An ordinary notice dwells
+  // for LS_DWELL and costs the player nothing: the battle carries on underneath
+  // it and they read it or they do not. The last casualty of a match has no
+  // underneath. index.html's afterMove() sees `S.phase === 'over'` the moment
+  // the beat queue runs dry and plays SB.overBeats(), which dims the board and
+  // replaces it with the ending -- so on a terminal action the notice's whole
+  // life is however long the queue still has left to run, which is the break
+  // stinger's 1.4s and nothing more.
+  //
+  // So the queue is given something more to run: one beat that paints nothing
+  // and holds the frame the stinger left, and then a sentinel that takes the
+  // notice down again before the ending begins. The ending is not changed, not
+  // covered and not reordered -- it starts later by exactly this many seconds.
+  //
+  // FOUR, NOT SEVEN. This one is a pause in front of the result screen rather
+  // than a notice beside a live battle, and a pause is a cost: it is set to the
+  // shortest span that lets six short lines be read, and deliberately below the
+  // free-standing dwell. With the break stinger ahead of it the notice is on
+  // screen for about 5.4s in all.
+  const LS_HOLD = 4.0;
+  let lastStand = null;
+  // IS THE BOARD BEING HELD OPEN FOR A TERMINAL NOTICE RIGHT NOW. This is the
+  // explicit delivery state the drawing gate consults, rather than a guess from
+  // elapsed time or from `S.phase`: 'over' alone cannot tell the held board from
+  // the result screen that follows it, because both are the same phase.
+  let lsHold = false;
+  let lastTimer = null;
+  let lsGen = null;
+  // HOW MANY NOTICES HAVE ACTUALLY BEEN HANDED TO THE SCREEN. Counted because
+  // "exactly once" is otherwise unobservable: a second delivery of the same
+  // action would draw the same words and reset the same timer, and nothing on
+  // screen would say it had happened twice.
+  let lsCount = 0;
+  const lsDelivered = new Set();
+
+  function clearLastStand() {
+    if (lastTimer) { clearTimeout(lastTimer); lastTimer = null; }
+    lastStand = null;
+    // THE HOLD IS A PROPERTY OF THE NOTICE, SO IT GOES WITH IT. A reset, a dwell
+    // that expires or a second delivery all end the notice, and a hold flag left
+    // standing after one of those would re-open the result screen to a notice
+    // that no longer exists.
+    lsHold = false;
+  }
+
+  /**
+   * The ground a casualty left, in the canonical rules' own words.
+   *
+   * WB.ZONES NAMES IT AND wbGroundFacts EXPLAINS IT. Neither sentence is written
+   * here and neither is paraphrased: the zone's `name` is its name, and each
+   * effect clause is a `short` form that engine.js authored for a strip with no
+   * room for prose -- the same strings the hex panel already shows, so the two
+   * surfaces cannot drift. A terrain WB.ZONES does not know is reported as
+   * unnamed with its recorded id quoted, exactly as repGroundLeft does on the
+   * result screen, rather than having an implementation key printed as prose.
+   *
+   * WHICH CLAUSES, AND WHY NOT ALL OF THEM. `special` is the rule the ground
+   * exists for and always leads. `entry` is included only when the data says
+   * entering actually costs something unusual -- impassable, movement-blocking,
+   * or a movement cost that is not 1 -- which is how Burnt Ground, whose only
+   * consequence IS its cost, still explains itself while an Officer's Cairn is
+   * not captioned "base move cost 1". `cover` follows. The decision is made from
+   * the zone data, never by matching the English. Two clauses at most, because
+   * this is a notice and not the panel; the hex inspector carries every fact,
+   * which is what the brief asks for -- a verified short form here, full detail
+   * in inspection, and no invented simplification anywhere.
+   */
+  function lsGround(terrain, terrainOwner) {
+    const W = wb();
+    if (terrain == null) return { unnamed: true, id: null, name: null, effects: [] };
+    const z = (W && W.ZONES) ? W.ZONES[terrain] : null;
+    if (!z || !z.name) return { unnamed: true, id: String(terrain), name: null, effects: [] };
+    // objective is passed as FALSE deliberately. Whether the hex scores is a fact
+    // about the hex and not an effect of the ground that was left on it, and this
+    // notice states it on its own line.
+    const facts = safely('wbGroundFacts',
+      () => (typeof wbGroundFacts === 'function'
+        ? wbGroundFacts(z, false, null, terrainOwner == null ? null : terrainOwner)
+        : []), []) || [];
+    const byId = new Map();
+    for (const f of facts) if (f && f.id && !byId.has(f.id)) byId.set(f.id, f);
+    const take = [];
+    const push = (id) => {
+      const f = byId.get(id);
+      if (f && f.short && !take.includes(f.short)) take.push(f.short);
+    };
+    push('special');
+    const costly = !!z.impassable || !!z.blocks_movement
+      || (z.movement_cost != null && Number(z.movement_cost) !== 1);
+    if (costly) push('entry');
+    push('cover');
+    // NEVER SILENT WHEN THE RULES HAVE SOMETHING TO SAY. A zone with no special,
+    // no unusual cost and no cover still gets its entry clause rather than an
+    // empty explanation.
+    if (!take.length) push('entry');
+    return { unnamed: false, id: String(terrain), name: String(z.name), effects: take.slice(0, 2) };
+  }
+
+  /**
+   * This action's casualties, as the notice the player will be shown.
+   *
+   * IDENTITY COMES FROM THE RECORD. Every casualty is taken by its own event id
+   * out of SBHIST.since(), and the generation is carried with them, so a payload
+   * cannot be delivered into the match after the one that produced it. The
+   * action is named by its actionSeq, which is what makes delivery exactly once
+   * per action rather than once per event or once per frame.
+   *
+   * ORDER IS NOT CLAIMED. history.js is explicit that casualties from one action
+   * are ordered by uid because "the engine does not expose the order it resolved
+   * them in", so a Sweep that fells three is never presented as a sequence of
+   * three blows. One unit is named -- the first the record holds -- and the rest
+   * are counted.
+   *
+   * THE RECORDED TERRAIN IS A FINAL STATE, NOT A HISTORY. history.js reads
+   * `leaves.terrain` off the board after the whole action, so two units falling
+   * on one hex both carry the hex's LAST terrain and neither carries what stood
+   * there in between. When that happens the ground is stated once, for the hex,
+   * and is attributed to no single unit.
+   *
+   * VICTORY POINTS ARE JOINED, NEVER INFERRED. They are the score events whose
+   * `cause.casualtyId` names one of these casualties -- the join the record
+   * documents -- and they are reported only when every one of them was paid to
+   * the same company, because a single total over two payees would put points
+   * against a company that did not earn them.
+   */
+  function lsPayload(preSeq, out) {
+    // A REFUSAL IS NOT AN EVENT, and the record already knows it: history.js
+    // observes nothing when `out.ok === false`. Asked here too, so that a
+    // refused action cannot reach the notice even if the record ever changed.
+    if (!out || out.ok === false) return null;
+    const R = hist();
+    if (!R || typeof R.since !== 'function') return null;
+    const gen = safely('SBHIST.generation', () => R.generation(), null);
+    const fresh = safely('SBHIST.since', () => R.since(preSeq), null);
+    if (!fresh || !fresh.length) return null;
+    const cas = fresh.filter((e) => e && e.type === 'casualty' && e.unit);
+    if (!cas.length) return null;
+    const S = st();
+    const first = cas[0];
+    const hexKey = (first.at && first.at.key != null) ? String(first.at.key) : null;
+    const leaves = first.leaves || {};
+    const ground = lsGround(leaves.terrain == null ? null : leaves.terrain,
+      leaves.terrainOwner == null ? null : leaves.terrainOwner);
+    const hexes = new Set(cas.map((e) => (e.at && e.at.key != null ? String(e.at.key) : '?')));
+    const ids = cas.map((e) => e.id);
+    const idSet = new Set(ids);
+    const paid = fresh.filter((e) => e && e.type === 'score' && e.cause
+      && e.cause.casualtyId && idSet.has(e.cause.casualtyId));
+    const payees = new Set(paid.map((e) => e.to));
+    const points = paid.reduce((n, e) => n + (Number(e.points) || 0), 0);
+    return {
+      gen: gen,
+      actionSeq: first.actionSeq,
+      ids: ids,
+      turn: first.turn,
+      unit: { uid: String(first.unit.uid), name: String(first.unit.name), owner: first.unit.owner },
+      company: S ? companyName(S, first.unit.owner) : '',
+      hexKey: hexKey,
+      objective: !!(first.at && first.at.objective),
+      ground: ground,
+      groundOwner: (leaves.terrainOwner != null && S) ? companyName(S, leaves.terrainOwner) : null,
+      // How many fell in this action beyond the one that is named. There is no
+      // count of casualties sharing THIS hex, because one action cannot produce
+      // two: core.js:154-159 is the only writer of a unit's `at`, h.occupant is
+      // a single uid, and a move onto an occupied hex is refused
+      // (engine.js:2148, :3133, :3200, :3444). wbFellOn keeps the dead unit's
+      // `at` and clears the hex, so the next occupant can only arrive in a
+      // LATER action. Two deaths on one hex across the match is a real case and
+      // the chronicle already reports it -- see chron.det.sameHex.
+      others: cas.length - 1,
+      hexCount: hexes.size,
+      vp: (paid.length && payees.size === 1 && points > 0 && S)
+        ? { points: points, company: companyName(S, paid[0].to) } : null,
+    };
+  }
+
+  /**
+   * Hand a captured payload to the screen, at most once for its action.
+   *
+   * THE GENERATION IS CHECKED HERE AND NOT ONLY AT CAPTURE, because this runs
+   * from inside an animation beat and a match can be reset while that queue is
+   * still walking. A payload from the previous match is dropped rather than
+   * drawn, which is the "no stale notice may leak into another match" case.
+   */
+  function lsDeliver(p) {
+    if (!p) return false;
+    const R = hist();
+    const gen = R ? safely('SBHIST.generation', () => R.generation(), null) : null;
+    if (gen !== p.gen) return false;
+    const key = p.gen + ':' + p.actionSeq;
+    if (lsDelivered.has(key)) return false;
+    lsDelivered.add(key);
+    lsCount += 1;
+    if (lastTimer) clearTimeout(lastTimer);
+    lastStand = p;
+    // OPENED HERE, NOT IN THE SCHEDULE, because this is the moment the notice
+    // actually exists: a payload whose generation no longer matches is refused
+    // above and must not leave a hold behind it.
+    lsHold = !!p.terminal;
+    lastTimer = setTimeout(() => {
+      lastTimer = null;
+      // THE SAME TEARDOWN THE CLOSING BEAT USES, so there is one way a notice
+      // ends. A terminal notice is closed by its own beat well inside this
+      // dwell, but a hold left standing by this path would re-admit the result
+      // screen to a notice that has already expired.
+      clearLastStand();
+      drawLastStand();
+    }, p.terminal ? LS_DWELL_TERMINAL : LS_DWELL);
+    drawLastStand();
+    return true;
+  }
+
+  /**
+   * Put the delivery beat into the queue the renderer just handed back.
+   *
+   * AFTER THE GROUND, WHICH IS AFTER THE LANDING BEAT. On every move that can
+   * kill, sb.js pushes the fall-and-stamp beat directly after the strike beat it
+   * marked `landing`, so the beat index to insert at is the landing one plus two.
+   * The structure is asserted rather than assumed -- see the focused suite --
+   * and when it does not hold the beat goes on the end of the queue instead,
+   * which is still an animation-completion boundary and still later than the
+   * ground. An empty queue delivers at once, because there is no animation to
+   * wait for.
+   *
+   * dur is one millisecond and draw paints nothing: the beat exists to be a
+   * moment in the queue, not a picture. Whatever the previous beat left on the
+   * board stays on it for the one frame this takes.
+   */
+  function lsSchedule(out, p) {
+    const beats = (out && Array.isArray(out.beats)) ? out.beats : null;
+    const fire = () => { safely('lastStand.deliver', () => lsDeliver(p), null); };
+    // THE TWO BEATS A TERMINAL CASUALTY ADDS, AND NOTHING ELSE ABOUT THE ENDING.
+    //
+    // UX-03.4c.1 shipped with the terminal notice suppressed on purpose, on the
+    // reasoning that the endgame inspector answers for every casualty at once.
+    // Designer inspection overruled that: the blow that ends a match is the one
+    // whose consequence matters most, and a player told nothing about it has to
+    // reconstruct it from the result screen.
+    //
+    // The hold paints NOTHING -- its `draw` is empty -- so the frame the
+    // renderer's break stinger finished on stays exactly as it left it, with the
+    // stamped ground and the post-break gauges on it. The stinger keeps its own
+    // full 1.4s ahead of this and keeps the centre of the board, which lsPlace
+    // already dodges. The closer takes the notice down, so the ending never
+    // opens with a notice lying across it.
+    const terminal = () => {
+      if (!p.terminal) return;
+      beats.push({ dur: LS_HOLD, draw: () => {} });
+      beats.push({ dur: 0.001,
+        enter: () => {
+          safely('lastStand.close', () => { clearLastStand(); drawLastStand(); return null; }, null);
+        },
+        draw: () => {} });
+    };
+    if (!beats || !beats.length) {
+      fire();
+      // AN EMPTY QUEUE IS STILL THE QUEUE THE DRIVER IS ABOUT TO WALK. index.html
+      // awaits playBeats(out.beats || []) on the same array object this holds, so
+      // a hold pushed into an empty one is still played -- and a terminal action
+      // with no animation is exactly the case that needs it, because without the
+      // hold the ending would begin in the same frame as the notice.
+      if (beats && p.terminal) { terminal(); return { at: -1, of: beats.length, immediate: true }; }
+      return { at: -1, of: 0, immediate: true };
+    }
+    let land = -1;
+    for (let i = 0; i < beats.length; i += 1) if (beats[i] && beats[i].landing) land = i;
+    const at = (land >= 0 && land + 1 < beats.length) ? land + 2 : beats.length;
+    beats.splice(at, 0, { dur: 0.001, enter: fire, draw: () => {} });
+    terminal();
+    return { at: at, of: beats.length, immediate: false };
+  }
+
+  /**
+   * The seam, called from the SB.step wrapper with the pre-action watermark.
+   *
+   * WHETHER THE MATCH IS OVER IS ASKED HERE, AFTER THE ACTION AND BEFORE THE
+   * QUEUE RUNS. wbApply has already settled the break by the time SB.step
+   * returns, so S.phase is final; asking from inside the delivery beat would be
+   * the same question of the same state through one more layer, and asking
+   * before the action would always answer 'play'.
+   *
+   * It is read as S.phase and not through screenOf(), deliberately: screenOf
+   * reports 'muster' until the player has started, and this is a question about
+   * the match rather than about which screen is up.
+   */
+  function noteLastStand(preSeq, out) {
+    const p = lsPayload(preSeq, out);
+    if (!p) return null;
+    const S = st();
+    p.terminal = !!(S && S.phase === 'over');
+    lsSchedule(out, p);
+    return p;
+  }
+
+  /**
+   * Where the notice sits, in the renderer's own viewBox units.
+   *
+   * #sbux-stage carries the board's own getScreenCTM, so a box placed in these
+   * units lands on the board at either viewport without a second computation --
+   * which is what makes 1366x768 a scaled version of this placement rather than
+   * a different layout to get right.
+   *
+   * BESIDE THE HEX, NEVER ON IT. The stamped ground is the evidence the notice
+   * is about, so the box is offset by more than a hex radius and the death hex
+   * is never underneath it. It is then clamped into the band the board owns and
+   * pushed clear of the break plate.
+   */
+  /**
+   * The band the board owns, narrowed by what is already standing in it.
+   *
+   * ON A TERMINAL CASUALTY THE RESULT PLAQUE IS ALREADY UP. drawResult draws it
+   * as soon as the phase turns over and the record reconciles, which is before
+   * our delivery beat runs -- so by the time a terminal notice is placed, the
+   * bottom of the board belongs to #sbux-result. Its top is READ OFF THE
+   * ELEMENT rather than copied out of the stylesheet, for the reason the band
+   * comment above gives: a copy of a layout cannot notice the layout moving.
+   */
+  function lsBand() {
+    const b = { x1: LS_BAND.x1, y1: LS_BAND.y1, x2: LS_BAND.x2, y2: LS_BAND.y2 };
+    if (resultBox && !resultBox.hidden) {
+      const top = resultBox.offsetTop;
+      if (Number.isFinite(top) && top - 8 < b.y2) b.y2 = Math.max(b.y1 + 1, top - 8);
+    }
+    return b;
+  }
+
+  function lsPlace(hexKey, h) {
+    if (hexKey == null || !SB || typeof SB.hexPx !== 'function') return null;
+    const p = safely('hexPx', () => SB.hexPx(hexKey), null);
+    if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) return null;
+    const R0 = (SB.R || 66);
+    const gap = R0 * 1.15;
+    const high = Math.max(1, h || 150);
+    const BAND = lsBand();
+    // The side with room, preferring the one that puts the box between the hex
+    // and the nearer edge of the board rather than across the middle of it.
+    let x = p[0] + gap;
+    if (x + LS_W > BAND.x2) x = p[0] - gap - LS_W;
+    let y = p[1] - high / 2;
+    x = Math.max(BAND.x1, Math.min(x, BAND.x2 - LS_W));
+    y = Math.max(BAND.y1, Math.min(y, BAND.y2 - high));
+    // Off the break plate, by whichever vertical move is shorter and still fits.
+    const hits = x < LS_STINGER.x2 && x + LS_W > LS_STINGER.x1
+      && y < LS_STINGER.y2 && y + high > LS_STINGER.y1;
+    if (hits) {
+      const up = LS_STINGER.y1 - high - 8;
+      const down = LS_STINGER.y2 + 8;
+      const canUp = up >= BAND.y1;
+      const canDown = down + high <= BAND.y2;
+      if (canUp && (!canDown || Math.abs(y - up) <= Math.abs(y - down))) y = up;
+      else if (canDown) y = down;
+      else y = Math.max(BAND.y1, Math.min(up, BAND.y2 - high));
+    }
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  function drawLastStand() {
+    const S = st();
+    // THE RING IS A PROPERTY OF THE NOTICE, so every path that takes the notice
+    // down takes the ring with it. There are four -- the dwell expiring, the
+    // terminal closer, a reset, and the new dismissal -- and all four come
+    // through here, which is why this is the only place the ring is cleared.
+    if (!lastStand) drawFellNow(null);
+    // THE BATTLE, AND THE HELD BOARD OF A MATCH THAT HAS JUST ENDED ON IT.
+    //
+    // The setup screens have no board to annotate, which is drawHeld's reasoning
+    // and still holds. 'over' is the case this gate got wrong: the phase turns
+    // over inside wbApply, so it is already 'over' while the renderer is still
+    // painting the fall, the stamp and the break stinger on the battlefield --
+    // and the gate took the notice down for a board that was very much still
+    // there. The result SCREEN is a different thing from the 'over' phase, and
+    // the two are told apart by lsHold, which lsSchedule opens only for the
+    // casualty that ended the match and the closing beat shuts before the
+    // ending begins. Past that point the endgame inspector answers, as before.
+    const screen = screenOf(S);
+    const onBoard = screen === 'play' || (screen === 'over' && lsHold);
+    if (!S || !onBoard || !lastStand) { lastBox.hidden = true; drawFellNow(null); return; }
+    const p = lastStand;
+    // t() AND NOT th(), AND THE DIFFERENCE IS VISIBLE HERE. th() is t() put
+    // through escapeHtml, for a caller that is about to write the result into
+    // innerHTML; every line below is assigned to textContent, which escapes
+    // nothing and needs nothing escaped. Written with th() first, and the
+    // Officer's Cairn read "Officer&#39;s Cairn remains" on the board -- the
+    // only zone name with an apostrophe in it, and the reason the suite now
+    // asserts that no rendered line carries an HTML entity.
+    lastParts.tag.textContent = t('lastStand.tag');
+    lastParts.who.textContent = t('lastStand.fell', { unit: p.unit.name, company: p.company });
+    lastParts.ground.textContent = p.ground.unnamed
+      ? t('lastStand.unnamedGround')
+      : (p.groundOwner
+        ? t('lastStand.remainsOwned', { zone: p.ground.name, company: p.groundOwner })
+        : t('lastStand.remains', { zone: p.ground.name }));
+    lastParts.where.textContent = p.hexKey == null ? ''
+      : t(p.objective ? 'lastStand.atObjective' : 'lastStand.at', { key: p.hexKey });
+    lastParts.where.hidden = p.hexKey == null;
+    lastParts.why.textContent = p.ground.effects.join(' · ');
+    lastParts.why.hidden = !p.ground.effects.length;
+    lastParts.vp.textContent = p.vp
+      ? t('lastStand.vp', { n: p.vp.points, company: p.vp.company }) : '';
+    lastParts.vp.hidden = !p.vp;
+    // ONE LINE FOR THE REST, AND IT SAYS WHICH QUESTION IT IS ANSWERING: how
+    // many units fell elsewhere in this same action. They are elsewhere by
+    // construction -- see the note on `others` in lsPayload.
+    const more = [];
+    if (p.others > 0) more.push(t('lastStand.alsoFell', { n: p.others }));
+    lastParts.more.textContent = more.join(' · ');
+    lastParts.more.hidden = !more.length;
+    // THE CONTROL IS LABELLED FOR BOTH READERS: a glyph for the eye and a real
+    // name for a screen reader, because an unlabelled button reads as "button".
+    lastParts.x.textContent = t('lastStand.dismiss.x');
+    lastParts.x.setAttribute('aria-label', t('lastStand.dismiss.label'));
+    lastParts.x.title = t('lastStand.dismiss.label');
+    lastBox.hidden = false;
+    // MEASURED, NOT ASSUMED. The height depends on which lines are showing, so
+    // the box is placed from its own rendered height after it is filled.
+    const h = lastBox.offsetHeight || 150;
+    const at = lsPlace(p.hexKey, h);
+    if (!at) { lastBox.hidden = true; return; }
+    lastBox.style.left = at.x + 'px';
+    lastBox.style.top = at.y + 'px';
+    drawFellNow(p);
+  }
+
+  /**
+   * UX-03.6 C: the ring on the hex the notice is about.
+   *
+   * IN THE RENDERER'S OWN UNITS, off its own hexPx, on a surface that takes no
+   * pointer events -- the same three properties every other annotation this
+   * layer draws on the board has, and the reason none of them can intercept a
+   * click meant for a hex.
+   *
+   * IT IS NOT THE ENDGAME'S MARKER. #sbux-cas numbers every casualty of a
+   * finished match and #sbux-trace draws the killing line for the one being
+   * inspected; both are 'over'-only and both are driven from the whole record.
+   * This is one ring for one notice, up exactly as long as the notice is up, so
+   * that taking the notice down cannot leave a mark behind on a live board.
+   */
+  function drawFellNow(p) {
+    const hide = () => { fellNow.setAttribute('hidden', ''); fellNow.innerHTML = ''; };
+    if (!p || p.hexKey == null || !SB || typeof SB.hexPx !== 'function') { hide(); return; }
+    const at = safely('hexPx', () => SB.hexPx(p.hexKey), null);
+    if (!at || at.length !== 2 || !Number.isFinite(at[0]) || !Number.isFinite(at[1])) { hide(); return; }
+    const r = (SB.R || 66) * 0.86;
+    // Cased in paper under an ink core, the way #sbux-trace is, so the ring reads
+    // on light ground and on dark without being either the teal of a legal move
+    // or the orange of a strike forecast.
+    fellNow.innerHTML = '<circle class="case" cx="' + at[0] + '" cy="' + at[1] + '" r="' + r + '"/>'
+      + '<circle class="core" cx="' + at[0] + '" cy="' + at[1] + '" r="' + r + '"/>';
+    fellNow.removeAttribute('hidden');
+  }
+
+  /**
+   * The new-match reset for this notice.
+   *
+   * SEPARATE STATE, DELIBERATELY. The Regroup announcement keeps its own
+   * watermark and advances it past every event it has seen, casualties included;
+   * a second reader sharing that number would be handed a record with its own
+   * events already consumed. This notice holds no watermark at all -- it is
+   * published by the action seam rather than polled from a frame -- and what it
+   * does keep, the set of actions already delivered, is cleared here.
+   */
+  function watchLastStand() {
+    const R = hist();
+    const g = R ? safely('SBHIST.generation', () => R.generation(), null) : null;
+    if (g === lsGen) return false;
+    lsGen = g;
+    lsDelivered.clear();
+    clearLastStand();
+    drawLastStand();
+    return true;
+  }
+
   function forfeits() {
     const S = st();
     if (!S || S.phase !== 'play' || !S.order) return null;
     if (!oursToAct(S)) return null;
     return safely('wbPassForfeits', () => wbPassForfeits(S), null);
   }
-  // HOW MANY CRACKED COINS BRIAN'S BUTTON DRAWS, AT MOST. His bottomBar reads the
+  // HOW MANY CRACKED COINS THE BUTTON DRAWS, AT MOST. The bottomBar reads the
   // same wbPassForfeits this layer does and is right about the number; what it
-  // cannot do is show it past five:
+  // cannot do is show it past its own visible cap:
   //
-  //     for (let k = 0; k < Math.min(lost, 5); k++) s += coin(1170 + k * 28, ...)
+  //     for (let k = 0; k < Math.min(lost, 7); k++) s += coin(1160 + k * 21, ...)
   //
-  // and the cap is a spacing decision, not a rule. Five coins at 28 units apart
-  // run from 1146 to 1294 and his button's inner edge is 1302: a sixth has
-  // nowhere to go. The forfeiture itself has no cap. The base ramp alone reaches
-  // 5, and a living, deployed unit with Supply adds its own on top of that from
-  // the turn after it arrives -- so a real playtest (seed 2147398896, turn 3)
-  // forfeited six deployment behind five coins: base 4 and two Sutlers.
+  // and the cap is a spacing decision, not a rule. The forfeiture itself has no
+  // cap: the base ramp plateaus at 5 and a living, deployed unit with Supply adds
+  // its own on top from the turn after it arrives, so a real playtest (seed
+  // 2147398896, turn 3) forfeited six -- base 4 and two Sutlers -- and three
+  // Sutlers reach seven and eight.
   //
-  // THE RENDERER IS PINNED AND IS NOT CHANGED FOR THIS. The coins keep their
-  // five; the total is stated beside them instead.
-  const PASS_COINS = 5;
+  // SEVEN SINCE THE UX-03.4c.1 CORRECTIONS. It was five, with the coins at radius
+  // 12 and 28 units apart; the designer asked for seven, which build-shadowbox.mjs
+  // delivers by one named substitution against the pinned renderer -- smaller
+  // coins, closer together, and the PASS label shifted left to make the room. The
+  // pinned source itself is unchanged. That substitution's own comment carries the
+  // arithmetic and the reason there is no smaller seam.
+  //
+  // THIS NUMBER IS A MIRROR AND MUST MATCH IT. shadowbox-pass-cases.mjs reads both
+  // out of the built artifact's bytes and fails if they disagree, which is what
+  // stops this constant quietly describing a row the page no longer draws.
+  const PASS_COINS = 7;
 
   // THE NUMBER THE COINS CANNOT REACH, OVER THE BUTTON THAT DREW THEM.
   //
   // It says what wbPassForfeits returned -- the same single authority the warning
   // above it and the confirmation dialog both read, asked once in forfeits() --
-  // and it appears only when the coins have run out of room, because below six
-  // they are exact and a number beside an exact count is noise.
+  // and it appears only when the coins have run out of room -- that is, above
+  // PASS_COINS -- because at or below the cap they are exact and a number beside
+  // an exact count is noise.
   //
   // It is NOT `.hit`. The stage takes no pointer events except where a surface
   // opts in with that class, so this cannot swallow the click on the button it is
@@ -18372,30 +19260,99 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     drawPassMore(f);
   }
 
+  /**
+   * UX-03.6 B: HAS THIS COMPANY SPENT NOTHING AT ALL THIS TURN, and could it have?
+   *
+   * Two conditions, and the second is what keeps the dialog honest. A player who
+   * opens a turn and passes immediately throws away the whole turn's activation,
+   * which is the mistake designer inspection asked to guard. A player who passes
+   * because the board offers them nothing is not making a mistake, and a dialog
+   * in front of a forced pass is exactly the training to dismiss the dialog that
+   * mattered which the block below exists to avoid.
+   *
+   * THE FIGURE IS THE ENGINE'S OWN, NOT A COUNTER OF OURS. wbSpentThisTurn reads
+   * S.poolStart -- recorded by wbBeginTurn precisely because what a past action
+   * cost cannot be recovered from the board once the Watch-Fire surcharge exists
+   * -- and it answers null rather than guess when the figure it is handed is not
+   * one the rules could have granted. A second count kept in this layer would be
+   * one more thing to go out of step with the match.
+   *
+   * NULL IS NOT TREATED AS ZERO. If the engine will not vouch for the figure, no
+   * confirmation is raised from it: a dialog invented from a number the rules
+   * refuse would be worse than the pass it interrupted.
+   */
+  function idlePass() {
+    const S = st();
+    if (!S || S.phase !== 'play' || !S.order || !oursToAct(S)) return null;
+    const pl = safely('wbActive', () => ((typeof wbActive === 'function') ? wbActive(S) : null), null);
+    if (pl == null) return null;
+    // GUARDED BY TYPE AS WELL AS BY safely(), the idiom this file uses for every
+    // engine accessor it reaches for: a mirror that predates wbSpentThisTurn must
+    // make this answer "cannot establish" rather than throw once per pass.
+    const spent = safely('wbSpentThisTurn',
+      () => ((typeof wbSpentThisTurn === 'function') ? wbSpentThisTurn(S, pl) : null), null);
+    if (spent == null || spent !== 0) return null;
+    const moves = safely('wbLegalMoves', () => wbLegalMoves(S), null) || [];
+    // The same question the guidance asks, in the same words: every move type the
+    // engine offers that is neither a deployment nor the pass itself. Without it a
+    // company whose every unit is spent or blocked would be asked to confirm a
+    // pass it has no alternative to.
+    const onField = moves.some((m) => m.type !== 'deploy' && m.type !== 'pass');
+    if (!onField) return null;
+    return { pool: (S.pools && S.pools[pl] != null) ? S.pools[pl] : 0 };
+  }
+
   // THE CONFIRMATION, AND ONLY WHEN THERE IS SOMETHING TO CONFIRM. An ordinary
   // pass stays one click: a dialog in front of every pass trains the player to
   // dismiss the one that mattered.
+  //
+  // UX-03.6 B: TWO THINGS CAN BE WORTH CONFIRMING, AND THEY SHARE ONE DIALOG.
+  // A turn can throw away deployment, or a whole turn's activation, or both --
+  // and both at once is the commonest of the three, because the turn a player
+  // passes without acting is usually also a turn they have not deployed on. Two
+  // dialogs in a row for one click would be the worst of the three, so the
+  // combined case states both facts, offers the alternative that keeps both, and
+  // takes one confirmation for the pass.
   H.allowPass = function allowPass() {
     const f = forfeits();
-    if (!f) return true;
+    const idle = idlePass();
+    if (!f && !idle) return true;
+    const dep = f ? [
+      '<p>' + tr('pass.confirm.hold', { points: bold(f.points) }) + '</p>',
+      '<p>' + tr('pass.confirm.enough', {
+        fits: bold(f.fits), units: f.units.length, unitsShown: bold(f.units.length),
+        list: f.units.map((u) => u.name + ' (' + u.cost + ')').join(', '),
+      }) + '</p>',
+    ].join('') : '';
+    const act = idle ? '<p>' + tr('pass.confirm.idleHold', { points: bold(idle.pool) }) + '</p>' : '';
+    // THE TITLE AND THE GO LABEL NAME WHAT IS ACTUALLY BEING GIVEN UP, so the
+    // combined dialog does not describe itself as one of the two single cases.
+    const title = (f && idle) ? t('pass.confirm.bothTitle', { points: f.points })
+      : f ? t('pass.confirm.title', { points: f.points })
+        : t('pass.confirm.idleTitle');
+    const go = (f && idle) ? t('pass.confirm.bothGo')
+      : f ? t('pass.confirm.go') : t('pass.confirm.idleGo');
+    // THE WAY OUT IS THE ONE THE PLAYER HAS. With deployment waiting it is
+    // "Deploy instead"; with only the turn's activation unspent it is "Act
+    // instead". Closing the dialog returns to a turn where either is still legal,
+    // so with both standing the deployment label is the honest one: it is the
+    // alternative that keeps the activation too.
+    const back = f ? t('pass.confirm.deploy') : t('pass.confirm.idleAct');
     openModal({
-      title: t('pass.confirm.title', { points: f.points }),
+      title: title,
       narrow: true,
-      body: '<p>' + tr('pass.confirm.hold', { points: bold(f.points) }) + '</p>'
-        + '<p>' + tr('pass.confirm.enough', {
-          fits: bold(f.fits), units: f.units.length, unitsShown: bold(f.units.length),
-          list: f.units.map((u) => u.name + ' (' + u.cost + ')').join(', '),
-        }) + '</p>',
+      body: act + dep,
       foot: [
-        { label: t('pass.confirm.deploy'), cls: 'go', act: closeModal },
+        { label: back, cls: 'go', act: closeModal },
         {
-          label: t('pass.confirm.go'),
+          label: go,
           cls: 'warn',
           act: () => {
             closeModal();
             // Asked again, because the dialog was open across frames and the
-            // position may have moved under it.
-            if (forfeits()) H.pass();
+            // position may have moved under it. Either reason still standing is
+            // enough -- the player confirmed the pass, not one of its costs.
+            if (forfeits() || idlePass()) H.pass();
           },
         },
       ],
@@ -18855,11 +19812,11 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
   // this map equals en.json's own result.src.* entries, so a change to one that
   // is not made to the other fails rather than drifts.
   const REP_SRC = {
-    kill: 'Units defeated',
+    kill: 'Victory points: defeated units',
     banner: 'Colours taken, on top of the unit',
     seizure: 'Ground seized by Light units',
     majority: 'Objective majority at Regroup',
-    concession: 'Left the field',
+    concession: 'Victory points: opponent conceded',
   };
 
   /**
@@ -20531,14 +21488,6 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     }
   }
 
-  function drawScoreBtn(S) {
-    const over = !!S && S.phase === 'over';
-    btnScore.hidden = !over;
-    // The control is labelled with the panel it will bring, which is the one not
-    // on the screen.
-    if (over) btnScore.textContent = t(scoreOpen() ? 'result.bar.chronicle' : 'result.bar.score');
-  }
-
   // ── the map key ────────────────────────────────────────────────────────────
   // Drawn with the renderer's own terrain(), token() and mark helpers, so the
   // key cannot drift from the board it explains. A legend with its own drawings
@@ -20774,10 +21723,47 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
   // Typing clears the last verdict: a field still marked red after the mistake
   // has been corrected is a lie about the thing the player is looking at.
   seedIn.addEventListener('input', () => seedSaid(seedHint(), false));
-  // THE BAR'S OWN CONTROL, AND ONLY IT. It is labelled with the panel it will
-  // bring, so the player always reads the name of the thing they have not got.
-  btnScore.addEventListener('click', () => {
-    colTab = colTab === 'score' ? 'chron' : 'score';
+  /**
+   * UX-03.6 C: PUTTING THE NOTICE DOWN, and not doing anything else.
+   *
+   * THE CONTROL IS THE ONLY THING THAT CAN BE CLICKED. The listener is on the
+   * button, not on the box: the box has no `.hit`, so the hexes under it keep
+   * every click they had. UX-03.6 bound this to the whole notice and gave the
+   * notice `.hit` to make that work, which took legal attacks off the board --
+   * so click-anywhere dismissal is gone, and nothing replaces it. No synthetic
+   * click is forwarded through the notice and no event is replayed: an order to
+   * the board and a request to put a notice down are different acts, and the
+   * player performing one must never perform the other.
+   *
+   * stopPropagation and preventDefault stay, so that dismissing cannot itself
+   * reach the board through the button.
+   *
+   * NOTHING ABOUT THE CASUALTY IS TOUCHED. clearLastStand() drops the payload,
+   * the timer and the hold flag; the record is SBHIST's and is not consulted, so
+   * dismissing a notice cannot change what the Chronicle, the endgame inspector
+   * or the report say about that death. The delivered set is not touched either,
+   * so a dismissed notice is not redelivered.
+   *
+   * THE TERMINAL HOLD IS NOT SHORTENED BY A DISMISSAL EITHER. clearLastStand()
+   * closes lsHold, which is what the drawing gate consults -- so the board
+   * stops being held and the ending proceeds on its own closing beat, exactly
+   * as it does when the hold runs out. The player asked for the pause to end.
+   */
+  lastParts.x.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (ev.preventDefault) ev.preventDefault();
+    clearLastStand();
+    drawLastStand();
+  });
+  // AND BY THE KEYBOARD, since the control is a real button in the tab order.
+  // Enter and Space already reach it as a click; Escape is added because a
+  // notice is the one thing on this screen a player may want gone without
+  // looking for its corner.
+  lastBox.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    ev.stopPropagation();
+    clearLastStand();
+    drawLastStand();
   });
   // Delegated, because the body is rebuilt from the catalogue whenever the
   // signature changes and a handler bound to the old button would go with it.
@@ -21054,6 +22040,11 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
     // and when its dwell ends, so the announcement does not depend on the
     // signature happening to move at that instant.
     watchRegroup();
+    // UX-03.4c.1: AFTER watchRegroup AND FOR THE SAME REASON IT IS HERE. This
+    // owns nothing but the new-match reset -- the notice itself is published by
+    // the action seam and taken down by its own dwell timer, both of which draw
+    // directly, so neither depends on the signature below happening to move.
+    watchLastStand();
     const S = st();
     const s = signature(S);
     if (s !== sig) {
@@ -21076,6 +22067,10 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
       drawObj();
       drawFallenMarks();
       drawHeld();
+      // UX-03.4c.1: the notice's own state is published and expired elsewhere,
+      // but the screen it sits on is not: a phase change, a reseed or the result
+      // screen arriving has to take it down, and that is what this gate notices.
+      drawLastStand();
       drawRing();
       // AFTER drawRing AND BEFORE drawTabs, for no reason except that this is
       // where the board's annotations are drawn. The signature above already
@@ -21084,7 +22079,6 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
       // stale mark cannot survive a selection, an action or a new turn.
       drawIdle();
       drawTabs(S);
-      drawScoreBtn(S);
       btnReport.hidden = !(S && S.phase === 'over');
     }
     requestAnimationFrame(frame);
@@ -21225,6 +22219,49 @@ window.SBUX_BUILD = {"rules":"eb49d71338e270efffa618ebadd8c31314aebeaa","rendere
         awards: l.filter((r) => r.kind === 'seizure').map((r) => r.id),
       };
     },
+    // UX-03.4c.1: what the player is being told, as the layer itself holds it,
+    // so a test asks the notice rather than scraping its words back out of the
+    // DOM -- and can compare them against SBHIST, which is a different source.
+    lastStand: () => (lastStand ? JSON.parse(JSON.stringify(lastStand)) : null),
+    // AND WHERE IT IS, IN THE SAME UNITS THE BOARD USES. offsetLeft/Top are
+    // #sbux-stage's own coordinate space, which is the renderer's viewBox, so
+    // this is directly comparable with SB.hexPx and with the REGIONS table.
+    lastStandBox: () => (lastBox.hidden ? null : {
+      x: lastBox.offsetLeft, y: lastBox.offsetTop,
+      w: lastBox.offsetWidth, h: lastBox.offsetHeight,
+      // WHAT IS SOLID IN THE NOTICE, element by element, and whether the box
+      // itself is. UX-03.6r: this was `hit: !!querySelector('.hit')`, a bare
+      // boolean over DESCENDANTS only -- so it could not see `.hit` on the box,
+      // and it read false for the whole life of the defect in which the notice
+      // took legal attacks off the board. A test can only assert "exactly the
+      // dismissal control and nothing else" if it is told what the targets are.
+      boxIsHit: lastBox.classList.contains('hit'),
+      boxPointer: getComputedStyle(lastBox).pointerEvents,
+      hits: Array.prototype.map.call(lastBox.querySelectorAll('.hit'), (n) => ({
+        tag: n.tagName.toLowerCase(),
+        cls: n.getAttribute('class'),
+        label: n.getAttribute('aria-label'),
+        pointer: getComputedStyle(n).pointerEvents,
+        w: n.offsetWidth, h: n.offsetHeight,
+      })),
+      lines: ['tag', 'who', 'ground', 'where', 'why', 'vp', 'more']
+        .map((k) => (lastParts[k].hidden ? null : lastParts[k].textContent))
+        .filter((s) => s != null && s !== ''),
+    }),
+    /** The ground wording for one terrain id, for a negative control to corrupt. */
+    lastStandGround: (terrain, owner) => lsGround(terrain, owner == null ? null : owner),
+    /** How many notices have been handed to the screen, ever. See lsCount. */
+    lastStandDeliveries: () => lsCount,
+    /**
+     * Is the board being held open for a terminal notice, and was the notice now
+     * on screen delivered for a match-ending action.
+     *
+     * TWO SEPARATE FACTS, because they come apart: the hold closes while the
+     * payload is still the last one the record produced, and a test that could
+     * ask only one of them could not tell "the hold has ended" from "nothing was
+     * ever delivered".
+     */
+    lastStandHold: () => ({ held: lsHold, terminal: !!(lastStand && lastStand.terminal) }),
     objectiveSelected: () => objSel,
     selectObjective: (id) => { selectObj(id, true); },
     diagOpen: () => diagOpen,

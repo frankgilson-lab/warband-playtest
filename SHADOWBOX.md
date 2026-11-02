@@ -21,6 +21,12 @@ without waiting for an answer on the question below.** That decision supersedes 
 this file previously carried. It is recorded here in the owner's name because it is the
 owner's, and because the question it was taken over is not closed by it.
 
+**UX-03.6r, published 2026-11-01, is the third release under that same decision.** The
+owner authorized this publication explicitly. Nothing below has changed in the meantime:
+no answer has been received, nothing new has been granted, and this release neither
+closes the question nor reopens it. A third publication under an unresolved permission is
+still an unresolved permission.
+
 What is actually recorded about the renderer's terms, in full:
 
 - The Shadow-Box renderer and its graphics are **Brian Schneider's work**
@@ -72,9 +78,17 @@ Three pinned commits, and nothing else.
 
 | part | repository | commit |
 |---|---|---|
-| canonical rules | `frankgilson-lab/warband-prototype` (private), `licence/limited-playtest` | `eb49d71338e270efffa618ebadd8c31314aebeaa` |
-| Shadow-Box renderer | `Everyone-Loves-Beacon/warband-live`, PR #4 | `0da6f6b2314122851acbbd819bd016573071498d` |
-| explanatory UX layer | `Everyone-Loves-Beacon/warband-live`, `playtest/ux034b-victory` | `6b393e63f3a5ffb755b394bc6795d3d5357b7417` |
+| canonical rules | `frankgilson-lab/warband-prototype` (private), `integration/guard-repair-on-licence` | `5bbcbcf1cc2ffa214ed296777b7b666271c66d07` |
+| Shadow-Box renderer | `Everyone-Loves-Beacon/warband-live` | `b27b373899bb6358b533ab438d4a5117052e73aa` |
+| explanatory UX layer | `Everyone-Loves-Beacon/warband-live`, `integration/ux036-hold-repair` | `f7da7eead0e96c02120894c86ba6a49bdfe5672b` |
+
+The rules also carry a **revision string**, `supply-1+abilities-2+guard-1`, stamped into
+the page, which two builds compare so that mismatched ones refuse each other. It is how
+the Guard repair in this release is named rather than merely present.
+
+**All three of those commits are, at the time of writing, on this machine and on no
+remote.** Each was asked of GitHub by SHA and each answered *No commit found*. That is a
+weaker position than UX-03.4b held, and the subsection below says what it costs a reader.
 
 All three SHAs are stamped into the page — in full in the opening notice and in the `title`
 of the stamp at the bottom right, in short form in the stamp itself — so feedback can be
@@ -85,33 +99,38 @@ build time rather than taken on the word of `rules/MIRROR.json`:
 
 | file | bytes | sha256 |
 |---|---|---|
-| `config.js` | 68,105 | `ba35f20ab33e4e401ae88b9f139ffbf38e911d0c5ce0a05694331599ddd54f38` |
-| `core.js` | 122,593 | `b175ded9f00c4b029beb83acc04a60749e2bbeee84788bd785709c0183cb4790` |
-| `engine.js` | 508,065 | `ae1ce0780b2e6dfca52738ca71e69329adb3e65822257b3d6b9ecc5703153f42` |
+| `config.js` | 69,426 | `56b8e74ce251861419b942344a2c6ef95847775b11ad64072a48e94cc8b20f90` |
+| `core.js` | 126,638 | `8381d4a2a3177fa66123582d01e28aa3d6700b2a42b7b76978cf4b760599b2ea` |
+| `engine.js` | 509,845 | `cd2e6c3d60f11026e220ce0b50da1530e985e949eaab25de0c8f4605c0d62fca` |
+
+**All three of those digests have changed since the previous published version**, and that
+is this release's headline rather than an incidental. For UX-03.4b the check was that the
+rules had *not* moved with the interface; here they moved on purpose, because the Guard
+repair is a rules correction.
+
+Byte counts here are git object sizes, which is what a reader fetching the blob would
+measure; the builder prints character counts, and the licence section below gives both for
+the one file where the difference matters.
 
 And the artifact they make:
 
 ```
-shadowbox.html  (UX-03.4b, published 2026-10-27)
-1,269,564 bytes
-sha256  0a8619c96243b8db97a4592b8476fdbd3de4a6b7e8ff9d25c585510da36c9332
+shadowbox.html  (UX-03.6r, published 2026-11-01)
+1,333,669 bytes
+sha256  500f82db2078ad0cbb772e96f988e8a8046f5577410f4e3eeec5b2884b357a50
 ```
 
-The rules and the renderer are pinned to the same two commits as the first
-release; only the explanatory layer moved. The three rules-file digests above and
-the licence digest below are therefore **unchanged from the previous published
-version**, which is the check that the rules did not move with the interface.
-
-A rebuild from those three pins at release time reproduced this artifact **byte
-for byte** — same 1,269,564 bytes, same sha256, 0 differing lines of 21,236.
+Every pin moved this time: the rules from `eb49d71` to `5bbcbcf` for the Guard repair, the
+renderer from `0da6f6b` to `b27b373`, and the explanatory layer across 44 commits from
+`6b393e6` to `f7da7ee`.
 
 **The previous published version is retained** and is the rollback target:
 
 ```
-shadowbox.html  (published 2026-10-22, superseded)
-1,112,451 bytes
-sha256  21bd3004147e0577071bf45364b2599f199ab420aae10296e2ac5e282a1bd1ea
-git      ceaf85aa7c2c093cafb1e2f643e6dbe33dd31de4   blob ad12947a6ed4e6591eb7cca567e4e25f89ea2990
+shadowbox.html  (UX-03.4b, published 2026-10-27, superseded)
+1,269,564 bytes
+sha256  0a8619c96243b8db97a4592b8476fdbd3de4a6b7e8ff9d25c585510da36c9332
+git      e375e1766fee630e3d57b34a78b2d7d5dfa4a371   blob 5c19a031217b2a8692f45ea092d0c8cc8ce1ba5c
 ```
 
 ### What these hashes prove, and what they do not
@@ -120,16 +139,19 @@ Two different claims live in this file, and only one of them is checkable by a r
 without repository access.
 
 - **The artifact is publicly verifiable.** Once the page is live, anyone can fetch it and
-  compute `0a8619c9…` for themselves. That settles which bytes are being served, and that
+  compute `500f82db…` for themselves. That settles which bytes are being served, and that
   they are the bytes every suite below was run against.
-- **The build's ancestry is not.** The three rules-file hashes above, the licence hash
-  below, and the three pinned SHAs are a *manifest of the inputs* — and all three
-  repositories they name are private. A reader outside them cannot recompute a single one of
-  those digests, so the manifest records what was measured rather than proving it: only the
-  private history it was measured against can confirm it. Independent verification of the
-  ancestry needs access to `frankgilson-lab/warband-prototype` and
-  `Everyone-Loves-Beacon/warband-live`, which is granted person by person and not by this
-  file. A matching hash in a document is evidence of care, not a proof of provenance.
+- **The build's ancestry is not, and for this release it is weaker than that.** The three
+  rules-file hashes above, the licence hash below and the three pinned SHAs are a
+  *manifest of the inputs*. For UX-03.4b those inputs sat in private repositories: a
+  reader outside them could not recompute the digests, but an authorized one could. For
+  **UX-03.6r none of the three commits is on any remote at all** — `5bbcbcf`,
+  `b27b373` and `f7da7ee` were each asked of GitHub by SHA and each answered *No commit
+  found*. The manifest is therefore confirmable only on the machine that built it, and by
+  whoever has that machine: not by an authorized collaborator, and not by the GitHub API.
+  Pushing those three commits to their private remotes would restore the position
+  UX-03.4b held, and until that is done this is the honest statement of what the manifest
+  is worth. A matching hash in a document is evidence of care, not a proof of provenance.
 
 ## Two works, two sets of terms
 
@@ -142,7 +164,7 @@ instructions rather than after the limitations.
   evaluation and playtesting, and permits no redistribution, sale, sublicensing,
   publication, modification or derivative work. The licence is **embedded verbatim, twice**
   — as an HTML comment at the top of the file, where it can never be dismissed or restyled
-  away, and as a readable panel in the opening notice. Both copies are `eb49d71:LICENSE`
+  away, and as a readable panel in the opening notice. Both copies are `5bbcbcf:LICENSE`
   byte for byte: **1,782 bytes** — 1,779 Unicode characters, the three-byte difference being
   the em dash in its title and the `©` in its copyright line — sha256
   `d24c1c5e5a17155ee1ca530a4e159e0a8c8880709636e60d754b5535adfabcb7`.
@@ -168,14 +190,18 @@ The builder lives with the renderer it inlines, in `warband-live`:
 
 ```
 node scripts/build-shadowbox.mjs \
-  --app-ref    0da6f6b \
+  --app-ref    b27b373 \
+  --rules-ref  5bbcbcf \
   --rules-repo ../warband \
-  --ux-ref     6b393e6 \
+  --ux-ref     f7da7ee \
   --out        ../warband-playtest/shadowbox.html
 ```
 
-`--rules-ref` defaults to `eb49d71`. Passing `--rules-ref 31ed777` reproduces the earlier
-MIT-licensed artifact instead, licence and all.
+**Pass `--rules-ref` explicitly.** It still defaults to `eb49d71`, the pre-Guard commit, so
+a build that omits it produces the *previous* rules under this release's interface — a
+combination that has never been certified and that the revision string
+`supply-1+abilities-2+guard-1` exists to make visible. Passing `--rules-ref 31ed777`
+reproduces the original MIT-licensed artifact instead, licence and all.
 
 It reads every input out of git rather than the working tree, so a dirty checkout cannot
 leak into a build; it refuses outright if the working tree differs from the ref it was told
@@ -183,37 +209,52 @@ to build. `--explain` prints the complete list of changes applied to the rendere
 
 ## What changed since the previous published version
 
-Eighty-five commits of the explanatory layer, between `80dbe4e` and `6b393e6`.
-The rules did not move and the renderer did not move: every change below is the
-layer that reads the engine and draws over the board, and none of them changes a
-rule, a score, an action or the sparring bot.
+Forty-four commits of the explanatory layer between `6b393e6` and `f7da7ee`, and — for
+the first time in this page's history — **three commits of the rules**, between `eb49d71`
+and `5bbcbcf`.
 
-The work that a player will notice, in the order it was done:
+### The rules moved: the Guard repair
+
+`5303c8a` **Guard: price each protector against the blow it will actually take.** A unit
+that guards another was being priced against the wrong attack, so a protector's survival
+was computed from a blow other than the one it would take. This is a correctness repair to
+the engine, not a balance change dressed as one, and it is the reason the rules pin moved.
+`7f27fdc` retires a near-zero population pin on Watch-Fire and tests the third applier.
+`5bbcbcf` adds the revision string so that a build on the old rules and a build on the new
+ones refuse each other instead of quietly disagreeing.
+
+`games/warband` changed across four files — `config.json`, `core.js`, `engine.js` and
+`interface.js` — 100 lines added and 14 removed. The three rules-file digests in the
+manifest above all moved with them, which is the check that the change is really in the
+rules and not only in the interface.
+
+### The interface: UX-03.5, UX-03.6 and the UX-03.6r repair
 
 | | what it answers |
 |---|---|
-| **HP-002** | what the game *is*, on the opening, and what you can do right now, in a strip that has room for it at every size |
-| **UX-02** | hierarchy and phase identity; How to Play; a feedback path; the pip legend beside the circles it explains |
-| **UX-03** | the result panels stop above the bar instead of running under it, and the break-point share is drawn rather than spelled out |
-| **UX-03.2** | the commitment control has three states, and the committed one is read out of the state rather than assumed |
-| **UX-03.2b** | the company you are building, while you build it |
-| **UX-03.2c** | the ability on the card, and RECRUIT on the button |
-| **UX-03.3a** | a selected unit with nothing it can legally do now says so, on the board |
-| **UX-03.3a.1 / .2** | the map answer and the commitment explained where they are, describing the recruit they are drawn on |
-| **UX-03.3b** | the combat forecast reads the engine's own list, and the tooltip keeps off it |
-| **UX-03.3c** | a refused click keeps the selection — and says why it was refused |
-| **UX-03.4a** | the endgame hex inspector reads the evidence before the ground |
-| **UX-03.4b** | **who holds the objectives, at all times, and what Regroup paid for them** |
+| **UX-03.5** | the Guard repair made visible where a player decides: a protector's survival is shown against the blow it will actually take |
+| **UX-03.6 (1)** | a persistent inspection panel paints *above* the selection brackets instead of being obscured by them |
+| **UX-03.6 (2)** | PASS confirms immediately when nothing has been committed, in one dialog when deployment is forfeited too, read from authoritative game state rather than a second counter |
+| **UX-03.6 (3)** | the death notice is about three seconds rather than seven, rings the hex it is about, and can be put down |
+| **UX-03.6 (4)** | "Units defeated" and "Left the field" are named as what they are, in the interface and in the deterministic report together |
+| **UX-03.6 (5)** | the redundant Chronicle/victory-points footer switcher is gone; How to play, Map key, Credits & licences and Feedback remain |
+| **UX-03.6 (6)** | coin spacing, terrain name and "Left by Company X" readability, and an endgame inspector that no longer covers the footer controls |
+| **UX-03.6r** | **the death notice takes no click off the board** |
 
-UX-03.4b is the release's headline and the newest: a permanent count of how many
-objectives each company controls, and an announcement at each Regroup saying what
-that count paid. The count is the engine's own `objectiveScore` — ownership, not
-a tally of who is standing where — so a hex a Dragoon rode over and left still
-counts for the company that took it. A tied Regroup is announced too; it
-previously produced no output anywhere.
+**UX-03.6r is this release's correctness headline on the interface side, and it exists
+because UX-03.6 as first built was wrong.** Giving the notice a dismissal control had been
+done by making the whole notice clickable, and the explanatory layer grants pointer events
+only to elements that ask for them — so the notice became a solid object lying over the
+board. Because it is placed beside the hex that just died, it covered playable ground: a
+click on a legal target underneath it was swallowed, the attack never happened, nothing was
+spent, the selection did not move, and the player was told nothing at all. Three Tier 2
+suites caught it. The repair grants pointer events to the dismissal control alone;
+click-anywhere dismissal is gone, and the control and the Escape key remain.
 
-Those task records live in `warband-live/docs/`, one per item, and are not
-public.
+Measured across the notice's body on a grid of twenty-five points: **none** of them reached
+the board on the build that had the defect, and **all twenty-five** reach it on this one.
+
+Those task records live in `warband-live/docs/`, one per item, and are not public.
 
 ## What changed since the MIT candidate
 
@@ -237,16 +278,16 @@ layer now states the exact total across the top of the button, reading the same
 ## How this exact file was verified
 
 Every suite below was run against **this artifact** — the file in this commit, sha256
-`0a8619c9…` — one at a time, never two at once. This is the project's Tier 2 gate,
-its complete manifest, run once: **21 of 21 steps green, exit 0, in 1559.3s**.
+`500f82db…` — one at a time, never two at once. This is the project's Tier 2 gate,
+its complete manifest, run once: **23 of 23 steps green, exit 0, in 1,634.7s**.
 
 | step | result |
 |---|---|
 | unit tests (vitest, 8 files) | **186 passed** |
-| results and the plaque | 210 / 210 |
+| results and the plaque | 212 / 212 |
 | licence gate | 52 / 52 |
 | match lifecycle | 45 / 45 |
-| PASS forfeiture (HP-001) | 52 / 52 |
+| PASS forfeiture | 94 / 94 |
 | playtest report | 158 / 158 |
 | Chronicle | 90 / 90 |
 | objective history | 135 / 135 |
@@ -256,30 +297,40 @@ its complete manifest, run once: **21 of 21 steps green, exit 0, in 1559.3s**.
 | affordances | 25 / 25 |
 | explanations | 41 / 41 |
 | map answer | 50 / 50 |
-| combat forecast | 29 / 29 |
+| combat forecast | 34 / 34 |
 | clicks, legal and refused | 35 / 35 |
 | endgame hex inspector | 45 / 45 |
-| **objectives held and Regroup scoring** | **83 / 83** |
+| objectives held and Regroup scoring | 83 / 83 |
+| **the death notice** | **252 / 252** |
+| clarity | 160 / 160 |
 | seizure regression | correct — announced as a seizure |
 | explanatory layer acceptance | **273 / 273** |
 | standalone acceptance | **71 / 71** |
 
-**1,727 suite checks and 186 unit tests passed; 0 failed, 0 skipped.** The rules
-mirror was re-derived from upstream at build time and matches byte for byte — no
-fork.
+**2,188 suite checks and 186 unit tests passed; 0 failed, 0 skipped.** The rules mirror was re-derived from
+upstream at build time and matches byte for byte — no fork. A further focused suite, the
+death notice's pointer contract, passed 20 of 20 against this file; it is run explicitly
+rather than as part of the battery.
 
-Two things about that gate are worth recording, because a green number is worth
-less than the account of how it was obtained.
+Three things about that gate are worth recording, because a green number is worth less than
+the account of how it was obtained.
 
-- **One earlier attempt did not complete.** It reached 20 of 21 and failed the
-  one step it is forbidden to skip, because the runner could not launch its unit
-  command on this platform at all (`spawn npm ENOENT`). That was a defect in the
-  test runner, not in this build: the 186 unit tests passed when invoked
-  directly, and every suite count above is identical to that attempt's. The
-  runner was repaired separately and the gate then ran complete.
-- **The artifact was validated as the file, not as a checkout.** The suites ran
-  against this exact HTML, and the byte-identical rebuild from the three pins is
-  what ties it back to its sources.
+- **The first attempt at this gate failed, and the failure was real.** It came back 19 of
+  23 with nine failing checks, eight of them one defect: the death-notice pointer
+  interception described above. The build was held, not shipped, and UX-03.6r is the
+  repair. The three suites that caught it were re-run against both artifacts to prove the
+  direction: green on the repaired file, red on the one that had the defect.
+- **One of the four failing suites was the gate's own plumbing.** The tier runner passed
+  each suite the artifact path and nothing else, so the three provenance-checking suites
+  fell back to a hard-coded rules commit of 2026-10-21 and failed *any* artifact built on
+  a later one. That made a green Tier 2 unobtainable for this rules lineage whatever the
+  artifact contained. The runner now requires the build refs, resolves them in the right
+  repository, cross-checks them against the page's own stamps and forwards them only to
+  the suites that read them; a missing or wrong ref is refused outright rather than
+  silently replaced by a default. Four negative controls confirm the refusal, including
+  the exact stale ref that caused the original false failure.
+- **The artifact was validated as the file, not as a checkout.** The suites ran against
+  this exact HTML.
 
 ### Self-containment
 
@@ -293,6 +344,12 @@ was even attempted. `?seed=N` works as it does in the prototype.
 GitHub Pages serves this repository from the **`main` branch, path `/`** (legacy build).
 There is no workflow and no build step: a file merged to `main` is the file served.
 
+1. **UX-03.6r was published on 2026-11-01**, by the owner's explicit authorization to
+   promote it as the current public-facing Shadow-Box playtest. It was committed directly
+   to `main`, superseding `e375e176`. It replaced `shadowbox.html` and this file and
+   touched nothing else; `index.html` is byte-identical across the release, blob
+   `622b4cfd9266dff240adaae3dd73a610664c2097`. The served bytes were checked against the
+   artifact rather than against the Pages status.
 1. **UX-03.4b was published on 2026-10-27**, by the owner's explicit authorization to
    promote it as the current public-facing Shadow-Box playtest. Deployment PR **#3**,
    merged into `main` as **`11dae9d56595475da8a5f793e9ec3668d6ab22d8`** — the
@@ -311,7 +368,7 @@ There is no workflow and no build step: a file merged to `main` is the file serv
    ```
    curl -fsSL https://frankgilson-lab.github.io/warband-playtest/shadowbox.html | sha256sum
    ```
-   It must print the sha256 above — `0a8619c9…`. A PR preview, a local open or an
+   It must print the sha256 above — `500f82db…`. A PR preview, a local open or an
    inspection of the committed file proves nothing about the public URL, and neither does
    a Pages status of `built`. Add a cache-busting query if a stale copy is suspected.
 4. Open `https://frankgilson-lab.github.io/warband-playtest/shadowbox.html` in a browser,
@@ -329,11 +386,16 @@ Nothing about this deployment is irreversible, and the original page is never in
   its blob is identical on `main` and on the candidate branch
   (`622b4cfd9266dff240adaae3dd73a610664c2097`, sha256
   `aea188b3b52fb341e7f604e9ba78a5775a70978c431ca89cbbcdd9d99c0e9a58`).
-- **To go back to the previous published Shadow-Box** (the 2026-10-22 release, which is
+- **To go back to the previous published Shadow-Box** (UX-03.4b of 2026-10-27, which is
   the current rollback target):
+  `git checkout e375e17 -- shadowbox.html SHADOWBOX.md` (1,269,564 bytes, sha256
+  `0a8619c96243b8db97a4592b8476fdbd3de4a6b7e8ff9d25c585510da36c9332`), or rebuild it with
+  `--app-ref 0da6f6b --rules-ref eb49d71 --ux-ref 6b393e6`. That also returns the rules to
+  the pre-Guard commit, which is the point of the revision string: the two will not be
+  confused for each other.
+- **To go back to the 2026-10-22 release**:
   `git checkout ceaf85a -- shadowbox.html SHADOWBOX.md` (1,112,451 bytes, sha256
-  `21bd3004147e0577071bf45364b2599f199ab420aae10296e2ac5e282a1bd1ea`), or rebuild it with
-  `--ux-ref 80dbe4e`. That restores the prior page and its release documentation together,
+  `21bd3004147e0577071bf45364b2599f199ab420aae10296e2ac5e282a1bd1ea`). That restores the prior page and its release documentation together,
   and leaves `index.html` alone.
 - **To go back to the earlier MIT-licensed candidate**, which asks nothing of Brian beyond
   the permission already on record:
